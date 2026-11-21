@@ -72,30 +72,29 @@ Poimenovanje je namenoma enotno: **naloga = task**, **motnja = incident**. Prome
 ### `vehicles`
 
 - `id`, `code`, `vehicle_type`
-- `status`: `AVAILABLE`, `ASSIGNED`, `EN_ROUTE`, `TRANSPORTING`, `UNAVAILABLE`, `BROKEN`
-- `unavailable_reason`: npr. `BREAK`, `CLEANING`, `REFUELING` ali `null`
+- `status`: `AVAILABLE`, `EN_ROUTE`, `TRANSPORTING`, `UNAVAILABLE`, `BROKEN`
 - `current_lat`, `current_lon`, `location_updated_at`
 - `base_location_id`, `current_task_id` (nullable), `target_lat`, `target_lon` (nullable)
 - `capacity`, `equipment` (nabor oznak, npr. `STRETCHER`, `WHEELCHAIR`, `OXYGEN`)
-- `available_at`, `fuel_percent` (opcijsko), `crew_id` (opcijsko)
+- `available_at`
 
 ### `hospitals` / `facilities`
 
 - `id`, `name`, `lat`, `lon`
-- `specialties` / `supported_care_types` — **poenostavljene simulirane sposobnosti**
-- `capacity_total`, `capacity_available` — **izključno sintetično**, ne realno stanje postelj
+- `specialties`  — **poenostavljene simulirane sposobnosti**
+- `capacity_available` — **izključno sintetično**, ne realno stanje postelj
 - `accepting` (bool), `updated_at`
 - Pomembno: ciljna ustanova mora biti praviloma že klinično potrjena; optimizator jo lahko predlaga le kot informativno možnost s človeško potrditvijo.
 
 ### `tasks`
 
 - `id`, `task_type`: `PLANNED_TRANSPORT`, `UNPLANNED_TRANSPORT`, `PRIORITY_TRANSPORT`, `EQUIPMENT_DELIVERY`
-- `status`: `PENDING`, `ASSIGNED`, `EN_ROUTE_TO_PICKUP`, `PICKED_UP`, `COMPLETED`, `CANCELLED`, `FAILED`, `NEEDS_REASSIGNMENT`
+- `status`: `PENDING`, `ASSIGNED`, `EN_ROUTE_TO_PICKUP`, `PICKED_UP`, `COMPLETED`, `CANCELLED`, `FAILED`, `NEEDS_REASSIGNMENT` - **failed = neki narobe pr picakou,cancled = nesko scanslu**
 - `priority`: `P1`, `P2`, `P3` — **vnesena, ne ocenjena z AI**
 - `pickup_lat`, `pickup_lon`, `dropoff_lat`, `dropoff_lon`, `destination_facility_id` (nullable)
-- `passenger_count`, `required_equipment`, `required_crew_skills` (opcijsko)
+- `passenger_count`, `required_equipment`, `required_crew` (opcijsko)
 - `earliest_pickup`, `latest_pickup` (opcijsko), `preferred_arrival` (želeni čas za merjenje zamud), `latest_arrival` (trda meja)
-- `pickup_service_minutes`, `dropoff_service_minutes`, `cleaning_minutes` (opcijsko)
+- `pickup_service_minutes`, `dropoff_service_minutes`
 - `created_at`, `planned_pickup`, `planned_arrival`, `actual_pickup`, `actual_arrival`
 - `assigned_vehicle_id` (nullable; denormaliziran prikaz aktivne dodelitve, če ga potrebujemo)
 - Brez imen pacientov in drugih osebnih zdravstvenih podatkov v demo bazi.
@@ -214,7 +213,7 @@ Poimenovanje je namenoma enotno: **naloga = task**, **motnja = incident**. Prome
 **Zakaj:** manj integracijskega tveganja za štiričlansko ekipo v 24 urah. Če imate že pripravljeno Java kodo, lahko backend nadomestite z Java/Timefold, vendar ne prepisujte delujočega dela po nepotrebnem.
 
 ## 11. Kriteriji uspeha in primerjalni baseline
-
+ß
 **Baseline:** prvi načrt brez replaniranja po motnji (ali preprosta najbližja-prosta-dodelitev) na istih simuliranih vhodih.
 
 Merimo:

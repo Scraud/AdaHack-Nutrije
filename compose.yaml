@@ -1,0 +1,34 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      RESCUEFLOW_DB: ${RESCUEFLOW_DB:-/data/rescueflow.sqlite}
+      RESCUEFLOW_OSRM_URL: ${RESCUEFLOW_OSRM_URL:-}
+      RESCUEFLOW_NAP_URL: ${RESCUEFLOW_NAP_URL:-}
+      RESCUEFLOW_NAP_TOKEN: ${RESCUEFLOW_NAP_TOKEN:-}
+    volumes:
+      - rescueflow-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+    restart: unless-stopped
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+  osrm:
+    profiles: ["routing"]
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    command: ["osrm-routed", "--algorithm", "mld", "/routing/slovenia.osrm"]
+    volumes:
+      - type: bind
+        source: ./routing/data
+        target: /routing
+        read_only: true
+volumes:
+  rescueflow-data:

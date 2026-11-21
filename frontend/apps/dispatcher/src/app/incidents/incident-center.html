@@ -1,0 +1,75 @@
+<section class="card incident-card">
+  <div class="card-head">
+    <div><h2>Motnje</h2><p>Simulacija razmer v Ljubljani</p></div>
+    <span class="section-icon orange" aria-hidden="true">!</span>
+  </div>
+  <div class="incident-actions">
+    <button class="incident-action" [disabled]="!!store.busy() || state().vehicles[2]?.broken"
+      (click)="store.incident({type: 'VEHICLE_BREAKDOWN', vehicle_id: 'V3'})">
+      <span class="action-icon orange" aria-hidden="true">!</span>
+      <span><strong>Simuliraj okvaro V3</strong><small>Izloči vozilo iz novih dodelitev</small></span>
+      <span class="arrow" aria-hidden="true">›</span>
+    </button>
+    <button class="incident-action" [disabled]="!!store.busy()" (click)="traffic('TRAFFIC_DELAY')">
+      <span class="action-icon yellow" aria-hidden="true">≈</span>
+      <span><strong>Simuliraj zastoj</strong><small>Podaljšaj vožnjo na delu relacij</small></span>
+      <span class="arrow" aria-hidden="true">›</span>
+    </button>
+    <button class="incident-action" [disabled]="!!store.busy()" (click)="traffic('ROAD_CLOSURE')">
+      <span class="action-icon yellow" aria-hidden="true">×</span>
+      <span><strong>Simuliraj zaporo</strong><small>Zapri relacije skozi izbrano območje</small></span>
+      <span class="arrow" aria-hidden="true">›</span>
+    </button>
+    <button class="incident-action" [disabled]="!!store.busy()" [attr.aria-expanded]="formOpen()" (click)="openTask()">
+      <span class="action-icon blue" aria-hidden="true">+</span>
+      <span><strong>Dodaj nalogo</strong><small>Vnesi prioriteto in obvezni rok</small></span>
+      <span class="arrow" aria-hidden="true">›</span>
+    </button>
+  </div>
+  @if (formOpen()) {
+    <form class="inline-form" (ngSubmit)="createTask()">
+      <div class="form-grid">
+        <label>Prioriteta<select name="priority" [(ngModel)]="priority">
+          <option>P1</option><option>P2</option><option>P3</option>
+        </select></label>
+        <label>Oprema<select name="equipment" [(ngModel)]="equipment">
+          <option value="OXYGEN">Kisik</option><option value="STRETCHER">Nosila</option><option value="WHEELCHAIR">Voziček</option>
+        </select></label>
+        <label class="wide">Ciljna ustanova<select name="facility" [(ngModel)]="facility">
+          @for (option of state().facilities; track option.id) { <option [value]="option.id">{{ option.name }}</option> }
+        </select></label>
+        <label>Od<input type="time" name="pickup" [(ngModel)]="pickup" required></label>
+        <label>Rok prihoda<input type="time" name="deadline" [(ngModel)]="deadline" required></label>
+        <label>Potniki<input type="number" name="passengers" min="1" max="8" [(ngModel)]="passengers" required></label>
+      </div>
+      <p class="small">Simuliran prevzem na lokaciji 46,068° N · 14,542° E.</p>
+      <button class="button primary" [disabled]="!!store.busy()">Shrani nalogo</button>
+    </form>
+  }
+  <div class="time-controls">
+    <label for="demo-time">Simulirana ura</label>
+    <div><input id="demo-time" type="time" [(ngModel)]="advanceTo">
+      <button class="button secondary" [disabled]="!!store.busy()" (click)="moveClock()">Premakni</button></div>
+  </div>
+  @if (error) { <p class="alert" role="alert">{{ error }}</p> }
+  @if (lastEvents().length) {
+    <div class="event-list">
+      <h3>Zadnji dogodki</h3>
+      @for (event of lastEvents(); track event.id) {
+        <div><span>{{ labels[event.type] }} {{ event.vehicle_id || event.task_id || '' }}</span>
+          <time>{{ clock(state().start_at, event.occurred_at) }}</time></div>
+      }
+    </div>
+  }
+  <div class="reset-controls">
+    @if (resetOpen()) {
+      <p class="small">Začeti nov simuliran dan?</p>
+      <div class="reset-actions">
+        <button class="button secondary" [disabled]="!!store.busy()" (click)="reset()">Potrdi ponastavitev</button>
+        <button class="text-button" (click)="resetOpen.set(false)">Prekliči</button>
+      </div>
+    } @else {
+      <button class="text-button" [disabled]="!!store.busy()" (click)="resetOpen.set(true)">Ponastavi demo</button>
+    }
+  </div>
+</section>

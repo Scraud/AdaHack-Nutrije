@@ -67,8 +67,12 @@ export class IncidentCenter {
   }
 
   traffic(type: 'TRAFFIC_DELAY' | 'ROAD_CLOSURE') {
-    void this.store.incident({ type, location: { lat: 46.064, lon: 14.535 },
-      radius_km: 1.2, duration: 5400, multiplier: 1.6 });
+    const road_id = this.store.roadId();
+    if (road_id) void this.store.incident({ type, road_id, duration: 5400, multiplier: 2.3 });
+  }
+
+  roadName(id: string) {
+    return this.store.roads()?.segments.find(segment => segment.id === id)?.name ?? id;
   }
 
   reset() {

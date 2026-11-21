@@ -1,15 +1,25 @@
 import { expect, test } from '@playwright/test';
 
-test('reset, breakdown, distinct proposals, preview, approval and history with offline map tiles', async ({ page, request }) => {
-  await page.route('https://tile.openstreetmap.org/**', route => route.abort());
+test('offline road map, live positions, restrictions, and the dispatcher approval flow', async ({ page, request }) => {
+  await page.route('https://**/*', route => route.abort());
   await page.goto('/');
   await page.getByRole('button', { name: 'Ponastavi demo' }).click();
   await page.getByRole('button', { name: 'Potrdi ponastavitev' }).click();
   await expect(page.getByRole('heading', { name: 'Nadzorna plošča' })).toBeVisible();
-  await expect(page.getByText('Zemljevidne ploščice niso dosegljive.', { exact: false })).toBeVisible();
+  await expect(page.locator('.leaflet-road-base-pane canvas')).toBeVisible();
+  await expect(page.locator('.ambulance-pin')).toHaveCount(5);
+  await expect(page.locator('.facility-pin')).toHaveCount(4);
   await expect(page.getByRole('row').filter({ hasText: 'T01' })).toBeVisible();
   await page.getByRole('button', { name: 'Generiraj začetni plan' }).click();
   await expect(page.getByText('Aktivni plan v1')).toBeVisible();
+  await expect(page.locator('.route-to-pickup').first()).toBeVisible();
+  const toHospital = page.locator('.route-to-hospital').first();
+  await expect(toHospital).toHaveAttribute('stroke-dasharray', '2 8');
+  await page.getByRole('button', { name: 'Predvajaj 300-krat hitreje' }).click();
+  const ambulance = page.locator('.ambulance-pin').first();
+  const start = await ambulance.getAttribute('style');
+  await expect(ambulance).not.toHaveAttribute('style', start!, { timeout: 14_000 });
+  await page.getByRole('button', { name: 'Premor', exact: true }).click();
   await page.getByRole('button', { name: 'Premakni', exact: true }).click();
   await expect(page.getByLabel('Simulirani čas 11:20')).toBeVisible();
   await page.getByRole('button', { name: /Simuliraj okvaro V3/ }).click();
@@ -25,4 +35,11 @@ test('reset, breakdown, distinct proposals, preview, approval and history with o
   await expect(page.getByText('Aktivni plan v2')).toBeVisible();
   await page.getByRole('button', { name: /Verzija 1/ }).click();
   await expect(page.getByText('Pregled verzije 1')).toBeVisible();
+  await page.getByLabel('Odsek ceste').selectOption('dunajska');
+  await page.getByRole('button', { name: /Simuliraj zastoj/ }).click();
+  await expect(page.locator('.road-traffic')).toHaveAttribute('stroke', '#eb2432');
+  await page.getByLabel('Odsek ceste').selectOption('smartinska');
+  await page.getByRole('button', { name: /Simuliraj zaporo/ }).click();
+  await expect(page.locator('.closure-pin')).toBeVisible();
+  await expect(page.locator('.road-closure')).toHaveCount(1);
 });

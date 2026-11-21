@@ -1,23 +1,27 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select
 
 from app.api.schemas import (
     Advance, Baseline, CreateIncident, PlanSummary, PlanView, RecommendationView, Recommendations,
-    Rejection, Replan, SourceStatus, State,
+    Rejection, Replan, RoadMap, SourceStatus, State,
 )
 from app.db import Database
 from app.models import Plan, Scenario
 from app.planning.contracts import SolveBudget
 from app.providers.conditions import Conditions
+from app.providers.roads import road_network
 from app.services.decisions import decide
 from app.services.planning import PlanningService, recommendation_history
 from app.services.simulation import add_incident, advance
 from app.services.state import problem, reset, scenario, view_plan, view_state
+from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 
 
 def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget()) -> FastAPI:
@@ -25,6 +29,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     database = Database(db_path.absolute())
     planner = PlanningService(database, budget)
     conditions = Conditions()
+    tracking = Tracking(database, os.getenv("RESCUEFLOW_GPS_KEY"))
 
     @asynccontextmanager
     async def lifespan(_):
@@ -32,10 +37,25 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
         with database.session(write=True) as db:
             if not db.scalar(select(Scenario.id).where(Scenario.current)):
                 reset(db)
-        yield
-        database.engine.dispose()
+        stop = asyncio.Event()
+
+        async def clock():
+            while not stop.is_set():
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=1)
+                except TimeoutError:
+                    await asyncio.to_thread(tracking.tick)
+
+        player = asyncio.create_task(clock())
+        try:
+            yield
+        finally:
+            stop.set()
+            await player
+            database.engine.dispose()
 
     app = FastAPI(title="RescueFlow", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=2048)
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:4200", "http://127.0.0.1:4200"],
                        allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
@@ -54,11 +74,13 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
 
     @app.post("/api/demo/reset")
     def demo_reset() -> State:
+        tracking.pause()
         with database.session(write=True) as db:
             return view_state(db, reset(db))
 
     @app.post("/api/demo/advance-time")
     def advance_time(request: Advance) -> State:
+        tracking.pause()
         with database.session(write=True) as db:
             scope = scenario(db)
             advance(db, scope, request.to)
@@ -66,6 +88,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
 
     @app.post("/api/incidents")
     def create_incident(request: CreateIncident) -> State:
+        tracking.pause()
         with database.session(write=True) as db:
             scope = scenario(db)
             add_incident(db, scope, request)
@@ -73,6 +96,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
 
     @app.post("/api/plans/generate")
     def initial_plan() -> State:
+        tracking.pause()
         return planner.generate()
 
     @app.get("/api/plans")
@@ -93,6 +117,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
 
     @app.post("/api/recommendations/generate")
     def generate_recommendations(request: Replan) -> Recommendations:
+        tracking.pause()
         return planner.generate(request)
 
     @app.get("/api/recommendations")
@@ -102,6 +127,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
 
     @app.post("/api/recommendations/{rec_id}/accept")
     def accept(rec_id: str) -> RecommendationView:
+        tracking.pause()
         with database.session(write=True) as db:
             return decide(db, scenario(db), rec_id, accept=True)
 
@@ -117,6 +143,24 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     @app.post("/api/conditions/refresh")
     def refresh_sources() -> list[SourceStatus]:
         return conditions.refresh()
+
+    @app.get("/api/map/roads", response_model=RoadMap)
+    def road_map():
+        return Response(road_network().basemap(), media_type="application/json",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+    @app.get("/api/tracking")
+    def vehicle_tracking() -> TrackingFrame:
+        return tracking.frame()
+
+    @app.post("/api/tracking/playback")
+    def playback(request: Playback) -> Playback:
+        return tracking.control(request)
+
+    @app.post("/api/tracking/gps", status_code=204)
+    def gps(request: GPSFix, authorization: str | None = Header(default=None)):
+        tracking.record_gps(request, authorization)
+        return Response(status_code=204)
 
     return app
 

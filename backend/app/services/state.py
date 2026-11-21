@@ -63,13 +63,16 @@ def assignments(db: Session, plan: Plan | None) -> list[Assignment]:
                   key=lambda a: (a.vehicle_id, a.planned_departure, a.task_id))
 
 
-def inputs(db: Session, scope: Scenario, plan: Plan | None):
+def inputs(db: Session, scope: Scenario, plan: Plan | None, *, preserve_active_timing: bool = False):
     vehicles = entities(db, scope, VehicleRecord, Vehicle)
     tasks = entities(db, scope, TaskRecord, Task)
     facilities = entities(db, scope, FacilityRecord, Facility)
     incidents = entities(db, scope, IncidentRecord, Incident)
     rows = assignments(db, plan)
-    return build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents), incidents, rows
+    legacy_timing = bool(preserve_active_timing and plan
+                         and db.get(SnapshotRecord, plan.snapshot_id).payload["provider"] == "HAVERSINE")
+    return build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents,
+                          legacy_timing=legacy_timing), incidents, rows
 
 
 def snapshot_payload(state: PlanningSnapshot, incidents: list[Incident]) -> tuple[str, dict]:
@@ -130,8 +133,9 @@ def baseline(state: PlanningSnapshot, rows: list[Assignment]) -> Baseline:
 
 def view_state(db: Session, scope: Scenario) -> State:
     plan = active_plan(db, scope)
-    state, incidents, rows = inputs(db, scope, plan)
+    state, incidents, rows = inputs(db, scope, plan, preserve_active_timing=True)
     return State(scenario_id=scope.id, revision=scope.revision, start_at=scope.start_at, now=scope.now,
+                 travel_source=state.travel.source,
                  vehicles=vehicle_views(state, rows), tasks=list(state.tasks.values()),
                  facilities=list(state.facilities.values()), incidents=incidents,
                  active_plan=view_plan(db, plan) if plan else None, baseline=baseline(state, rows))

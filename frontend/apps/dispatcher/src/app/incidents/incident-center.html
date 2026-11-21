@@ -10,14 +10,21 @@
       <span><strong>Simuliraj okvaro V3</strong><small>Izloči vozilo iz novih dodelitev</small></span>
       <span class="arrow" aria-hidden="true">›</span>
     </button>
-    <button class="incident-action" [disabled]="!!store.busy()" (click)="traffic('TRAFFIC_DELAY')">
+    <label class="incident-road">Odsek ceste
+      <select [ngModel]="store.roadId()" (ngModelChange)="store.roadId.set($event)" [disabled]="!store.roads()">
+        @for (segment of store.roads()?.segments ?? []; track segment.id) {
+          <option [value]="segment.id">{{ segment.name }}</option>
+        }
+      </select>
+    </label>
+    <button class="incident-action" [disabled]="!!store.busy() || !store.roadId()" (click)="traffic('TRAFFIC_DELAY')">
       <span class="action-icon yellow" aria-hidden="true">≈</span>
-      <span><strong>Simuliraj zastoj</strong><small>Podaljšaj vožnjo na delu relacij</small></span>
+      <span><strong>Simuliraj zastoj</strong><small>Upočasni izbrani cestni odsek</small></span>
       <span class="arrow" aria-hidden="true">›</span>
     </button>
-    <button class="incident-action" [disabled]="!!store.busy()" (click)="traffic('ROAD_CLOSURE')">
+    <button class="incident-action" [disabled]="!!store.busy() || !store.roadId()" (click)="traffic('ROAD_CLOSURE')">
       <span class="action-icon yellow" aria-hidden="true">×</span>
-      <span><strong>Simuliraj zaporo</strong><small>Zapri relacije skozi izbrano območje</small></span>
+      <span><strong>Simuliraj zaporo</strong><small>Zapri izbrani cestni odsek</small></span>
       <span class="arrow" aria-hidden="true">›</span>
     </button>
     <button class="incident-action" [disabled]="!!store.busy()" [attr.aria-expanded]="formOpen()" (click)="openTask()">
@@ -56,7 +63,7 @@
     <div class="event-list">
       <h3>Zadnji dogodki</h3>
       @for (event of lastEvents(); track event.id) {
-        <div><span>{{ labels[event.type] }} {{ event.vehicle_id || event.task_id || '' }}</span>
+        <div><span>{{ labels[event.type] }} {{ event.road_id ? roadName(event.road_id) : event.vehicle_id || event.task_id || '' }}</span>
           <time>{{ clock(state().start_at, event.occurred_at) }}</time></div>
       }
     </div>

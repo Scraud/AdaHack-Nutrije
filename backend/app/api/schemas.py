@@ -27,6 +27,7 @@ class CreateIncident(BaseModel):
     vehicle_id: str | None = None
     facility_id: str | None = None
     location: Point | None = None
+    road_id: str | None = None
     radius_km: float | None = Field(default=None, gt=0, le=30)
     multiplier: float | None = Field(default=None, ge=1, le=5)
     quota: int | None = Field(default=None, ge=0, le=100)
@@ -99,7 +100,7 @@ class State(BaseModel):
     start_at: str
     now: int
     horizon: int = HORIZON
-    travel_source: str = "HAVERSINE"
+    travel_source: str = "OSM_LJUBLJANA"
     vehicles: list[VehicleView]
     facilities: list[Facility]
     tasks: list[Task]
@@ -114,3 +115,21 @@ class SourceStatus(BaseModel):
     status: Literal["SIMULATED", "LIVE", "STALE", "UNAVAILABLE"]
     message: str
     observed_at: datetime | None = None
+
+
+class RoadLayer(BaseModel):
+    rank: int
+    paths: list[list[tuple[float, float]]]
+
+
+class RoadSegment(BaseModel):
+    id: str
+    name: str
+    path: list[tuple[float, float]]
+
+
+class RoadMap(BaseModel):
+    bounds: tuple[float, float, float, float]
+    timestamp: str
+    layers: list[RoadLayer]
+    segments: list[RoadSegment]

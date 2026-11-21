@@ -91,6 +91,7 @@ class Incident(BaseModel):
     facility_id: str | None = None
     task_id: str | None = None
     location: Point | None = None
+    road_id: str | None = None
     radius_km: float = Field(default=1.5, gt=0, le=30)
     multiplier: float = Field(default=1.6, ge=1, le=5)
     quota: int | None = Field(default=None, ge=0, le=100)

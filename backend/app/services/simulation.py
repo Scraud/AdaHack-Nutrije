@@ -6,6 +6,7 @@ from app.models import AssignmentRecord, FacilityRecord, IncidentRecord, Scenari
 from app.planning.contracts import Facility, HORIZON, Incident, Task, Vehicle
 from app.planning.snapshot_builder import routes
 from app.planning.validator import validate_plan
+from app.providers.roads import center_distance, road_network
 from app.services.state import active_plan, audit, inputs, problem
 
 
@@ -25,7 +26,18 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident):
         else:
             vehicle.unavailable.append((scope.now, min(HORIZON, scope.now + (event.duration or 1800))))
         record.payload = vehicle.model_dump(mode="json")
-    elif event.type in ("TRAFFIC_DELAY", "ROAD_CLOSURE", "WEATHER_DELAY"):
+    elif event.type in ("TRAFFIC_DELAY", "ROAD_CLOSURE"):
+        roads = road_network()
+        if event.road_id not in roads.segments and event.road_id is not None:
+            raise problem(404, "ROAD_NOT_FOUND", "Odsek ceste ne obstaja.")
+        if event.road_id is None and event.location is not None:
+            # Older clients can still send a point. Resolve it to the closest configured road section.
+            point = (event.location.lat, event.location.lon)
+            event.road_id = min(roads.segments, key=lambda key: min(
+                center_distance(point, roads.points[node]) for node in roads.segments[key].vertices))
+        if event.road_id is None:
+            raise problem(400, "ROAD_REQUIRED", "Izberite odsek ceste.")
+    elif event.type == "WEATHER_DELAY":
         if event.location is None:
             raise problem(400, "LOCATION_REQUIRED", "Za motnjo izberite območje.")
     elif event.type == "FACILITY_CAPACITY_CHANGE":
@@ -57,17 +69,17 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident):
     scope.revision += 1
     audit(db, scope, event.type, incident_id=event.id, simulated_time=scope.now)
     if event.type == "VEHICLE_BREAKDOWN":
-        snapshot, _, _ = inputs(db, scope, active_plan(db, scope))
+        snapshot, _, _ = inputs(db, scope, active_plan(db, scope), preserve_active_timing=True)
         for issue in snapshot.blocking:
             if issue.vehicle_id == event.vehicle_id and issue.code == "MANUAL_COORDINATION":
                 audit(db, scope, issue.code, incident_id=event.id, task_id=issue.task_id)
 
 
-def advance(db: Session, scope: Scenario, until: int):
+def advance(db: Session, scope: Scenario, until: int, *, record_audit: bool = True):
     if until <= scope.now:
         raise problem(400, "TIME_MUST_ADVANCE", "Simulirani čas se lahko premika samo naprej.")
     plan = active_plan(db, scope)
-    snapshot, _, assignments = inputs(db, scope, plan)
+    snapshot, _, assignments = inputs(db, scope, plan, preserve_active_timing=True)
     blocked = {issue.task_id for issue in validate_plan(snapshot, assignments)}
     for route in routes(assignments).values():
         route_blocked = False
@@ -88,4 +100,5 @@ def advance(db: Session, scope: Scenario, until: int):
             db.get(AssignmentRecord, (plan.id, row.task_id)).payload = row.model_dump(mode="json")
     scope.now = until
     scope.revision += 1
-    audit(db, scope, "ADVANCE_TIME", simulated_time=until, blocked_tasks=sorted(blocked))
+    if record_audit:
+        audit(db, scope, "ADVANCE_TIME", simulated_time=until, blocked_tasks=sorted(blocked))

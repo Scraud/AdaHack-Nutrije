@@ -93,14 +93,44 @@
             }
           </section>
           <section class="card map-card">
-            <div class="card-head"><div><h2>Zemljevid prevozov</h2><p>Vozila, prevzemi in ciljne ustanove</p></div>
-              <span class="map-region">Ljubljana</span></div>
-            <react-view kind="map" [state]="state" (selectTask)="focusTask($event)" />
+            <div class="card-head">
+              <div><h2>Zemljevid prevozov</h2><p>Trenutna ali naslednja vožnja vsakega vozila</p></div>
+              @if (store.tracking(); as frame) {
+                <div class="tracking-controls">
+                  @if (frame.mode === 'GPS') {
+                    <span class="status" [class.good]="store.gpsOnline() && !store.trackingOffline()">
+                      {{ store.gpsOnline() && !store.trackingOffline() ? 'GPS v živo' : 'GPS brez sveže lokacije' }}
+                    </span>
+                  } @else if (frame.playback.playing) {
+                    <span class="status good">Simulacija {{ frame.playback.speed }}×</span>
+                    <button class="button secondary" [disabled]="!!store.busy()" (click)="store.setPlayback(false)">Premor</button>
+                  } @else {
+                    <button class="button secondary" [disabled]="!!store.busy() || !state.active_plan || state.now >= state.horizon"
+                      (click)="store.setPlayback(true, 60)">Predvajaj 60×</button>
+                    <button class="button secondary" [disabled]="!!store.busy() || !state.active_plan || state.now >= state.horizon"
+                      (click)="store.setPlayback(true, 300)" aria-label="Predvajaj 300-krat hitreje">300×</button>
+                  }
+                </div>
+              }
+            </div>
+            <react-view kind="map" [state]="state" [roads]="store.roads()" [tracking]="store.tracking()" (selectTask)="focusTask($event)" />
+            @if (store.trackingOffline()) {
+              <p class="map-notice" role="status">Povezava s sledenjem je prekinjena. Prikazane so zadnje prejete lokacije.</p>
+            } @else if (store.tracking()?.mode === 'GPS' && !store.tracking()?.vehicles?.length) {
+              <p class="map-notice" role="status">Čakanje na prvo lokacijo GPS.</p>
+            }
+            @if (!store.roads()) {
+              <div class="map-notice road-notice">
+                <span>Cestno omrežje še ni na voljo.</span><button class="text-button" (click)="store.loadRoads()">Poskusi znova</button>
+              </div>
+            }
             <div class="map-legend">
-              <span><i class="dot vehicle-dot"></i> Vozilo</span>
-              <span><i class="dot task-dot"></i> Prevzem</span>
-              <span><i class="dot facility-dot"></i> Ustanova</span>
-              <span><i class="dot broken-dot"></i> Okvara</span>
+              <span><i aria-hidden="true">🚑</i> Reševalno vozilo</span>
+              <span><i aria-hidden="true">🏥</i> Ustanova</span>
+              <span><i class="legend-line"></i> Do pacienta</span>
+              <span><i class="legend-line dotted"></i> Do ustanove</span>
+              <span><i class="legend-line traffic"></i> Zastoj</span>
+              <span><i aria-hidden="true">⛔</i> Zapora</span>
             </div>
           </section>
         </div>

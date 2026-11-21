@@ -14,8 +14,8 @@ from app.providers.nap import traffic_publication
 from app.providers.osrm import road_snapshot
 
 OWN_SOURCE = SourceStatus(
-    id="local", name="Lokalna potovalna matrika", status="SIMULATED",
-    message="Ocena Haversine · 34 km/h · faktor poti 1,3. Ta matrika poganja demo.",
+    id="local", name="Cestno omrežje Ljubljane", status="SIMULATED",
+    message="OpenStreetMap · potovalni časi so ocene po vrsti ceste.",
 )
 
 

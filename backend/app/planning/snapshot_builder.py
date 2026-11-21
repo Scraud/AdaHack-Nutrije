@@ -1,5 +1,6 @@
 from app.planning.contracts import Anchor, Assignment, Facility, Incident, Issue, Node, PlanningSnapshot, Task, Vehicle
 from app.providers.haversine import local_snapshot
+from app.providers.roads import active_conditions, road_network
 
 
 def start(vehicle_id: str) -> str:
@@ -23,13 +24,15 @@ def build_nodes(vehicles: list[Vehicle], tasks: list[Task], facilities: dict[str
 
 
 def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilities: list[Facility],
-                   assignments: list[Assignment], incidents: list[Incident]) -> PlanningSnapshot:
+                   assignments: list[Assignment], incidents: list[Incident], *,
+                   legacy_timing: bool = False) -> PlanningSnapshot:
     destinations = {f.id: f for f in facilities}
     current = {a.task_id: a for a in assignments}
     frozen = {a.task_id: a for a in assignments if a.is_locked or a.status != "PLANNED"}
-    conditions = [i for i in incidents if i.type in ("ROAD_CLOSURE", "TRAFFIC_DELAY", "WEATHER_DELAY")
-                  and i.occurred_at <= now and (i.duration is None or now < i.occurred_at + i.duration)]
-    travel = local_snapshot(build_nodes(vehicles, tasks, destinations), conditions)
+    nodes = build_nodes(vehicles, tasks, destinations)
+    conditions = active_conditions(now, incidents)
+    travel = (local_snapshot(nodes, conditions) if legacy_timing and not any(event.road_id for event in conditions)
+              else road_network().snapshot(nodes, conditions))
     anchors = {}
     blocking = []
     by_task = {t.id: t for t in tasks}

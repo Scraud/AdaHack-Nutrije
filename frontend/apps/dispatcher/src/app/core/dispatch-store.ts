@@ -1,6 +1,6 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import type {
-  Condition, Incident, Plan, PlanSummary, Recommendation, Recommendations, State,
+  Condition, Incident, Plan, PlanSummary, Playback, Recommendation, Recommendations, RoadMap, State, TrackingFrame,
 } from '../../../../../packages/contracts';
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -31,6 +31,18 @@ export class DispatchStore {
   readonly notification = signal('');
   readonly error = signal('');
   readonly openRecommendations = computed(() => this.recommendations().filter(item => item.status === 'PROPOSED'));
+  readonly roads = signal<RoadMap | null>(null);
+  readonly roadId = signal('');
+  readonly tracking = signal<TrackingFrame | null>(null);
+  readonly gpsOnline = computed(() => this.tracking()?.vehicles.some(vehicle => !vehicle.stale) ?? false);
+  readonly trackingOffline = signal(false);
+  private readonly destroy = inject(DestroyRef);
+  private trackingTimer?: ReturnType<typeof setInterval>;
+  private trackingPending = false;
+
+  constructor() {
+    this.destroy.onDestroy(() => clearInterval(this.trackingTimer));
+  }
 
   async run(label: string, action: () => Promise<void>) {
     if (this.busy()) return;
@@ -56,6 +68,60 @@ export class DispatchStore {
   initialize() {
     void this.run('Nalaganje stanja', () => this.sync());
     void this.refreshSources();
+    void this.loadRoads();
+    if (!this.trackingTimer) {
+      this.trackingTimer = setInterval(() => void this.refreshTracking(), 1000);
+    }
+    void this.refreshTracking();
+  }
+
+  async loadRoads() {
+    if (this.roads()) return;
+    try {
+      const roads = await request<RoadMap>('map/roads');
+      this.roads.set(roads);
+      this.roadId.set(roads.segments[0]?.id ?? '');
+    } catch {
+      this.roads.set(null);
+    }
+  }
+
+  async refreshTracking(force = false) {
+    if (this.trackingPending || (this.busy() && !force)) return;
+    this.trackingPending = true;
+    try {
+      const frame = await request<TrackingFrame>('tracking');
+      const before = this.state();
+      if (!before || frame.scenario_id !== before.scenario_id || frame.revision >= before.revision) {
+        if ((frame.scenario_id !== before?.scenario_id || frame.revision !== before?.revision) && !this.busy()) {
+          const current = await request<State>('state');
+          if (!this.busy()) {
+            this.state.set(current);
+            if (current.scenario_id !== before?.scenario_id || current.active_plan?.id !== before?.active_plan?.id
+              || current.incidents.length !== before?.incidents.length || this.openRecommendations().length) {
+              await this.refreshLists();
+            }
+          }
+        }
+        const current = this.state();
+        if (!current || (frame.scenario_id === current.scenario_id && frame.revision >= current.revision)) {
+          this.tracking.set(frame);
+        }
+      }
+      this.trackingOffline.set(false);
+    } catch {
+      this.trackingOffline.set(true);
+    } finally {
+      this.trackingPending = false;
+    }
+  }
+
+  setPlayback(playing: boolean, speed: Playback['speed'] = 60) {
+    return this.run(playing ? 'Zagon simulacije' : 'Premor simulacije', async () => {
+      const playback = await request<Playback>('tracking/playback', 'POST', { playing, speed });
+      this.tracking.update(frame => frame ? { ...frame, playback } : frame);
+      await this.refreshTracking(true);
+    });
   }
 
   private async refreshLists() {
@@ -75,6 +141,7 @@ export class DispatchStore {
       this.state.set(await request<State>(path, 'POST', body));
       this.clearPreview();
       await this.refreshLists();
+      await this.refreshTracking(true);
       this.notification.set(done ?? '');
     });
   }
@@ -84,11 +151,16 @@ export class DispatchStore {
   }
 
   generate() {
-    const state = this.state();
-    if (!state?.active_plan) return;
+    if (!this.state()?.active_plan) return;
     void this.run('Izračun alternativ', async () => {
+      if (this.tracking()?.playback.playing) {
+        await request<Playback>('tracking/playback', 'POST', { playing: false });
+        await this.sync();
+      }
+      const state = this.state();
+      if (!state?.active_plan) return;
       const response = await request<Recommendations>('recommendations/generate', 'POST', {
-        base_plan_id: state.active_plan?.id, expected_state_revision: state.revision,
+        base_plan_id: state.active_plan.id, expected_state_revision: state.revision,
       });
       this.recommendations.set(response.items);
       this.clearPreview();

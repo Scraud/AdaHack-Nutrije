@@ -12,6 +12,9 @@ export type Issue = Schema['Issue'];
 export type NewTask = Schema['NewTask'];
 export type Point = Schema['Point'];
 export type Condition = Schema['SourceStatus'];
+export type RoadMap = Schema['RoadMap'];
+export type TrackingFrame = Schema['TrackingFrame'];
+export type Playback = Schema['Playback'];
 
 const localTime = new Intl.DateTimeFormat('sl-SI', {
   timeZone: 'Europe/Ljubljana', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',

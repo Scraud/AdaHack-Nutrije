@@ -259,6 +259,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/map/roads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Road Map */
+        get: operations["road_map_api_map_roads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tracking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vehicle Tracking */
+        get: operations["vehicle_tracking_api_tracking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tracking/playback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Playback */
+        post: operations["playback_api_tracking_playback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tracking/gps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Gps */
+        post: operations["gps_api_tracking_gps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -335,6 +403,8 @@ export interface components {
             /** Facility Id */
             facility_id?: string | null;
             location?: components["schemas"]["Point"] | null;
+            /** Road Id */
+            road_id?: string | null;
             /** Radius Km */
             radius_km?: number | null;
             /** Multiplier */
@@ -357,6 +427,17 @@ export interface components {
              * @default true
              */
             accepting: boolean;
+        };
+        /** GPSFix */
+        GPSFix: {
+            /** Vehicle Id */
+            vehicle_id: string;
+            location: components["schemas"]["Point"];
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -389,6 +470,8 @@ export interface components {
             /** Task Id */
             task_id?: string | null;
             location?: components["schemas"]["Point"] | null;
+            /** Road Id */
+            road_id?: string | null;
             /**
              * Radius Km
              * @default 1.5
@@ -541,6 +624,17 @@ export interface components {
             /** Snapshot Id */
             snapshot_id: string;
         };
+        /** Playback */
+        Playback: {
+            /** Playing */
+            playing: boolean;
+            /**
+             * Speed
+             * @default 60
+             * @enum {integer}
+             */
+            speed: 30 | 60 | 300;
+        };
         /** Point */
         Point: {
             /** Lat */
@@ -588,6 +682,56 @@ export interface components {
             /** Expected State Revision */
             expected_state_revision: number;
         };
+        /** RoadEvent */
+        RoadEvent: {
+            /** Id */
+            id: number;
+            /** Road Id */
+            road_id: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "TRAFFIC_DELAY" | "ROAD_CLOSURE";
+        };
+        /** RoadLayer */
+        RoadLayer: {
+            /** Rank */
+            rank: number;
+            /** Paths */
+            paths: [
+                number,
+                number
+            ][][];
+        };
+        /** RoadMap */
+        RoadMap: {
+            /** Bounds */
+            bounds: [
+                number,
+                number,
+                number,
+                number
+            ];
+            /** Timestamp */
+            timestamp: string;
+            /** Layers */
+            layers: components["schemas"]["RoadLayer"][];
+            /** Segments */
+            segments: components["schemas"]["RoadSegment"][];
+        };
+        /** RoadSegment */
+        RoadSegment: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Path */
+            path: [
+                number,
+                number
+            ][];
+        };
         /** SourceStatus */
         SourceStatus: {
             /** Id */
@@ -627,7 +771,7 @@ export interface components {
             horizon: number;
             /**
              * Travel Source
-             * @default HAVERSINE
+             * @default OSM_LJUBLJANA
              */
             travel_source: string;
             /** Vehicles */
@@ -689,6 +833,59 @@ export interface components {
             actual_pickup?: number | null;
             /** Actual Arrival */
             actual_arrival?: number | null;
+        };
+        /** TrackedVehicle */
+        TrackedVehicle: {
+            /** Id */
+            id: string;
+            /** Location */
+            location: [
+                number,
+                number
+            ];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "WAITING" | "TO_PICKUP" | "AT_PICKUP" | "TO_HOSPITAL" | "AT_HOSPITAL" | "STOPPED" | "GPS";
+            /** Task Id */
+            task_id?: string | null;
+            /** To Pickup */
+            to_pickup?: [
+                number,
+                number
+            ][];
+            /** To Hospital */
+            to_hospital?: [
+                number,
+                number
+            ][];
+            /** Recorded At */
+            recorded_at?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
+        /** TrackingFrame */
+        TrackingFrame: {
+            /** Scenario Id */
+            scenario_id: string;
+            /** Revision */
+            revision: number;
+            /** Now */
+            now: number;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "DEMO" | "GPS";
+            playback: components["schemas"]["Playback"];
+            /** Vehicles */
+            vehicles: components["schemas"]["TrackedVehicle"][];
+            /** Incidents */
+            incidents: components["schemas"]["RoadEvent"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -1118,6 +1315,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceStatus"][];
+                };
+            };
+        };
+    };
+    road_map_api_map_roads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoadMap"];
+                };
+            };
+        };
+    };
+    vehicle_tracking_api_tracking_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackingFrame"];
+                };
+            };
+        };
+    };
+    playback_api_tracking_playback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Playback"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Playback"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gps_api_tracking_gps_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GPSFix"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

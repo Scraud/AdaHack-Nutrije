@@ -8,7 +8,7 @@ RescueFlow je interaktivna simulacija dispečiranja naročenih in medustanovnih 
 docker compose up --build
 ```
 
-Odprite [dispečersko ploščo](http://127.0.0.1:8080). Nginx posreduje zahteve `/api` v FastAPI, SQLite pa se ohrani v nosilcu `rescueflow-data`. Lokalna vrata so vezana na `127.0.0.1`.
+Odprite [dispečersko ploščo](http://127.0.0.1:8080). Nginx posreduje zahteve `/api` v FastAPI, SQLite pa se ohrani v nosilcu `rescueflow-data`. Lokalna vrata so vezana na `127.0.0.1` in jih lahko nastavite z `RESCUEFLOW_PORT`.
 
 ## Lokalni zagon brez Dockerja
 
@@ -46,9 +46,27 @@ npm run test:e2e
 
 Playwright zažene ločeni lokalni storitvi z lastno SQLite bazo. Za preverjanje z obstoječim brskalnikom Chrome nastavite `RESCUEFLOW_TEST_BROWSER=chrome`. Če spremenite API, iz korena zaženite `.venv\Scripts\python.exe backend\export_openapi.py`, nato v `frontend` zaženite `npm run contracts`.
 
+## Zemljevid in sledenje
+
+Zemljevid uporablja lokalni izsek cest OpenStreetMap za Ljubljano. Polna črta vodi do pacienta, pikčasta do ciljne ustanove. Barva poti se ujema z oznako vozila. Za zastoj ali zaporo izberite cestni odsek v panelu **Motnje**. Na istem odseku zemljevid prikaže rdečo črto oziroma znak zapore. Stanje se pri naslednjem izračunu upošteva na izbranih povezavah cestnega omrežja.
+
+Po ustvarjanju plana kliknite **Predvajaj 60×** ali **300×**. Zadnja prejeta simulirana lokacija se osveži vsako sekundo. Motnja, premik ure ali ponovni izračun ustavi predvajanje. [Izvor in obnovitev cestnega izseka](routing/README.md)
+
+Za povezavo GPS nastavite `RESCUEFLOW_GPS_KEY` v okolju backenda oziroma v `.env` za Compose in ponovno zaženite backend. GPS odjemalec pošlje `POST /api/tracking/gps` z glavo `Authorization: Bearer <ključ>`. Telo zahtevka vsebuje ID vozila, položaj in čas meritve z odmikom ali UTC.
+
+```json
+{
+  "vehicle_id": "V1",
+  "location": { "lat": 46.064, "lon": 14.515 },
+  "recorded_at": "2026-11-21T10:20:00Z"
+}
+```
+
+GPS odjemalec uporabi čas dejanske meritve. V načinu GPS zemljevid označi lokacije, starejše od 15 sekund, kot zastarele. Backend v pomnilniku hrani zadnjo lokacijo posameznega vozila. Ta način prikazuje telemetrijo, medtem ko tabela in planer ostaneta namenjena sintetičnemu scenariju.
+
 ## Zunanji viri
 
-Demo uporablja fiksno lokalno potovalno matriko in deluje brez ključev ali omrežja. Ploščice OpenStreetMap so izbirne. Mapa ob izpadu ploščic še vedno prikaže položaje po koordinatah. [Avtorstvo OpenStreetMap](https://www.openstreetmap.org/copyright)
+Demo deluje brez ključev in brez zunanjih zemljevidnih ploščic. [Avtorstvo OpenStreetMap](https://www.openstreetmap.org/copyright)
 
 »Osveži zunanje vire« preveri zadnje opazovanje postaje Ljubljana Bežigrad in ločeni povezavi do OSRM ter NAP. Vir vremenskih podatkov je ARSO. Plošča razmer uporablja te podatke informativno. [Dokumentacija ARSO](https://meteo.arso.gov.si/uploads/meteo/help/sl/xml_service.html)
 

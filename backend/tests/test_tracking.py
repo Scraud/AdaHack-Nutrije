@@ -1,10 +1,11 @@
 from datetime import UTC, datetime, timedelta
+from math import ceil
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.planning.contracts import Incident, Point
-from app.providers.roads import road_network
+from app.planning.contracts import Incident, Node, Point
+from app.providers.roads import center_distance, road_network
 from app.services.tracking import position_on_path
 
 
@@ -27,6 +28,10 @@ def test_road_closure_excludes_the_exact_edges():
     assert len(path) > 1
     alternate = network.road_path(point(origin), point(target), network.effects([event]))
     assert path != alternate
+    nodes = (Node("start", "VEHICLE_START", point(origin)), Node("end", "PICKUP", point(target)))
+    matrix = network.snapshot(nodes, [])
+    assert matrix.meters("start", "end") == ceil(sum(center_distance(a, b) * 111.2 * 1000
+                                                     for a, b in zip(path, path[1:])))
     traffic = Incident(type="TRAFFIC_DELAY", road_id=segment.id, multiplier=2.3)
     traffic_closed, traffic_costs = network.effects([traffic])
     assert not traffic_closed
@@ -38,6 +43,8 @@ def test_tracking_positions_and_incident_overlay_follow_simulation(tmp_path):
         roads = client.get("/api/map/roads").json()
         assert roads["segments"] and len(roads["layers"]) == 4
         state = client.post("/api/plans/generate").json()
+        assert state["travel_source"] == "OSM_LJUBLJANA"
+        assert state["active_plan"]["metrics"]["distance_meters"] > 0
         assignment = min((row for row in state["active_plan"]["assignments"] if row["deadhead"] > 5),
                          key=lambda row: row["planned_departure"])
         vehicle_id = assignment["vehicle_id"]

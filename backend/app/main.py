@@ -3,9 +3,10 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, Response
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from app.api.schemas import (
@@ -16,6 +17,7 @@ from app.db import Database
 from app.models import Plan, Scenario
 from app.planning.contracts import SolveBudget
 from app.providers.conditions import Conditions
+from app.providers.osrm import RoadMatrix, RoadRoutingUnavailable
 from app.providers.roads import road_network
 from app.services.decisions import decide
 from app.services.planning import PlanningService, recommendation_history
@@ -27,9 +29,10 @@ from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget()) -> FastAPI:
     db_path = db_path or Path(os.environ.get("RESCUEFLOW_DB", "rescueflow.sqlite"))
     database = Database(db_path.absolute())
-    planner = PlanningService(database, budget)
     conditions = Conditions()
-    tracking = Tracking(database, os.getenv("RESCUEFLOW_GPS_KEY"))
+    road_matrix = RoadMatrix(conditions.osrm_url) if conditions.osrm_url else None
+    planner = PlanningService(database, budget, road_matrix)
+    tracking = Tracking(database, os.getenv("RESCUEFLOW_GPS_KEY"), road_matrix)
 
     @asynccontextmanager
     async def lifespan(_):
@@ -44,7 +47,10 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=1)
                 except TimeoutError:
-                    await asyncio.to_thread(tracking.tick)
+                    try:
+                        await asyncio.to_thread(tracking.tick)
+                    except RoadRoutingUnavailable:
+                        tracking.pause()
 
         player = asyncio.create_task(clock())
         try:
@@ -59,6 +65,11 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:4200", "http://127.0.0.1:4200"],
                        allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
+    @app.exception_handler(RoadRoutingUnavailable)
+    async def road_routing_unavailable(_request: Request, _error: RoadRoutingUnavailable):
+        error = problem(503, "ROAD_ROUTING_UNAVAILABLE", "Cestna matrika ni dosegljiva. Preverite lokalni OSRM.")
+        return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
@@ -66,7 +77,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     @app.get("/api/state")
     def get_state() -> State:
         with database.session() as db:
-            return view_state(db, scenario(db))
+            return view_state(db, scenario(db), road_matrix)
 
     @app.get("/api/metrics")
     def get_metrics() -> Baseline:
@@ -76,23 +87,23 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     def demo_reset() -> State:
         tracking.pause()
         with database.session(write=True) as db:
-            return view_state(db, reset(db))
+            return view_state(db, reset(db), road_matrix)
 
     @app.post("/api/demo/advance-time")
     def advance_time(request: Advance) -> State:
         tracking.pause()
         with database.session(write=True) as db:
             scope = scenario(db)
-            advance(db, scope, request.to)
-            return view_state(db, scope)
+            advance(db, scope, request.to, road_matrix)
+            return view_state(db, scope, road_matrix)
 
     @app.post("/api/incidents")
     def create_incident(request: CreateIncident) -> State:
         tracking.pause()
         with database.session(write=True) as db:
             scope = scenario(db)
-            add_incident(db, scope, request)
-            return view_state(db, scope)
+            add_incident(db, scope, request, road_matrix)
+            return view_state(db, scope, road_matrix)
 
     @app.post("/api/plans/generate")
     def initial_plan() -> State:
@@ -129,7 +140,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     def accept(rec_id: str) -> RecommendationView:
         tracking.pause()
         with database.session(write=True) as db:
-            return decide(db, scenario(db), rec_id, accept=True)
+            return decide(db, scenario(db), rec_id, accept=True, road_matrix=road_matrix)
 
     @app.post("/api/recommendations/{rec_id}/reject")
     def reject(rec_id: str, request: Rejection | None = None) -> RecommendationView:

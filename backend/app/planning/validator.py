@@ -24,8 +24,12 @@ def validate_plan(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> 
                 continue
             seen.add(row.task_id)
             frozen = snapshot.frozen.get(row.task_id)
-            if frozen and row != frozen:
-                fail("FROZEN_ASSIGNMENT_CHANGED")
+            if frozen:
+                # A future locked assignment can have a different approach leg after replanning.
+                schedule = (row.model_copy(update={"distance_meters": frozen.distance_meters})
+                            if frozen.status == "PLANNED" and row.task_id not in blocked_tasks else row)
+                if schedule != frozen:
+                    fail("FROZEN_ASSIGNMENT_CHANGED")
             if frozen and (frozen.status != "PLANNED" or row.task_id in blocked_tasks):
                 continue
             if not frozen:

@@ -2,7 +2,7 @@ from collections import Counter
 from statistics import median
 
 from app.planning.contracts import Assignment, Change, HORIZON, Issue, Metrics, PlanningSnapshot
-from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, routes
+from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, routes, transport_distance
 
 
 def explain(snapshot: PlanningSnapshot, task_id: str) -> Issue:
@@ -46,6 +46,8 @@ def metrics(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> tuple[
     old_predecessors = predecessors(list(snapshot.previous.values()))
     new_predecessors = predecessors(assignments)
     result = Metrics(assigned=len(current))
+    if snapshot.travel.distances is not None and all(row.distance_meters is not None for row in assignments):
+        result.distance_meters = sum(row.distance_meters or 0 for row in assignments)
     changes = []
     for task_id, task in snapshot.tasks.items():
         row, before = current.get(task_id), snapshot.previous.get(task_id)
@@ -161,6 +163,7 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
             projected.append(row.model_copy(update={
                 "planned_departure": depart, "planned_pickup": take, "planned_dropoff": arrive,
                 "planned_end": end, "deadhead": deadhead,
+                "distance_meters": transport_distance(snapshot.travel, origin, task.id),
             }))
             origin, available = delivery(task.id), end
     result, _ = metrics(snapshot, projected)

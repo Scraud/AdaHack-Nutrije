@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from secrets import compare_digest
 from threading import Lock
 from time import monotonic
@@ -10,6 +12,7 @@ from app.db import Database
 from app.models import SnapshotRecord, VehicleRecord
 from app.planning.contracts import HORIZON, Incident, Point
 from app.planning.snapshot_builder import routes
+from app.providers.osrm import RoadMatrix
 from app.providers.roads import Coordinate, active_conditions, center_distance, road_network
 from app.services.simulation import advance
 from app.services.state import active_plan, inputs, problem, scenario
@@ -71,9 +74,10 @@ def position_on_path(path: list[Coordinate], progress: float, fallback: Point) -
 
 
 class Tracking:
-    def __init__(self, database: Database, gps_key: str | None):
+    def __init__(self, database: Database, gps_key: str | None, road_matrix: RoadMatrix | None = None):
         self.database = database
         self.gps_key = gps_key
+        self.road_matrix = road_matrix
         self.lock = Lock()
         self.playback = Playback(playing=False)
         self.last_tick = monotonic()
@@ -106,7 +110,7 @@ class Tracking:
                 scope = scenario(db)
                 until = min(HORIZON, scope.now + increment)
                 if scope.now < until:
-                    advance(db, scope, until, record_audit=False)
+                    advance(db, scope, until, self.road_matrix, record_audit=False)
                 if until >= HORIZON:
                     self.playback = self.playback.model_copy(update={"playing": False})
 
@@ -133,7 +137,7 @@ class Tracking:
         with self.database.session() as db:
             scope = scenario(db)
             plan = active_plan(db, scope)
-            state, incidents, rows = inputs(db, scope, plan, preserve_active_timing=True)
+            state, incidents, rows = inputs(db, scope, plan, self.road_matrix, preserve_active_timing=True)
             if self.gps_key:
                 now = datetime.now(UTC)
                 vehicles = [TrackedVehicle(
@@ -143,7 +147,12 @@ class Tracking:
             else:
                 saved = db.get(SnapshotRecord, plan.snapshot_id).payload if plan else {}
                 planned_incidents = [Incident.model_validate(event) for event in saved.get("incidents", [])]
-                vehicles = demo_positions(state, incidents, rows, planned_incidents, saved.get("now", 0))
+                planned_at = saved.get("now", 0)
+                roads = road_network()
+                path = partial(roads.road_path, effects=roads.effects(active_conditions(planned_at, planned_incidents)))
+                if saved.get("provider") == "OSRM" and self.road_matrix is not None:
+                    path = self.road_matrix.path
+                vehicles = demo_positions(state, incidents, rows, path, planned_at)
             overlays = [RoadEvent(id=event.id, road_id=event.road_id, type=event.type)
                         for event in active_conditions(scope.now, incidents)
                         if event.road_id and event.type in ("TRAFFIC_DELAY", "ROAD_CLOSURE")]
@@ -152,9 +161,7 @@ class Tracking:
                                  vehicles=vehicles, incidents=overlays)
 
 
-def demo_positions(state, incidents, rows, planned_incidents, planned_at: int):
-    roads = road_network()
-    effects = roads.effects(active_conditions(planned_at, planned_incidents))
+def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], list[Coordinate]], planned_at: int):
     by_vehicle = routes(rows)
     blocked = {issue.task_id for issue in state.blocking}
     result = []
@@ -167,15 +174,15 @@ def demo_positions(state, incidents, rows, planned_incidents, planned_at: int):
             elif row.status == "IN_PROGRESS" or (not vehicle.broken and row.planned_departure >= state.now):
                 upcoming = row
                 break
-        location = position_on_path(roads.road_path(origin, origin, effects), 0, origin)
+        location = position_on_path(road_path(origin, origin), 0, origin)
         if upcoming is None:
             result.append(TrackedVehicle(id=vehicle.id, location=location,
                                          status="STOPPED" if vehicle.broken else "WAITING"))
             continue
         task = state.tasks[upcoming.task_id]
         destination = state.facilities[task.facility_id].location
-        approach = roads.road_path(origin, task.pickup, effects)
-        delivery = roads.road_path(task.pickup, destination, effects)
+        approach = road_path(origin, task.pickup)
+        delivery = road_path(task.pickup, destination)
         at = state.now
         stopped = vehicle.broken or task.id in blocked
         if stopped:

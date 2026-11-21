@@ -24,16 +24,23 @@ def crosses_area(origin: Point, target: Point, center: Point, radius: float) -> 
     return (x + fraction * dx) ** 2 + (y + fraction * dy) ** 2 <= radius ** 2
 
 
+def simulated_duration(origin: Point, target: Point, seconds: float | None,
+                       conditions: list[Incident]) -> int | None:
+    if seconds is None:
+        return None
+    for event in conditions:
+        if event.location is None or not crosses_area(origin, target, event.location, event.radius_km):
+            continue
+        if event.type == "ROAD_CLOSURE":
+            return None
+        seconds *= event.multiplier
+    return ceil(seconds)
+
+
 def local_snapshot(nodes: tuple[Node, ...], conditions: list[Incident]) -> TravelSnapshot:
     def duration(origin: Point, target: Point) -> int | None:
         seconds = distance_km(origin, target) * ROAD_FACTOR / SPEED_KMH * 3600
-        for event in conditions:
-            if event.location is None or not crosses_area(origin, target, event.location, event.radius_km):
-                continue
-            if event.type == "ROAD_CLOSURE":
-                return None
-            seconds *= event.multiplier
-        return ceil(seconds)
+        return simulated_duration(origin, target, seconds, conditions)
 
     return TravelSnapshot(nodes, {node.id: i for i, node in enumerate(nodes)},
                           tuple(tuple(duration(a.point, b.point) for b in nodes) for a in nodes),

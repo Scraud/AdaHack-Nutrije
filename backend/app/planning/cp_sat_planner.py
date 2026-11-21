@@ -6,7 +6,7 @@ from ortools.sat.python import cp_model as cp
 from app.planning.contracts import (
     Assignment, Candidate, HORIZON, PlanCandidate, PlanningSnapshot, SolveBudget, Strategy,
 )
-from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup
+from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, transport_distance
 from app.planning.validator import validate_plan
 from app.services.metrics import explain, metrics, predecessors
 
@@ -191,26 +191,33 @@ class ScheduleModel:
 
     def candidate(self, solver: cp.CpSolver, strategy: Strategy, coverage_proven: bool,
                   elapsed_ms: int, status: str) -> PlanCandidate:
-        assignments = list(self.state.frozen.values())
-        for (vehicle, _, target), (literal, seconds) in self.arcs.items():
-            if target is None or target in self.state.frozen or not solver.boolean_value(literal):
+        assignments = dict(self.state.frozen)
+        for (vehicle, origin, target), (literal, seconds) in self.arcs.items():
+            if target is None or not solver.boolean_value(literal):
+                continue
+            source = delivery(origin) if origin is not None else self.state.anchors[vehicle].node
+            meters = transport_distance(self.state.travel, source, target)
+            fixed = self.state.frozen.get(target)
+            if fixed is not None:
+                if meters is not None:
+                    assignments[target] = fixed.model_copy(update={"distance_meters": meters})
                 continue
             times = self.times[target]
             start = solver.value(times.pickup)
-            assignments.append(Assignment(
+            assignments[target] = Assignment(
                 task_id=target, vehicle_id=vehicle, planned_departure=solver.value(times.departure),
                 planned_pickup=start, planned_dropoff=start + times.to_dropoff,
                 planned_end=start + times.to_end, deadhead=seconds,
-            ))
-        assignments.sort(key=lambda row: (row.vehicle_id, row.planned_departure, row.task_id))
-        validation = validate_plan(self.state, assignments)
+                distance_meters=meters,
+            )
+        ordered = sorted(assignments.values(), key=lambda row: (row.vehicle_id, row.planned_departure, row.task_id))
+        validation = validate_plan(self.state, ordered)
         if any(issue not in self.state.blocking for issue in validation):
             return PlanCandidate(None, "VALIDATION_FAILED")
-        assigned = {row.task_id for row in assignments}
-        result, changes = metrics(self.state, assignments)
+        result, changes = metrics(self.state, ordered)
         return PlanCandidate(Candidate(
-            strategy=strategy, assignments=assignments, unassigned=[
-                explain(self.state, key) for key in self.state.tasks if key not in assigned
+            strategy=strategy, assignments=ordered, unassigned=[
+                explain(self.state, key) for key in self.state.tasks if key not in assignments
             ], blocking=validation, metrics=result, changes=changes, solver_status=status,
             coverage_proven=coverage_proven, solve_ms=elapsed_ms,
         ), status)

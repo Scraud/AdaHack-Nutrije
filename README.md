@@ -66,10 +66,10 @@ GPS odjemalec uporabi čas dejanske meritve. V načinu GPS zemljevid označi lok
 
 ## Zunanji viri
 
-Demo deluje brez ključev in brez zunanjih zemljevidnih ploščic. [Avtorstvo OpenStreetMap](https://www.openstreetmap.org/copyright)
+Zemljevid in planer privzeto uporabljata priloženo cestno omrežje Ljubljane. Demo deluje brez ključev in zunanjih zemljevidnih ploščic. Za izračun z regionalnim cestnim omrežjem lahko vključite lokalni OSRM. [Priprava lokalnega OSRM](routing/README.md) · [Avtorstvo OpenStreetMap](https://www.openstreetmap.org/copyright)
 
 »Osveži zunanje vire« preveri zadnje opazovanje postaje Ljubljana Bežigrad in ločeni povezavi do OSRM ter NAP. Vir vremenskih podatkov je ARSO. Plošča razmer uporablja te podatke informativno. [Dokumentacija ARSO](https://meteo.arso.gov.si/uploads/meteo/help/sl/xml_service.html)
 
 OSRM potrebuje pripravljen cestni izvleček. Za prometni vir nastavite `RESCUEFLOW_NAP_URL` in veljavni `RESCUEFLOW_NAP_TOKEN` v okolju backenda ali v lokalni datoteki `.env` za Compose. NAP zahteva registracijo in dovoljenje za konkretni tok. [Priprava OSRM](routing/README.md) · [Navodila NAP za dostop](https://nap.si/resources/doc/nap_B2B_sl.pdf)
 
-Odprto je povezovanje živih razmer s planskimi posnetki in cestnimi geometrijami v ločenem načinu LIVE. Avtoriziran klic NAP zahteva veljaven žeton.
+Prometni in vremenski viri na plošči so informativni. Simulirane motnje še vedno vplivajo na plansko matriko.

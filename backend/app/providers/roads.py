@@ -6,7 +6,7 @@ from heapq import heappop, heappush
 from math import ceil, cos, radians
 from pathlib import Path
 
-from app.planning.contracts import Incident, Node, Point, TravelSnapshot
+from app.planning.contracts import Incident, Node, Point, TravelMatrix, TravelSnapshot
 from app.providers.haversine import local_snapshot
 
 Coordinate = tuple[float, float]
@@ -42,15 +42,17 @@ class RoadNetwork:
         self.timestamp = extract["timestamp"]
         self.bounds = tuple(extract["bounds"])
         self.points = [tuple(point) for point in extract["points"]]
-        self.edges: list[list[tuple[int, float]]] = [[] for _ in self.points]
+        self.edges: list[list[tuple[int, float, float]]] = [[] for _ in self.points]
         self.ways = extract["ways"]
         for _, _, _, direction, speed, nodes in self.ways:
             for a, b in zip(nodes, nodes[1:]):
-                seconds = center_distance(self.points[a], self.points[b]) * 111.2 * 3600 / speed
+                kilometers = center_distance(self.points[a], self.points[b]) * 111.2
+                seconds = kilometers * 3600 / speed
+                meters = kilometers * 1000
                 if direction >= 0:
-                    self.edges[a].append((b, seconds))
+                    self.edges[a].append((b, seconds, meters))
                 if direction <= 0:
-                    self.edges[b].append((a, seconds))
+                    self.edges[b].append((a, seconds, meters))
         self.segments = {}
         for key, name, center in SEGMENT_TARGETS:
             matches = [(center_distance(self.points[node], center), index, nodes)
@@ -103,6 +105,7 @@ class RoadNetwork:
         closed, delay_data = effects
         delays = dict(delay_data)
         costs = [float("inf")] * len(self.points)
+        distances = [0.0] * len(self.points)
         previous = [-1] * len(self.points)
         costs[origin] = 0.0
         queue = [(0.0, origin)]
@@ -110,21 +113,22 @@ class RoadNetwork:
             score, source = heappop(queue)
             if score != costs[source]:
                 continue
-            for target, seconds in self.edges[source]:
+            for target, seconds, meters in self.edges[source]:
                 key = edge_key(source, target)
                 if key in closed:
                     continue
                 estimate = score + seconds * delays.get(key, 1.0)
                 if estimate < costs[target]:
                     costs[target], previous[target] = estimate, source
+                    distances[target] = distances[source] + meters
                     heappush(queue, (estimate, target))
-        return costs, previous
+        return costs, previous, distances
 
     def road_path(self, a: Point, b: Point, effects: Effects) -> list[Coordinate]:
         origin, target = self.snap((a.lat, a.lon)), self.snap((b.lat, b.lon))
         if origin is None or target is None:
             return []
-        costs, previous = self._search(origin, effects)
+        costs, previous, _ = self._search(origin, effects)
         if costs[target] == float("inf"):
             return []
         path = [self.points[target]]
@@ -137,7 +141,7 @@ class RoadNetwork:
         effects = self.effects(incidents)
         legacy = [i for i in incidents if not i.road_id]
         positions = tuple((node.point.lat, node.point.lon) for node in nodes)
-        durations = self._matrix(positions, effects)
+        durations, distances = self._matrix(positions, effects)
         # Existing saved area incidents and weather retain their established semantics.
         if legacy:
             old_default = local_snapshot(nodes, [])
@@ -146,20 +150,32 @@ class RoadNetwork:
                 None if value is None or adjusted is None else ceil(value * adjusted / default) if default else value
                 for value, adjusted, default in zip(row, legacy_row, default_row)
             ) for row, legacy_row, default_row in zip(durations, old_incidents.durations, old_default.durations))
-        return TravelSnapshot(nodes, {node.id: i for i, node in enumerate(nodes)}, durations, "OSM_LJUBLJANA")
+            distances = tuple(tuple(
+                meters if seconds is not None else None
+                for meters, seconds in zip(distance_row, time_row, strict=True)
+            ) for distance_row, time_row in zip(distances, durations, strict=True))
+        return TravelSnapshot(nodes, {node.id: i for i, node in enumerate(nodes)}, durations, "OSM_LJUBLJANA", distances)
 
     @lru_cache(maxsize=24)
-    def _matrix(self, positions: tuple[Coordinate, ...], effects: Effects):
+    def _matrix(self, positions: tuple[Coordinate, ...], effects: Effects) -> tuple[TravelMatrix, TravelMatrix]:
         targets = [self.snap(point) for point in positions]
-        rows = []
+        durations, distances = [], []
         for i, source in enumerate(targets):
-            costs = self._search(source, effects)[0] if source is not None else None
-            rows.append(tuple(
-                0 if i == j else ceil(costs[target]) if costs is not None and target is not None
-                and costs[target] != float("inf") else None
-                for j, target in enumerate(targets)
-            ))
-        return tuple(rows)
+            costs, _, lengths = self._search(source, effects) if source is not None else ([], [], [])
+            time_row, distance_row = [], []
+            for j, target in enumerate(targets):
+                if i == j:
+                    time_row.append(0)
+                    distance_row.append(0)
+                elif costs and target is not None and costs[target] != float("inf"):
+                    time_row.append(ceil(costs[target]))
+                    distance_row.append(ceil(lengths[target]))
+                else:
+                    time_row.append(None)
+                    distance_row.append(None)
+            durations.append(tuple(time_row))
+            distances.append(tuple(distance_row))
+        return tuple(durations), tuple(distances)
 
 
 @lru_cache(maxsize=1)

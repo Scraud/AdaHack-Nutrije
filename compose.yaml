@@ -25,7 +25,7 @@ services:
   osrm:
     profiles: ["routing"]
     image: ghcr.io/project-osrm/osrm-backend:v5.27.1
-    command: ["osrm-routed", "--algorithm", "mld", "/routing/slovenia.osrm"]
+    command: ["osrm-routed", "--algorithm", "ch", "/routing/slovenia.osrm"]
     volumes:
       - type: bind
         source: ./routing/data

@@ -14,7 +14,7 @@ from app.models import (
     Scenario, SnapshotRecord, TaskRecord, VehicleRecord,
 )
 from app.planning.contracts import Assignment, Candidate, Facility, Incident, PlanningSnapshot, Task, Vehicle
-from app.planning.snapshot_builder import build_snapshot, routes
+from app.planning.snapshot_builder import MatrixProvider, build_snapshot, routes
 from app.seed.scenario import DEMO_START, demo_data
 from app.services.metrics import project_existing
 
@@ -63,16 +63,20 @@ def assignments(db: Session, plan: Plan | None) -> list[Assignment]:
                   key=lambda a: (a.vehicle_id, a.planned_departure, a.task_id))
 
 
-def inputs(db: Session, scope: Scenario, plan: Plan | None, *, preserve_active_timing: bool = False):
+def inputs(db: Session, scope: Scenario, plan: Plan | None, road_matrix: MatrixProvider | None = None, *,
+           preserve_active_timing: bool = False):
     vehicles = entities(db, scope, VehicleRecord, Vehicle)
     tasks = entities(db, scope, TaskRecord, Task)
     facilities = entities(db, scope, FacilityRecord, Facility)
     incidents = entities(db, scope, IncidentRecord, Incident)
     rows = assignments(db, plan)
-    legacy_timing = bool(preserve_active_timing and plan
-                         and db.get(SnapshotRecord, plan.snapshot_id).payload["provider"] == "HAVERSINE")
-    return build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents,
-                          legacy_timing=legacy_timing), incidents, rows
+    provider = None
+    if preserve_active_timing and plan:
+        provider = db.get(SnapshotRecord, plan.snapshot_id).payload["provider"]
+        if provider != "OSRM":
+            road_matrix = None
+    return build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents, road_matrix,
+                          legacy_timing=provider == "HAVERSINE"), incidents, rows
 
 
 def snapshot_payload(state: PlanningSnapshot, incidents: list[Incident]) -> tuple[str, dict]:
@@ -84,10 +88,13 @@ def snapshot_payload(state: PlanningSnapshot, incidents: list[Incident]) -> tupl
         "vehicles": [vehicle.model_dump(mode="json") for vehicle in state.vehicles.values()],
         "tasks": [task.model_dump(mode="json") for task in state.tasks.values()],
         "facilities": [facility.model_dump(mode="json") for facility in state.facilities.values()],
-        "previous": [row.model_dump(mode="json") for row in state.previous.values()],
+        "previous": [row.model_dump(mode="json", exclude={"distance_meters"} if row.distance_meters is None else None)
+                     for row in state.previous.values()],
         "anchors": {key: asdict(anchor) for key, anchor in state.anchors.items()},
         "incidents": [incident.model_dump(mode="json") for incident in incidents],
     }
+    if state.travel.distances is not None:
+        body["distances"] = [list(row) for row in state.travel.distances]
     return sha256(dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), body
 
 
@@ -131,9 +138,9 @@ def baseline(state: PlanningSnapshot, rows: list[Assignment]) -> Baseline:
                     simulated_arrivals=sum(task.actual_arrival is not None for task in state.tasks.values()))
 
 
-def view_state(db: Session, scope: Scenario) -> State:
+def view_state(db: Session, scope: Scenario, road_matrix: MatrixProvider | None = None) -> State:
     plan = active_plan(db, scope)
-    state, incidents, rows = inputs(db, scope, plan, preserve_active_timing=True)
+    state, incidents, rows = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
     return State(scenario_id=scope.id, revision=scope.revision, start_at=scope.start_at, now=scope.now,
                  travel_source=state.travel.source,
                  vehicles=vehicle_views(state, rows), tasks=list(state.tasks.values()),

@@ -4,13 +4,13 @@ from sqlalchemy.orm import Session
 from app.api.schemas import CreateIncident
 from app.models import AssignmentRecord, FacilityRecord, IncidentRecord, Scenario, TaskRecord, VehicleRecord
 from app.planning.contracts import Facility, HORIZON, Incident, Task, Vehicle
-from app.planning.snapshot_builder import routes
+from app.planning.snapshot_builder import MatrixProvider, routes
 from app.planning.validator import validate_plan
 from app.providers.roads import center_distance, road_network
 from app.services.state import active_plan, audit, inputs, problem
 
 
-def add_incident(db: Session, scope: Scenario, request: CreateIncident):
+def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None):
     event = Incident(occurred_at=scope.now, **request.model_dump(
         exclude={"task"}, exclude_none=True,
     ))
@@ -69,17 +69,18 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident):
     scope.revision += 1
     audit(db, scope, event.type, incident_id=event.id, simulated_time=scope.now)
     if event.type == "VEHICLE_BREAKDOWN":
-        snapshot, _, _ = inputs(db, scope, active_plan(db, scope), preserve_active_timing=True)
+        snapshot, _, _ = inputs(db, scope, active_plan(db, scope), road_matrix, preserve_active_timing=True)
         for issue in snapshot.blocking:
             if issue.vehicle_id == event.vehicle_id and issue.code == "MANUAL_COORDINATION":
                 audit(db, scope, issue.code, incident_id=event.id, task_id=issue.task_id)
 
 
-def advance(db: Session, scope: Scenario, until: int, *, record_audit: bool = True):
+def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvider | None = None, *,
+            record_audit: bool = True):
     if until <= scope.now:
         raise problem(400, "TIME_MUST_ADVANCE", "Simulirani čas se lahko premika samo naprej.")
     plan = active_plan(db, scope)
-    snapshot, _, assignments = inputs(db, scope, plan, preserve_active_timing=True)
+    snapshot, _, assignments = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
     blocked = {issue.task_id for issue in validate_plan(snapshot, assignments)}
     for route in routes(assignments).values():
         route_blocked = False

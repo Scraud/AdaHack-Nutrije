@@ -363,6 +363,8 @@ export interface components {
              * @default false
              */
             is_locked: boolean;
+            /** Distance Meters */
+            distance_meters?: number | null;
             /** Planned Arrival */
             readonly planned_arrival: number;
         };
@@ -525,6 +527,8 @@ export interface components {
              * @default 0
              */
             travel_seconds: number;
+            /** Distance Meters */
+            distance_meters?: number | null;
             /**
              * Vehicle Changes
              * @default 0

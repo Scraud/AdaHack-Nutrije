@@ -1,13 +1,13 @@
 # RescueFlow frontend
 
-Samostojen slovenski dispečerski vmesnik v mapi `frontend/`. Backend, baza in optimizator niso del te implementacije in niso bili spreminjani.
+Samostojen slovenski dispečerski vmesnik v mapi `frontend-1/`. Oddaljeni projekt ohrani svojo mapo `frontend/`. Backend, baza in optimizator niso del te implementacije.
 
 ## Zagon
 
 Potrebujete Node.js 22.12 ali novejši znotraj veje 22 (ali združljiv Node 24) ter npm.
 
 ```powershell
-cd AdaHack-Nutrije/frontend
+cd AdaHack-Nutrije/frontend-1
 npm.cmd ci
 npm.cmd start
 ```

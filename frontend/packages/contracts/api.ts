@@ -415,6 +415,16 @@ export interface components {
             quota?: number | null;
             task?: components["schemas"]["NewTask"] | null;
         };
+        /** DestinationETA */
+        DestinationETA: {
+            /**
+             * Destination
+             * @enum {string}
+             */
+            destination: "PICKUP" | "HOSPITAL";
+            /** Seconds */
+            seconds: number;
+        };
         /** Facility */
         Facility: {
             /** Id */
@@ -864,6 +874,7 @@ export interface components {
                 number,
                 number
             ][];
+            eta?: components["schemas"]["DestinationETA"] | null;
             /** Recorded At */
             recorded_at?: string | null;
             /**

@@ -12,7 +12,7 @@ const statuses: Record<string, string> = {
 const roadColors = ['#a3afbc', '#b6c0ca', '#c3ccd5', '#d5dde4'];
 const roadWeights = [2.8, 2.1, 1.5, .85];
 
-function icon(symbol: string, badge: string, kind: string, color?: string) {
+function icon(symbol: string, badge: string, kind: string, size: number, color?: string, eta?: HTMLElement) {
   const content = document.createElement('span');
   content.className = 'map-pin-content';
   if (color) content.style.setProperty('--pin-color', color);
@@ -25,8 +25,9 @@ function icon(symbol: string, badge: string, kind: string, color?: string) {
     label.textContent = badge;
     content.append(label);
   }
+  if (eta) content.append(eta);
   return L.divIcon({ className: `map-pin ${kind}`, html: content,
-    iconSize: kind === 'closure-pin' ? [26, 26] : [38, 38], iconAnchor: kind === 'closure-pin' ? [13, 13] : [19, 19] });
+    iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
 function tooltip(label: string) {
@@ -44,7 +45,7 @@ export function DispatchMap({ state, roads, frame, onSelect }: {
     roads: L.LayerGroup; routes: L.LayerGroup; sites: L.LayerGroup; events: L.LayerGroup; tracking: L.LayerGroup;
     renderer: L.Canvas;
   } | null>(null);
-  const vehicleMarkers = useRef(new Map<string, L.Marker>());
+  const vehicleMarkers = useRef(new Map<string, { marker: L.Marker; eta: HTMLSpanElement }>());
   const routeKey = useRef('');
   const siteKey = useRef('');
   const eventKey = useRef('');
@@ -110,12 +111,13 @@ export function DispatchMap({ state, roads, frame, onSelect }: {
       siteKey.current = sites;
       map.sites.clearLayers();
       for (const site of state.facilities) {
-        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin'), title: site.name, alt: site.name })
+        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48), title: site.name, alt: site.name })
           .bindTooltip(tooltip(site.name)).addTo(map.sites);
       }
       for (const task of pickups) {
-        L.circleMarker([task.pickup.lat, task.pickup.lon], { color: '#fff', weight: 1.5, fillColor: '#51667e', fillOpacity: .95, radius: 4 })
-          .bindTooltip(tooltip(`Prevzem ${task.id}`)).on('click', () => onSelect(task.id)).addTo(map.sites);
+        const title = `Prevzem ${task.id}`;
+        L.marker([task.pickup.lat, task.pickup.lon], { icon: icon(task.id, '', 'pickup-pin', 32), title, alt: title })
+          .bindTooltip(tooltip(title)).on('click', () => onSelect(task.id)).addTo(map.sites);
       }
     }
 
@@ -159,30 +161,42 @@ export function DispatchMap({ state, roads, frame, onSelect }: {
           const center = (segment.path.length - 1) / 2;
           const a = segment.path[Math.floor(center)], b = segment.path[Math.ceil(center)];
           L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], {
-            icon: icon('⛔', '', 'closure-pin'), title, alt: title, zIndexOffset: 700,
+            icon: icon('⛔', '', 'closure-pin', 26), title, alt: title, zIndexOffset: 700,
           }).bindTooltip(tooltip(title)).addTo(map.events);
         }
       }
     }
 
     const ids = new Set(vehicles.map(vehicle => vehicle.id));
-    for (const [id, marker] of vehicleMarkers.current) {
+    for (const [id, { marker }] of vehicleMarkers.current) {
       if (ids.has(id)) continue;
       map.tracking.removeLayer(marker);
       vehicleMarkers.current.delete(id);
     }
     for (const vehicle of vehicles) {
-      let marker = vehicleMarkers.current.get(vehicle.id);
-      if (!marker) {
-        marker = L.marker(vehicle.location, { title: `Reševalno vozilo ${vehicle.id}`, alt: `Reševalno vozilo ${vehicle.id}`,
-          icon: icon('🚑', vehicle.id, 'ambulance-pin', colors[vehicle.id]), zIndexOffset: 400 }).addTo(map.tracking);
-        vehicleMarkers.current.set(vehicle.id, marker);
+      let entry = vehicleMarkers.current.get(vehicle.id);
+      if (!entry) {
+        const eta = document.createElement('span');
+        eta.className = 'map-eta';
+        eta.hidden = true;
+        const marker = L.marker(vehicle.location, { title: `Reševalno vozilo ${vehicle.id}`, alt: `Reševalno vozilo ${vehicle.id}`,
+          icon: icon('🚑', vehicle.id, 'ambulance-pin', 38, colors[vehicle.id], eta), zIndexOffset: 400 }).addTo(map.tracking);
+        entry = { marker, eta };
+        vehicleMarkers.current.set(vehicle.id, entry);
       }
+      const { marker, eta } = entry;
+      const countdown = vehicle.eta
+        ? `${vehicle.eta.destination === 'PICKUP' ? 'Do pacienta' : 'Do ustanove'} · ${Math.ceil(vehicle.eta.seconds / 60)} min`
+        : '';
+      if (eta.textContent !== countdown) eta.textContent = countdown;
+      eta.hidden = !countdown;
       const age = vehicle.stale ? ' · zastarela lokacija' : '';
       const time = vehicle.recorded_at ? ' · ' + new Date(vehicle.recorded_at).toLocaleTimeString('sl-SI',
         { timeZone: 'Europe/Ljubljana' }) : '';
-      const label = tooltip(`${vehicle.id} · ${statuses[vehicle.status]}${age}${time}`);
+      const description = `${vehicle.id} · ${statuses[vehicle.status]}${age}${time}${countdown ? ' · ' + countdown : ''}`;
+      const label = tooltip(description);
       marker.setLatLng(vehicle.location).setOpacity(vehicle.stale ? .55 : 1);
+      marker.getElement()?.setAttribute('aria-label', description);
       if (marker.getTooltip()) marker.setTooltipContent(label);
       else marker.bindTooltip(label);
     }

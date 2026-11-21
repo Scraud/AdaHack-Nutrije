@@ -143,6 +143,12 @@ def test_self_hosted_road_matrix_drives_planning_and_records_distance(tmp_path, 
 
         tracked = client.get("/api/tracking").json()["vehicles"]
         assert any(len(vehicle["to_pickup"]) == len(vehicle["to_hospital"]) == 2 for vehicle in tracked)
+        scheduled = {row["task_id"]: row for row in tasks}
+        for vehicle in tracked:
+            if vehicle["task_id"] is not None:
+                assert vehicle["eta"] == {
+                    "destination": "PICKUP", "seconds": scheduled[vehicle["task_id"]]["planned_pickup"],
+                }
         assert route_requests
         count = len(route_requests)
         assert client.get("/api/tracking").is_success

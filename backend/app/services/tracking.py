@@ -12,6 +12,7 @@ from app.db import Database
 from app.models import SnapshotRecord, VehicleRecord
 from app.planning.contracts import HORIZON, Incident, Point
 from app.planning.snapshot_builder import routes
+from app.planning.validator import validate_plan
 from app.providers.osrm import RoadMatrix
 from app.providers.roads import Coordinate, active_conditions, center_distance, road_network
 from app.services.simulation import advance
@@ -29,6 +30,11 @@ class Playback(BaseModel):
     speed: Literal[30, 60, 300] = 60
 
 
+class DestinationETA(BaseModel):
+    destination: Literal["PICKUP", "HOSPITAL"]
+    seconds: int = Field(ge=0)
+
+
 class TrackedVehicle(BaseModel):
     id: str
     location: Coordinate
@@ -36,6 +42,7 @@ class TrackedVehicle(BaseModel):
     task_id: str | None = None
     to_pickup: list[Coordinate] = Field(default_factory=list)
     to_hospital: list[Coordinate] = Field(default_factory=list)
+    eta: DestinationETA | None = None
     recorded_at: datetime | None = None
     stale: bool = False
 
@@ -164,6 +171,7 @@ class Tracking:
 def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], list[Coordinate]], planned_at: int):
     by_vehicle = routes(rows)
     blocked = {issue.task_id for issue in state.blocking}
+    invalid = {issue.task_id for issue in validate_plan(state, rows)}
     result = []
     for vehicle in state.vehicles.values():
         origin = vehicle.location
@@ -208,6 +216,12 @@ def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], l
         else:
             status = "AT_HOSPITAL"
             location = position_on_path(delivery, 1, destination)
+        eta = None
+        if not stopped and task.id not in invalid:
+            if status in ("WAITING", "TO_PICKUP") and approach:
+                eta = DestinationETA(destination="PICKUP", seconds=upcoming.planned_pickup - state.now)
+            elif status in ("AT_PICKUP", "TO_HOSPITAL") and delivery:
+                eta = DestinationETA(destination="HOSPITAL", seconds=upcoming.planned_dropoff - state.now)
         result.append(TrackedVehicle(id=vehicle.id, location=location, status="STOPPED" if stopped else status,
-                                     task_id=task.id, to_pickup=approach, to_hospital=delivery))
+                                     task_id=task.id, to_pickup=approach, to_hospital=delivery, eta=eta))
     return result

@@ -54,10 +54,23 @@ def test_tracking_positions_and_incident_overlay_follow_simulation(tmp_path):
 
         first = tracked()
         assert len(first["to_pickup"]) > 2 and len(first["to_hospital"]) > 2
+        assert first["eta"] == {"destination": "PICKUP", "seconds": assignment["planned_pickup"]}
         instant = assignment["planned_departure"] + assignment["deadhead"] // 2
         assert client.post("/api/demo/advance-time", json={"to": instant}).is_success
         moving = tracked()
         assert moving["location"] != first["location"] and moving["status"] == "TO_PICKUP"
+        assert moving["eta"] == {"destination": "PICKUP", "seconds": assignment["planned_pickup"] - instant}
+        pickup = assignment["planned_pickup"]
+        dropoff = assignment["planned_dropoff"]
+        assert client.post("/api/demo/advance-time", json={"to": pickup}).is_success
+        assert tracked()["eta"] == {"destination": "HOSPITAL", "seconds": dropoff - pickup}
+        task = next(row for row in state["tasks"] if row["id"] == assignment["task_id"])
+        instant = pickup + task["pickup_service"]
+        assert client.post("/api/demo/advance-time", json={"to": instant}).is_success
+        assert tracked()["status"] == "TO_HOSPITAL"
+        assert tracked()["eta"] == {"destination": "HOSPITAL", "seconds": dropoff - instant}
+        assert client.post("/api/demo/advance-time", json={"to": dropoff}).is_success
+        assert tracked()["eta"] is None
         assert client.post("/api/incidents", json={"type": "ROAD_CLOSURE", "road_id": "dunajska"}).is_success
         assert client.get("/api/tracking").json()["incidents"][0]["road_id"] == "dunajska"
 
@@ -86,4 +99,5 @@ def test_gps_requires_key_and_does_not_replace_simulated_dispatch_state(tmp_path
         frame = client.get("/api/tracking").json()
         assert frame["mode"] == "GPS" and frame["vehicles"][0]["location"] == [46.04, 14.51]
         assert frame["vehicles"][0]["to_pickup"] == []
+        assert frame["vehicles"][0]["eta"] is None
         assert client.get("/api/state").json()["vehicles"][0]["location"] != fix["location"]

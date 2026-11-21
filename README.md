@@ -50,7 +50,7 @@ Playwright zažene ločeni lokalni storitvi z lastno SQLite bazo. Za preverjanje
 
 Zemljevid uporablja lokalni izsek cest OpenStreetMap za Ljubljano. Polna črta vodi do pacienta, pikčasta do ciljne ustanove. Barva poti se ujema z oznako vozila. Za zastoj ali zaporo izberite cestni odsek v panelu **Motnje**. Na istem odseku zemljevid prikaže rdečo črto oziroma znak zapore. Stanje se pri naslednjem izračunu upošteva na izbranih povezavah cestnega omrežja.
 
-Po ustvarjanju plana kliknite **Predvajaj 60×** ali **300×**. Zadnja prejeta simulirana lokacija se osveži vsako sekundo. Motnja, premik ure ali ponovni izračun ustavi predvajanje. [Izvor in obnovitev cestnega izseka](routing/README.md)
+Po ustvarjanju plana kliknite **Predvajaj 60×** ali **300×**. Zadnja prejeta simulirana lokacija se osveži vsako sekundo. Nad vozilom je predviden čas do pacienta, po prihodu na prevzem pa do ciljne ustanove. Časovnica uporablja isto časovno merilo za vsa vozila in prikazuje vožnjo ter čakanje, prevzem in predajo z različnimi odtenki. Motnja, premik ure ali ponovni izračun ustavi predvajanje. [Izvor in obnovitev cestnega izseka](routing/README.md)
 
 Za povezavo GPS nastavite `RESCUEFLOW_GPS_KEY` v okolju backenda oziroma v `.env` za Compose in ponovno zaženite backend. GPS odjemalec pošlje `POST /api/tracking/gps` z glavo `Authorization: Bearer <ključ>`. Telo zahtevka vsebuje ID vozila, položaj in čas meritve z odmikom ali UTC.
 

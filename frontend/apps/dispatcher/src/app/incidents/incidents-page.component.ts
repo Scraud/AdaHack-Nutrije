@@ -1,0 +1,23 @@
+import { Component, EventEmitter, Output, computed, inject, signal } from '@angular/core';
+import { DispatchStore } from '../core/dispatch-store';
+import { IconComponent } from '../shared/icon.component';
+import { formatTime, incidentStatus, incidentType } from '@rescueflow/contracts/plan-utils';
+
+@Component({selector:'app-incidents-page',standalone:true,imports:[IconComponent],template:`
+  <section class="panel incidents-page">
+    <div class="page-panel-header"><div><h2>Pregled dogodkov <span class="count-badge">{{store.state()?.incidents?.length}}</span></h2><p>Motnje, predlogi in odločitve na enem mestu.</p></div><button class="button primary" (click)="store.simulateIncident()" [disabled]="store.busy()||(store.gateway.isDemo&&!!store.state()?.incidents?.length)"><app-icon name="alert" [size]="16"/>Simuliraj dogodek</button></div>
+    <div class="table-filters"><label class="search-field"><app-icon name="search" [size]="17"/><input type="search" placeholder="Poiščite dogodek, vozilo ali nalogo …" aria-label="Iskanje dogodkov" (input)="query.set($any($event.target).value)"/></label><label><span class="sr-only">Vrsta dogodka</span><select (change)="type.set($any($event.target).value)"><option value="">Vse vrste</option><option value="NEW_TASK">Prednostna naloga</option><option value="VEHICLE_BREAKDOWN">Okvara vozila</option><option value="TRAFFIC_DELAY">Prometni zastoj</option><option value="ROAD_CLOSURE">Zapora ceste</option><option value="VEHICLE_UNAVAILABLE">Nedosegljivost</option></select></label><label><span class="sr-only">Status dogodka</span><select (change)="status.set($any($event.target).value)"><option value="">Vsi statusi</option><option value="OPEN">Odprt</option><option value="AWAITING_DECISION">Čaka na odločitev</option><option value="RESOLVED">Rešen</option></select></label><label><span class="sr-only">Prioriteta dogodka</span><select (change)="priority.set($any($event.target).value)"><option value="">Vse prioritete</option><option>P1</option><option>P2</option><option>P3</option></select></label></div>
+    <div class="table-scroll"><table><thead><tr><th>Dogodek</th><th>Čas</th><th>Prioriteta</th><th>Vozila / naloge</th><th>Predlogi</th><th>Status</th><th><span class="sr-only">Podrobnosti</span></th></tr></thead><tbody>
+    @for(incident of filtered();track incident.id){<tr><td><button class="table-event-title" (click)="inspect.emit(incident.id)"><span class="table-event-icon"><app-icon [name]="incident.status==='RESOLVED'?'check':'alert'"/></span><span><b>{{incident.title}}</b><small>{{typeLabel(incident.incident_type)}} · {{incident.location.name}}</small></span></button></td><td>{{time(incident.occurred_at)}}</td><td><span class="priority-badge" [class.low]="incident.priority!=='P1'">{{incident.priority}}</span></td><td><b>{{incident.affected_vehicle_ids.join(', ')||'—'}}</b><small class="cell-secondary">{{incident.affected_task_ids.length}} nalog</small></td><td>{{recommendationCount(incident.id)}} predlogov</td><td><span class="status-badge" [class.available]="incident.status==='RESOLVED'" [class.warning]="incident.status!=='RESOLVED'">{{statusLabel(incident.status)}}</span></td><td><button class="button icon-button" aria-label="Podrobnosti dogodka" (click)="inspect.emit(incident.id)"><app-icon name="right"/></button></td></tr>}
+    </tbody></table></div>
+    @if(!filtered().length){<div class="page-empty"><span><app-icon name="bell" [size]="28"/></span><h3>{{store.state()?.incidents?.length?'Ni zadetkov za izbrane filtre.':'Vse poteka po načrtu.'}}</h3><p>{{store.state()?.incidents?.length?'Prilagodite iskanje ali izbrane filtre.':'Ob simulaciji se bodo tukaj prikazali dogodki in zgodovina odločitev.'}}</p></div>}
+    <div class="table-footer">{{filtered().length}} od {{store.state()?.incidents?.length}} dogodkov<span>{{store.gateway.isDemo?'Vzorčni podatki za predstavitev UI':'Podatki iz povezanega zaledja'}}</span></div>
+  </section>
+`})
+export class IncidentsPageComponent {
+  readonly store=inject(DispatchStore);@Output() inspect=new EventEmitter<string>();
+  readonly query=signal('');readonly type=signal('');readonly status=signal('');readonly priority=signal('');
+  time=formatTime;statusLabel=incidentStatus;typeLabel=incidentType;
+  readonly filtered=computed(()=>this.store.state()?.incidents.filter(i=>(!this.type()||i.incident_type===this.type())&&(!this.status()||i.status===this.status())&&(!this.priority()||i.priority===this.priority())&&`${i.title} ${i.description} ${i.affected_vehicle_ids} ${i.affected_task_ids}`.toLocaleLowerCase('sl').includes(this.query().toLocaleLowerCase('sl'))).reverse() ?? []);
+  recommendationCount(id:string){return this.store.state()?.recommendations.filter(r=>r.incident_id===id).length ?? 0;}
+}

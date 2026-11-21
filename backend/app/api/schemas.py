@@ -1,0 +1,116 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from app.planning.contracts import (
+    Assignment, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics, Point, Priority, Task, Vehicle,
+    Candidate,
+)
+
+
+class NewTask(BaseModel):
+    priority: Priority
+    facility_id: str
+    pickup: Point
+    passenger_count: int = Field(default=1, ge=1, le=8)
+    equipment: list[Equipment] = Field(default_factory=list)
+    earliest_pickup: int = Field(ge=0, le=HORIZON)
+    latest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
+    preferred_arrival: int = Field(ge=0, le=HORIZON)
+    latest_arrival: int = Field(ge=0, le=HORIZON)
+
+
+class CreateIncident(BaseModel):
+    type: IncidentType
+    duration: int | None = Field(default=None, gt=0, le=HORIZON)
+    vehicle_id: str | None = None
+    facility_id: str | None = None
+    location: Point | None = None
+    radius_km: float | None = Field(default=None, gt=0, le=30)
+    multiplier: float | None = Field(default=None, ge=1, le=5)
+    quota: int | None = Field(default=None, ge=0, le=100)
+    task: NewTask | None = None
+
+
+class Advance(BaseModel):
+    to: int = Field(gt=0, le=HORIZON)
+
+
+class Replan(BaseModel):
+    base_plan_id: str
+    expected_state_revision: int = Field(ge=0)
+
+
+class Rejection(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
+class PlanSummary(BaseModel):
+    id: str
+    version: int | None
+    status: str
+    created_at: str
+    strategy: str
+    metrics: Metrics
+
+
+class PlanView(Candidate):
+    id: str
+    version: int | None
+    status: str
+    created_at: str
+    snapshot_id: str
+    assignments: list[Assignment]
+
+
+class RecommendationView(BaseModel):
+    id: str
+    base_plan_id: str
+    base_revision: int
+    status: str
+    plan: PlanView
+    decision_reason: str | None = None
+    decided_at: str | None = None
+
+
+class Recommendations(BaseModel):
+    items: list[RecommendationView]
+    solver_statuses: list[str]
+    duration_ms: int
+
+
+class Baseline(BaseModel):
+    metrics: Metrics
+    affected: list[Issue]
+    simulated_pickups: int
+    simulated_arrivals: int
+
+
+class VehicleView(Vehicle):
+    status: Literal["AVAILABLE", "UNAVAILABLE", "EN_ROUTE", "TRANSPORTING", "SERVICE", "BROKEN"]
+    next_available: int | None
+
+
+class State(BaseModel):
+    scenario_id: str
+    revision: int
+    mode: Literal["DEMO"] = "DEMO"
+    start_at: str
+    now: int
+    horizon: int = HORIZON
+    travel_source: str = "HAVERSINE"
+    vehicles: list[VehicleView]
+    facilities: list[Facility]
+    tasks: list[Task]
+    incidents: list[Incident]
+    active_plan: PlanView | None
+    baseline: Baseline
+
+
+class SourceStatus(BaseModel):
+    id: str
+    name: str
+    status: Literal["SIMULATED", "LIVE", "STALE", "UNAVAILABLE"]
+    message: str
+    observed_at: datetime | None = None

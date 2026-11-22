@@ -10,9 +10,10 @@ def explain(snapshot: PlanningSnapshot, task_id: str, assignments: list[Assignme
     facility = snapshot.facilities[task.facility_id]
     vehicles = [v for v in snapshot.vehicles.values() if compatible(v, task)]
     loaded = snapshot.travel.seconds(pickup(task.id), delivery(task.id))
-    if not facility.accepting:
+    if task.uses_patient_quota and not facility.accepting:
         code = "FACILITY_NOT_ACCEPTING"
-    elif sum(1 for row in assignments if row.task_id not in snapshot.frozen
+    elif task.uses_patient_quota and sum(1 for row in assignments if row.task_id not in snapshot.frozen
+             and snapshot.tasks[row.task_id].uses_patient_quota
              and snapshot.tasks[row.task_id].facility_id == facility.id) >= facility_remaining(snapshot, facility.id):
         code = "FACILITY_CAPACITY"
     elif not vehicles:
@@ -131,10 +132,10 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
             if not compatible(vehicle, task):
                 report("NO_COMPATIBLE_VEHICLE")
                 continue
-            if not facility.accepting:
+            if task.uses_patient_quota and not facility.accepting:
                 report("FACILITY_NOT_ACCEPTING")
                 continue
-            if not row.is_locked and arrivals[facility.id] >= facility_remaining(snapshot, facility.id):
+            if task.uses_patient_quota and not row.is_locked and arrivals[facility.id] >= facility_remaining(snapshot, facility.id):
                 report("FACILITY_CAPACITY")
                 continue
             deadhead = snapshot.travel.seconds(origin, pickup(task.id))
@@ -158,7 +159,7 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
                 continue
             if (take, arrive) != (row.planned_pickup, row.planned_dropoff):
                 report("INVALID_TRAVEL_TIME")
-            if not row.is_locked:
+            if not row.is_locked and task.uses_patient_quota:
                 arrivals[facility.id] += 1
             projected.append(row.model_copy(update={
                 "planned_departure": depart, "planned_pickup": take, "planned_dropoff": arrive,

@@ -254,7 +254,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
             dashArray: dotted ? '2 8' : undefined }).addTo(map.routes);
           const line = L.polyline(path, { ...style, color: colors[vehicle.id], weight,
             dashArray: dotted ? '2 8' : undefined, className: dotted ? 'route-to-hospital' : 'route-to-pickup' });
-          line.bindTooltip(tooltip(`${vehicle.id} · ${dotted ? 'Do ustanove' : 'Do pacienta'}`)).addTo(map.routes);
+          line.bindTooltip(tooltip(`${vehicle.id} · ${dotted ? 'Do ustanove' : state.tasks.find(task=>task.id===vehicle.task_id)?.type==='EQUIPMENT_DELIVERY'?'Do opreme':'Do pacienta'}`)).addTo(map.routes);
           if (vehicle.task_id) line.on('click', () => onSelect(vehicle.task_id!));
           if (dotted) lines.delivery = { casing, color: line };
           else lines.approach = { casing, color: line };
@@ -314,13 +314,14 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
         vehicleMarkers.current.set(vehicle.id, entry);
       }
       const { marker, eta } = entry;
-      const countdown = trackingEtaLabel(vehicle);
+      const cargo=state.tasks.find(task=>task.id===vehicle.task_id)?.type==='EQUIPMENT_DELIVERY';
+      const countdown = trackingEtaLabel(vehicle,cargo?'EQUIPMENT_DELIVERY':undefined);
       if (eta.textContent !== countdown) eta.textContent = countdown;
       eta.hidden = !countdown;
       const age = vehicle.stale ? ' · zastarela lokacija' : '';
       const time = vehicle.recorded_at ? ' · ' + new Date(vehicle.recorded_at).toLocaleTimeString('sl-SI',
         { timeZone: 'Europe/Ljubljana' }) : '';
-      const description = `${vehicle.id} · ${statuses[vehicle.status]}${age}${time}${countdown ? ' · ' + countdown : ''}`;
+      const description = `${vehicle.id} · ${cargo&&vehicle.status==='TO_PICKUP'?'Na poti do opreme':cargo&&vehicle.status==='AT_PICKUP'?'Prevzem opreme':statuses[vehicle.status]}${age}${time}${countdown ? ' · ' + countdown : ''}`;
       const label = tooltip(description);
       marker.setOpacity(vehicle.stale ? .55 : 1);
       marker.getElement()?.setAttribute('aria-label', description);

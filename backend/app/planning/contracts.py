@@ -54,6 +54,9 @@ class Task(BaseModel):
     facility_id: str
     passenger_count: int = Field(ge=0, le=8)
     equipment: list[Equipment] = Field(default_factory=list)
+    cargo_equipment: list[Equipment] = Field(default_factory=list)
+    source_vehicle_id: str | None = None
+    source_incident_id: int | None = None
     # Stored tasks can predate the current shift bounds.
     earliest_pickup: int = Field(ge=0)
     latest_pickup: int | None = Field(default=None, ge=0)
@@ -63,6 +66,10 @@ class Task(BaseModel):
     planning_horizon: int | None = Field(default=None, ge=0)
     actual_pickup: int | None = None
     actual_arrival: int | None = None
+
+    @property
+    def uses_patient_quota(self) -> bool:
+        return self.type != "EQUIPMENT_DELIVERY"
 
     @property
     def asap(self) -> bool:

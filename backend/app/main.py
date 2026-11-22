@@ -25,6 +25,8 @@ from app.services.fleet import add_vehicle, remove_vehicle, update_vehicle
 from app.services.planning import PlanningService, recommendation_history
 from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident, set_demo_clock
 from app.services.scheduling import create_scheduled_task
+from app.api.schemas import CreateEquipmentRecovery
+from app.services.equipment_recovery import create_equipment_recovery
 from app.services.state import problem, reset, scenario, timestamp, view_plan, view_state
 from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 
@@ -145,6 +147,14 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
         with database.session(write=True) as db:
             scope = scenario(db)
             restore_vehicle(db, scope, vehicle_id)
+            return view_state(db, scope, road_matrix)
+
+    @app.post("/api/vehicles/{vehicle_id}/equipment-recovery")
+    def equipment_recovery(vehicle_id: str, request: CreateEquipmentRecovery) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            create_equipment_recovery(db, scope, vehicle_id, request, road_matrix)
             return view_state(db, scope, road_matrix)
 
     @app.post("/api/vehicles")

@@ -125,7 +125,8 @@ def compatible(vehicle: Vehicle, task: Task) -> bool:
 
 
 def facility_remaining(snapshot: PlanningSnapshot, facility_id: str) -> int:
-    reserved = sum(snapshot.tasks[a.task_id].facility_id == facility_id for a in snapshot.frozen.values())
+    reserved = sum(snapshot.tasks[a.task_id].facility_id == facility_id and snapshot.tasks[a.task_id].uses_patient_quota
+                   for a in snapshot.frozen.values())
     return max(0, snapshot.facilities[facility_id].quota - reserved)
 
 

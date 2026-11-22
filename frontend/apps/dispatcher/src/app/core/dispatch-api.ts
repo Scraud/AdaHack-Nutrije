@@ -7,6 +7,7 @@ import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
 export interface DispatchGateway {
   readonly isDemo: boolean;
   createTask?(input:import('@rescueflow/contracts').ScheduledTaskInput):Promise<DispatchState>;
+  recoverEquipment?(vehicleId:string,input:import('@rescueflow/contracts').EquipmentRecoveryInput):Promise<DispatchState>;
   getState(): Promise<DispatchState>;
   generateInitialPlan(): Promise<DispatchState>;
   advanceTime(to: string): Promise<DispatchState>;
@@ -42,7 +43,7 @@ export class HttpDispatchGateway implements DispatchGateway {
     if (!response.ok) {
       if (response.status === 409) {
         const conflict = await response.json().catch(() => null);
-        if (['VEHICLE_IN_USE','STALE_STATE'].includes(conflict?.detail?.code) &&
+        if (['VEHICLE_IN_USE','STALE_STATE','VEHICLE_NOT_BROKEN','BREAKDOWN_REQUIRED','EQUIPMENT_ALREADY_REQUESTED'].includes(conflict?.detail?.code) &&
             typeof conflict.detail.message === 'string') throw new Error(conflict.detail.message);
         throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
       }
@@ -60,6 +61,7 @@ export class HttpDispatchGateway implements DispatchGateway {
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
   createTask(input:import('@rescueflow/contracts').ScheduledTaskInput){return this.mutate('/tasks',input);}
+  recoverEquipment(vehicleId:string,input:import('@rescueflow/contracts').EquipmentRecoveryInput){return this.mutate(`/vehicles/${encodeURIComponent(vehicleId)}/equipment-recovery`,input);}
   restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}
   addVehicle(input:NewVehicleInput){return this.mutate('/vehicles',input);}
   async updateVehicle(id:string,input:VehicleSettings){await this.request(`/vehicles/${encodeURIComponent(id)}`,input,30_000,'PUT');return this.getState();}

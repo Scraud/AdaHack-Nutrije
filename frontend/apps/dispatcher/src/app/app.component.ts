@@ -57,6 +57,8 @@ export class AppComponent implements OnInit,OnDestroy {
  showConfirmation(rec:Recommendation){this.store.pin(rec.id);this.confirmation.set(rec);this.dialog?.nativeElement.showModal();}
  closeConfirmation(){this.dialog?.nativeElement.close();this.confirmation.set(null);}
  async accept(){const rec=this.confirmation();if(!rec)return;if(await this.store.accept(rec)){this.closeConfirmation();this.closeIncidentReview();}}
+ canRecoverEquipment(id:string){const vehicle=this.store.state()?.vehicles.find(v=>v.id===id);return !!this.store.gateway.recoverEquipment&&vehicle?.status==='BROKEN'&&!!vehicle.equipment.length;}
+ openEquipmentRecovery(id:string){this.closeIncidentReview();this.eventForm?.openEquipment(id);}
  openSimulation(){this.simulation?.nativeElement.showModal();}
  openEvent(type:IncidentType='NEW_TASK',vehicle?:string){this.simulation?.nativeElement.close();this.eventForm?.open(type,vehicle);}
  async taskCreated(result:{taskId:string;incidentId:string|null}){

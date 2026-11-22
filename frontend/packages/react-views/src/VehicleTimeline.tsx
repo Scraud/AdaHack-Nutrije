@@ -126,6 +126,7 @@ export function VehicleTimeline(props: DispatchViewProps) {
           <div><dt>Najkasneje v vozilu</dt><dd>{latestPickupLabel(tooltipTask)}</dd></div>
           <div><dt>Načrtovan prevzem</dt><dd>{tooltipAssignment ? formatTime(tooltipAssignment.planned_pickup) : 'Čaka na dodelitev'}</dd></div>
         </dl>
+        {!!tooltipTask.cargo_equipment?.length && <p>Oprema za prevzem: {tooltipTask.cargo_equipment.map(equipmentLabel).join(' · ')}</p>}
         {tooltipTask.required_equipment.length > 0 && <p>{tooltipTask.required_equipment.map(equipmentLabel).join(' · ')}</p>}
       </div>, tooltip.host,
     )}

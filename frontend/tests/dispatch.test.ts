@@ -30,6 +30,26 @@ test('zero capacity and reduced quotas stay full without reporting negative free
   assert.equal(facilityCapacity({id:'F1',quota:0,accepting:true},[],[]).full,true);
 });
 
+test('equipment cargo does not consume patient quotas and gets equipment pickup labels',()=>{
+  const tasks=[{id:'E1',facility_id:'F1',type:'EQUIPMENT_DELIVERY',actual_arrival:10},
+    {id:'E2',facility_id:'F1',type:'EQUIPMENT_DELIVERY',actual_arrival:null}];
+  assert.equal(facilityCapacity({id:'F1',quota:3,accepting:true},tasks,['E1','E2']).used,0);
+  const tracked:TrackingFrame['vehicles'][number]={id:'V2',location:[46.05,14.5],status:'TO_PICKUP',to_pickup:[],to_hospital:[],eta:{destination:'PICKUP',seconds:125},stale:false};
+  assert.equal(trackingEtaLabel(tracked,'EQUIPMENT_DELIVERY'),'Do opreme · 3 min');
+  assert.equal(trackingEtaLabel({...tracked,status:'AT_PICKUP'},'EQUIPMENT_DELIVERY'),'Prevzem opreme');
+});
+
+test('equipment onboard does not show the passenger indicator',async()=>{
+  const state=await new DemoDispatchGateway().getState();
+  const assignment=state.active_plan!.assignments[0];
+  state.active_plan!.assignments=[{...assignment,status:'IN_PROGRESS'}];
+  const task=state.tasks.find(item=>item.id===assignment.task_id)!;
+  task.task_type='EQUIPMENT_DELIVERY';task.passenger_count=0;task.actual_pickup=assignment.planned_pickup;task.actual_arrival=null;
+  assert.equal(passengerOnBoard(state,assignment.vehicle_id),false);
+  task.task_type='PLANNED_TRANSPORT';task.passenger_count=1;
+  assert.equal(passengerOnBoard(state,assignment.vehicle_id),true);
+});
+
 test('opening and resetting prepare a missing plan, while refreshing preserves an existing plan',async()=>{
   const gateway=new DemoDispatchGateway();
   const initial=await gateway.getState();

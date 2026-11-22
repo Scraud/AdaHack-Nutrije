@@ -10,22 +10,22 @@ import type { DispatchViewProps } from '@rescueflow/react-views/src';
 
 @Component({selector:'app-event-form',standalone:true,imports:[FormsModule,IconComponent,ReactViewHost],template:`
 <dialog #dialog class="event-dialog" [class.road-event-dialog]="isRoad()||type==='NEW_TASK'" (close)="onClose()"><form ngNativeValidate (ngSubmit)="submit()">
-  <div class="form-dialog-header"><span class="dialog-hero-icon"><app-icon [name]="type==='WEATHER_DELAY'?'oxygen':'alert'" [size]="25"/></span><button type="button" class="dialog-close" aria-label="Zapri obrazec" (click)="close()"><app-icon name="close"/></button><span class="eyebrow">SIMULIRANI DOGODEK</span><h2>{{scheduledMode?'Nova prevozna naloga':label(type)}}</h2><p>Dogodek zabeleži spremembo razmer. Nov razpored aktivirate šele s potrditvijo predloga.</p></div>
-  <div class="form-grid">@if(!scheduledMode){<label class="field">Vrsta dogodka<select name="type" [ngModel]="type" (ngModelChange)="changeType($event)"><option value="NEW_TASK">Nova prednostna naloga</option><option value="VEHICLE_BREAKDOWN">Okvara vozila</option><option value="VEHICLE_UNAVAILABLE">Nedosegljivost vozila</option><option value="WEATHER_DELAY">Slabo vreme</option><option value="TRAFFIC_DELAY">Prometni zastoj</option><option value="ROAD_CLOSURE">Zapora ceste</option></select></label>}<label class="field">Prioriteta<select name="priority" [(ngModel)]="priority"><option value="P1">{{priorityLabels.P1}}</option><option value="P2">{{priorityLabels.P2}}</option><option value="P3">{{priorityLabels.P3}}</option></select></label>
+  <div class="form-dialog-header"><span class="dialog-hero-icon"><app-icon [name]="type==='WEATHER_DELAY'?'oxygen':'alert'" [size]="25"/></span><button type="button" class="dialog-close" aria-label="Zapri obrazec" (click)="close()"><app-icon name="close"/></button><span class="eyebrow">SIMULIRANI DOGODEK</span><h2>{{recoveryVehicle?'Prevzem opreme':scheduledMode?'Nova prevozna naloga':label(type)}}</h2><p>Dogodek zabeleži spremembo razmer. Nov razpored aktivirate šele s potrditvijo predloga.</p></div>
+  <div class="form-grid">@if(!scheduledMode&&!recoveryVehicle){<label class="field">Vrsta dogodka<select name="type" [ngModel]="type" (ngModelChange)="changeType($event)"><option value="NEW_TASK">Nova prednostna naloga</option><option value="VEHICLE_BREAKDOWN">Okvara vozila</option><option value="VEHICLE_UNAVAILABLE">Nedosegljivost vozila</option><option value="WEATHER_DELAY">Slabo vreme</option><option value="TRAFFIC_DELAY">Prometni zastoj</option><option value="ROAD_CLOSURE">Zapora ceste</option></select></label>}<label class="field">Prioriteta<select name="priority" [(ngModel)]="priority"><option value="P1">{{priorityLabels.P1}}</option><option value="P2">{{priorityLabels.P2}}</option><option value="P3">{{priorityLabels.P3}}</option></select></label>
   @if(type==='VEHICLE_BREAKDOWN'||type==='VEHICLE_UNAVAILABLE'){<label class="field">Vozilo<select name="vehicle" [(ngModel)]="vehicle" required>@for(v of store.state()?.vehicles;track v.id){<option [value]="v.id">{{v.code}} · {{v.vehicle_type}}</option>}</select></label>}
   @if(type==='VEHICLE_UNAVAILABLE'||type==='WEATHER_DELAY'||type==='TRAFFIC_DELAY'||type==='ROAD_CLOSURE'){<label class="field">Predvideno trajanje (min)<input type="number" name="duration" [(ngModel)]="duration" min="5" max="600" required/></label>}
   @if(type==='WEATHER_DELAY'||type==='TRAFFIC_DELAY'){<label class="field">Faktor časa vožnje<input type="number" name="multiplier" [(ngModel)]="multiplier" min="1" max="5" step="0.1" required/></label>}
   @if(type==='NEW_TASK'){
-    <fieldset class="field equipment-checkboxes"><legend>Zahtevana oprema</legend>@for(option of equipmentOptions;track option.value){<label><input type="checkbox" [name]="'equipment-'+option.value" [ngModel]="equipment.includes(option.value)" (ngModelChange)="toggleEquipment(option.value,$event)"/>{{option.label}}</label>}</fieldset>
-    <label class="field">Število potnikov<input type="number" name="passengers" [(ngModel)]="passengers" min="1" max="8" required/></label>
-    @if(!scheduledMode){<label class="field">Najzgodnejši prevzem (neobvezno)<input type="time" name="pickup" [(ngModel)]="pickup" aria-describedby="pickup-time-hint"/><small id="pickup-time-hint">Če je polje prazno, je prevzem mogoč takoj.</small></label> }@else{<label class="field">Datum in čas prevzema<input type="datetime-local" name="scheduled" [(ngModel)]="scheduled" required/></label><label class="field">Ciljna ustanova<select name="facility" [(ngModel)]="facility" required>@for(facility of store.state()?.facilities;track facility.id){<option [value]="facility.id">{{facility.name}}</option>}</select></label><p class="field full">Naloge za naslednjih 24 ur od simulirane ure odprejo predloge razporeda. Poznejše naloge se samo shranijo.</p>}
-    <div class="field full road-event-picker">
+    <fieldset class="field equipment-checkboxes"><legend>{{recoveryVehicle?'Oprema za prevzem':'Zahtevana oprema'}}</legend>@for(option of availableEquipment();track option.value){<label><input type="checkbox" [name]="'equipment-'+option.value" [ngModel]="equipment.includes(option.value)" (ngModelChange)="toggleEquipment(option.value,$event)"/>{{option.label}}</label>}</fieldset>
+    @if(!recoveryVehicle){<label class="field">Število potnikov<input type="number" name="passengers" [(ngModel)]="passengers" min="1" max="8" required/></label>}
+    @if(!scheduledMode&&!recoveryVehicle){<label class="field">Najzgodnejši prevzem (neobvezno)<input type="time" name="pickup" [(ngModel)]="pickup" aria-describedby="pickup-time-hint"/><small id="pickup-time-hint">Če je polje prazno, je prevzem mogoč takoj.</small></label> }@else{@if(scheduledMode){<label class="field">Datum in čas prevzema<input type="datetime-local" name="scheduled" [(ngModel)]="scheduled" required/></label>}<label class="field">Ciljna ustanova<select name="facility" [(ngModel)]="facility" required>@for(facility of store.state()?.facilities;track facility.id){<option [value]="facility.id">{{facility.name}}</option>}</select></label>@if(scheduledMode){<p class="field full">Naloge za naslednjih 24 ur od simulirane ure odprejo predloge razporeda. Poznejše naloge se samo shranijo.</p>}}
+    @if(!recoveryVehicle){<div class="field full road-event-picker">
       <label for="pickup-address">Lokacija prevzema</label>
       <div class="road-search-row"><input id="pickup-address" name="address" [ngModel]="address" (ngModelChange)="editAddress($event)" placeholder="Npr. Zaloška cesta 2" maxlength="200" (keydown.enter)="$event.preventDefault(); findAddress()"/><button type="button" class="button secondary" (click)="findAddress()" [disabled]="searching()||address.trim().length<2">{{searching()?'Iščem …':'Poišči naslov'}}</button></div>
       @if(addresses().length){<ul class="address-results" aria-label="Najdeni naslovi">@for(result of addresses();track result.name){<li><button type="button" class="button secondary" (click)="selectAddress(result)">{{result.name}}</button></li>}</ul>}
       @if(pickupLocation();as location){<p class="road-target-label" role="status"><app-icon name="pin" [size]="16"/><b>{{location.name}}</b></p>}
       @if(formOpen()&&store.roads()&&roadMapProps();as props){<div class="road-event-map"><react-view-host kind="map" [viewProps]="props"/></div>}
-    </div>
+    </div>}@else{<div class="field full form-impact"><app-icon name="pin" [size]="18"/><span><b>{{recoveryVehicle}} · {{pickupLocation()?.name}}</b><br/>Lokacija in oprema sta iz okvare vozila. Izberite opremo, prioriteto in cilj dostave. Prevoz ne vključuje pacienta.</span></div>}
   }
   @if(isRoad()){
     <div class="field full road-event-picker"><label for="incident-street">Ulica ali cesta</label><div class="road-search-row"><input id="incident-street" name="street" [(ngModel)]="roadName" list="incident-streets" placeholder="Npr. Celovška cesta"/><datalist id="incident-streets">@for(street of store.roads()?.streets;track street){<option [value]="street"></option>}</datalist><button type="button" class="button secondary" (click)="findRoad()" [disabled]="!roadName.trim()">Poišči</button><button type="button" class="button secondary" (click)="store.pickingRoad.set(!store.pickingRoad())" [attr.aria-pressed]="store.pickingRoad()">{{store.pickingRoad()?'Prekliči izbor':'Izberi na zemljevidu'}}</button></div>
@@ -37,19 +37,29 @@ import type { DispatchViewProps } from '@rescueflow/react-views/src';
   <label class="field full">Opis / razlog (neobvezno)<textarea name="description" [(ngModel)]="description" rows="3" maxlength="1000" placeholder="Kaj se je zgodilo in kakšen vpliv pričakujete?"></textarea></label></div>
   @if(type==='WEATHER_DELAY'){<div class="form-impact"><app-icon name="clock" [size]="17"/>Časi vožnje v izbranem območju bodo {{multiplier}}× daljši, naslednjih {{duration}} minut.</div>}
   @if(error||store.error()){<p class="form-error" role="alert">{{error||store.error()}}</p>}
-  <div class="dialog-actions"><button type="button" class="button secondary" (click)="close()">Prekliči</button><button type="submit" class="button primary" [disabled]="store.busy()||searching()"><app-icon name="done" [size]="17"/>{{store.busy()?'Zapisujem …':scheduledMode?'Dodaj nalogo':'Dodaj dogodek'}}</button></div>
+  <div class="dialog-actions"><button type="button" class="button secondary" (click)="close()">Prekliči</button><button type="submit" class="button primary" [disabled]="store.busy()||searching()"><app-icon name="done" [size]="17"/>{{store.busy()?'Zapisujem …':recoveryVehicle?'Poišči predloge':scheduledMode?'Dodaj nalogo':'Dodaj dogodek'}}</button></div>
 </form></dialog>`})
 export class EventFormComponent {
   readonly priorityLabels = PRIORITY_LABELS;
   readonly store=inject(DispatchStore);@ViewChild('dialog')dialog?:ElementRef<HTMLDialogElement>;@Output()created=new EventEmitter<void>();
   @Output()taskCreated=new EventEmitter<{taskId:string;incidentId:string|null}>();
-  scheduledMode=false;scheduled='';facility='';
+  scheduledMode=false;scheduled='';facility='';recoveryVehicle='';
   openTask(){
     this.open('NEW_TASK');this.scheduledMode=true;this.priority='P3';this.description='';
     this.facility=this.store.state()?.facilities[0]?.id??'';
     const at=new Date(Date.parse(this.store.state()!.simulated_time)+3600_000);
     this.scheduled=new Date(at.getTime()-at.getTimezoneOffset()*60_000).toISOString().slice(0,16);
   }
+  openEquipment(vehicleId:string){
+    const state=this.store.state(),vehicle=state?.vehicles.find(v=>v.id===vehicleId);
+    if(!state||!vehicle||vehicle.status!=='BROKEN')return;
+    this.open('NEW_TASK',vehicleId);this.recoveryVehicle=vehicleId;this.priority='P2';
+    const breakdown=[...state.incidents].reverse().find(event=>event.incident_type==='VEHICLE_BREAKDOWN'&&event.affected_vehicle_ids.includes(vehicleId));
+    this.selectAddress(breakdown?.location??{lat:vehicle.current_lat,lon:vehicle.current_lon,name:vehicle.location_name});
+    this.equipment=[...vehicle.equipment];this.facility=state.facilities[0]?.id??'';
+    this.description='';
+  }
+  availableEquipment(){return this.recoveryVehicle?this.equipmentOptions.filter(option=>this.store.state()?.vehicles.find(v=>v.id===this.recoveryVehicle)?.equipment.includes(option.value)):this.equipmentOptions;}
   private readonly zone=inject(NgZone);
   private readonly eventType=signal<IncidentType>('NEW_TASK');
   readonly formOpen=signal(false);
@@ -93,7 +103,7 @@ export class EventFormComponent {
     this.selectAddress({lat,lon,name:'Izbrana točka na zemljevidu'});this.address='';
   }
   open(type:IncidentType='NEW_TASK',vehicle?:string){
-    this.scheduledMode=false;
+    this.scheduledMode=false;this.recoveryVehicle='';
     const state=this.store.state();if(!state)return;
     this.roadName='';this.store.roadTarget.set(null);this.editAddress('');this.pickup='';
     this.equipment=['OXYGEN'];this.passengers=1;
@@ -106,6 +116,11 @@ export class EventFormComponent {
   private iso(value:string){const s=this.store.state()!;const [h,m]=value.split(':').map(Number),[sh,sm]=formatTime(s.horizon_start).split(':').map(Number);return new Date(Date.parse(s.horizon_start)+((h-sh)*60+m-sm)*60_000).toISOString();}
   async submit(){
     this.error='';
+    if(this.recoveryVehicle){
+      if(!this.equipment.length){this.error='Izberite vsaj en kos opreme za prevzem.';return;}
+      const result=await this.store.recoverEquipment(this.recoveryVehicle,{priority:this.priority,equipment:[...this.equipment],facility_id:this.facility,description:this.description});
+      if(result){this.close();this.taskCreated.emit(result);}return;
+    }
     if(this.type==='NEW_TASK'&&!this.pickupLocation()&&this.address.trim().length>=2){
       await this.findAddress();
       if(!this.formOpen()||this.type!=='NEW_TASK')return;

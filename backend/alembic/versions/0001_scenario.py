@@ -1,4 +1,4 @@
-"""Create the RescueFlow scenario and plan tables."""
+"""Create the Rescue+ scenario and plan tables."""
 from alembic import op
 import sqlalchemy as sa
 

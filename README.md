@@ -1,6 +1,6 @@
-# RescueFlow
+# Rescue+
 
-RescueFlow je interaktivna simulacija dispečiranja naročenih in medustanovnih zdravstvenih prevozov v Ljubljani. Začetni plan in predloge izračuna OR-Tools CP-SAT. Dispečer primerja posledice motnje in izrecno potrdi novo verzijo. Vse naloge, vozila in sprejemne kvote v demu so sintetični.
+Rescue+ je interaktivna simulacija dispečiranja naročenih in medustanovnih zdravstvenih prevozov v Ljubljani. Začetni plan in predloge izračuna OR-Tools CP-SAT. Dispečer primerja posledice motnje in izrecno potrdi novo verzijo. Vse naloge, vozila in sprejemne kvote v demu so sintetični.
 
 Aktivni uporabniški vmesnik je v `frontend/`: Domov, Naloge, Vozila, Dogodki in Analiza. [Navodila novega frontenda](frontend/README.md) vključujejo opis strani, povezave z API in integracijskega preverjanja. Analiza uporablja izrecno označene vzorčne podatke za 24-urni forecast in heatmape celotne Slovenije; operativne strani uporabljajo backend.
 

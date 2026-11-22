@@ -1,6 +1,6 @@
 # Planning — CP-SAT Scheduler
 
-The scheduler is the brain of RescueFlow. Given a set of vehicles, tasks, and a travel time matrix, it produces a provably-optimal (or near-optimal) assignment of tasks to vehicles and schedules pickup times. It uses Google OR-Tools CP-SAT, a constraint programming solver with SAT-based propagation.
+The scheduler is the brain of Rescue+. Given a set of vehicles, tasks, and a travel time matrix, it produces a provably-optimal (or near-optimal) assignment of tasks to vehicles and schedules pickup times. It uses Google OR-Tools CP-SAT, a constraint programming solver with SAT-based propagation.
 
 ---
 

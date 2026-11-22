@@ -1,6 +1,6 @@
-# RescueFlow — System Overview
+# Rescue+ — System Overview
 
-RescueFlow is a web-based dispatcher dashboard for coordinating non-emergency medical transport (ambulance scheduling) in Ljubljana, Slovenia. A dispatcher uses it to plan which vehicle picks up which patient, when, and to which facility, in a simulated day-long scenario. The system can inject disruptions (traffic jams, breakdowns, new patients), re-optimise the schedule, and animate vehicle positions on a live map.
+Rescue+ is a web-based dispatcher dashboard for coordinating non-emergency medical transport (ambulance scheduling) in Ljubljana, Slovenia. A dispatcher uses it to plan which vehicle picks up which patient, when, and to which facility, in a simulated day-long scenario. The system can inject disruptions (traffic jams, breakdowns, new patients), re-optimise the schedule, and animate vehicle positions on a live map.
 
 ---
 

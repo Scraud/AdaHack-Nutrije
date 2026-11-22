@@ -83,6 +83,24 @@ function tooltip(label: string) {
   return element;
 }
 
+function helicopterStationIcon() {
+  const station = document.createElement('span');
+  station.className = 'helicopter-station';
+  const pad = document.createElement('span');
+  pad.className = 'helicopter-pad';
+  pad.textContent = 'H';
+  const aircraft = document.createElement('span');
+  aircraft.className = 'helicopter-aircraft';
+  aircraft.textContent = '🚁';
+  const label = document.createElement('b');
+  label.className = 'helicopter-station-label';
+  label.textContent = 'H1 · Postaja';
+  station.append(pad, aircraft, label);
+  station.setAttribute('aria-hidden', 'true');
+  return L.divIcon({ className: 'helicopter-station-pin', html: station,
+    iconSize: [86, 76], iconAnchor: [43, 100] });
+}
+
 export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPreview, onPick, pickingLocation, locationPreview, planTaskIds }: {
   state: State; roads: RoadMap | null; frame: TrackingFrame | null; onSelect: (id: string) => void;
   pickingRoad: boolean; roadPreview: RoadSegment | null; onPick: (location: Coordinate) => void;
@@ -221,6 +239,15 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
         L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48, undefined, badge), title: description, alt: description,
           interactive: !pickingLocation, keyboard: !pickingLocation })
           .bindTooltip(label,{direction:'top',offset:[0,-25]}).addTo(map.sites);
+      }
+      // A presentation-only station: never add it to the fleet, tracking or planner inputs.
+      const helicopterBase = state.facilities.find(site => site.name === 'Center Severni park');
+      if (helicopterBase) {
+        const title = 'Helikopter H1 · Postaja pri Centru Severni park · Samo prikaz, brez prevoza pacientov';
+        L.marker([helicopterBase.location.lat + .0005, helicopterBase.location.lon], {
+          icon: helicopterStationIcon(), title, alt: title, zIndexOffset: 250,
+          interactive: !pickingLocation, keyboard: !pickingLocation,
+        }).bindTooltip(tooltip(title), { direction: 'top', offset: [0, -98] }).addTo(map.sites);
       }
       for (const task of pickups) {
         const title = task.pickup_name ?? `Prevzem ${task.id}`;

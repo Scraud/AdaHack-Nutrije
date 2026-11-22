@@ -41,7 +41,7 @@ export function adaptPlan(plan:Schema['PlanView'],state:BackendState):DispatchPl
 }
 
 export function adaptBackendState(raw:BackendState,items:BackendRecommendation[],history:Schema['PlanSummary'][]=[]):DispatchState {
-  if(!Array.isArray(raw.vehicles)||!Array.isArray(raw.tasks)||typeof raw.start_at!=='string'||!Number.isFinite(raw.now))throw new Error('Podatki API se ne ujemajo s pogodbo RescueFlow.');
+  if(!Array.isArray(raw.vehicles)||!Array.isArray(raw.tasks)||typeof raw.start_at!=='string'||!Number.isFinite(raw.now))throw new Error('Podatki API se ne ujemajo s pogodbo Rescue+.');
   const active=raw.active_plan?adaptPlan(raw.active_plan,raw):null;
   if(active){
     active.metrics={...active.metrics,delay_minutes:Math.ceil(raw.baseline.metrics.delay_seconds/60),at_risk_tasks:new Set(raw.baseline.affected.map(i=>i.task_id)).size};

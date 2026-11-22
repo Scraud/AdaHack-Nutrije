@@ -1,6 +1,6 @@
 # Routing — Road Network and Travel Matrices
 
-RescueFlow needs travel times and paths between arbitrary GPS points in Ljubljana. It has two routing backends: a built-in graph derived from OpenStreetMap (always available) and an optional OSRM instance (more accurate, requires a separate process).
+Rescue+ needs travel times and paths between arbitrary GPS points in Ljubljana. It has two routing backends: a built-in graph derived from OpenStreetMap (always available) and an optional OSRM instance (more accurate, requires a separate process).
 
 ---
 

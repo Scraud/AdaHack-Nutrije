@@ -1,6 +1,6 @@
-# RescueFlow — specifikacija projekta za AdaHack / Epilog
+# Rescue+ — specifikacija projekta za AdaHack / Epilog
 
-> **Delovno ime:** RescueFlow  
+> **Delovno ime:** Rescue+\
 > **Uporabnik:** dispečer zdravstvenih prevozov  
 > **Tip projekta:** interaktivni prototip in simulacija, ne produkcijski sistem za nujno medicinsko pomoč  
 > **Glavna ideja:** robustno razporejanje vozil in odločanje ob motnjah

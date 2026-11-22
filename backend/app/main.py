@@ -67,7 +67,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
             await player
             database.engine.dispose()
 
-    app = FastAPI(title="RescueFlow", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Rescue+", version="0.1.0", lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=2048)
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:4200", "http://127.0.0.1:4200"],
                        allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type"])

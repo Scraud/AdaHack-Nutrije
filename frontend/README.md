@@ -1,4 +1,4 @@
-# RescueFlow frontend
+# Rescue+ frontend
 
 Slovenski dispečerski UI v mapi `frontend/`, povezan s FastAPI backendom in njegovo SQLite bazo. Prejšnji vmesnik iz `main` je ohranjen v `frontend-1/`. Angular upravlja stanje in HTTP, React izriše Leaflet zemljevid in časovnico.
 
@@ -104,7 +104,7 @@ P1 (rdeča) je vedno čim prej in ima absolutno prednost: optimizira se pred pok
 
 Raziskano 22. 11. 2026. Naslednje je predlog pilota; povezave s partnerskimi bolnišnicami in izvajalci še niso izvedene.
 
-| Področje | Vir in potrebni podatki | Nadgradnja RescueFlow |
+| Področje | Vir in potrebni podatki | Nadgradnja Rescue+ |
 |---|---|---|
 | Promet | NAP/Promet.si: dogodki, zapore in potovalni časi prek DATEX II; dostop do posameznega vira mora biti odobren. | OAuth2 odjemalec z obnovo žetona, preslikava lokacij na cestne povezave, smer veljavnosti, začetek/konec in izvor dogodka. |
 | Bolnišnice | Dogovorjen vmesnik izvajalca za sprejemne lokacije, urnike, čakalno dobo predaje in operativno sprejemanje. | Adapter na dejanski HIS/API; kjer partner podpira FHIR, preslikava lokacij in statusov. Sprejem mora biti potrjen pri izvajalcu. |
@@ -114,7 +114,7 @@ NAP uradno objavlja profile za prometne dogodke in potovalne čase. Za B2B odjem
 
 FHIR `Location` opisuje lokacijo in njeno splošno oziroma operativno stanje; standard sam ne zagotavlja dostopa do živih bolnišničnih kapacitet. Vir, pogostost osveževanja in pomen »sprejema« določimo skupaj z bolnišnico. V pilotu demo izbiro najbližje ustanove zamenjamo s potrjenim ciljem in dogovorjenimi pravili izvajalca. [HL7 FHIR R5 Location](https://www.hl7.org/fhir/R5/location-definitions.html)
 
-Slovenija že razvija povezane rešitve za dispečersko službo in ekipe NMP. RescueFlow bi ponudili kot integracijski modul za primerjavo razporedov ob motnjah obstoječemu izvajalcu. Predlagana povezava z obstoječim sistemom je poslovni predlog, ne že sklenjena integracija. [Ministrstvo za zdravje: IS NMP, 19. 6. 2026](https://www.gov.si/novice/2026-06-19-predstavljamo-novo-informacijsko-resitev-za-podporo-sluzbam-nujne-medicinske-pomoci-is-nmp/)
+Slovenija že razvija povezane rešitve za dispečersko službo in ekipe NMP. Rescue+ bi ponudili kot integracijski modul za primerjavo razporedov ob motnjah obstoječemu izvajalcu. Predlagana povezava z obstoječim sistemom je poslovni predlog, ne že sklenjena integracija. [Ministrstvo za zdravje: IS NMP, 19. 6. 2026](https://www.gov.si/novice/2026-06-19-predstavljamo-novo-informacijsko-resitev-za-podporo-sluzbam-nujne-medicinske-pomoci-is-nmp/)
 
 Predlagani potek: najprej zgodovinski anonimizirani podatki enega izvajalca za primerjavo rezultatov; nato vzporedni način brez pošiljanja ekip; zatem omejen pilot z dispečerjevo potrditvijo. Ob izpadu vira uporabimo zadnje veljavno stanje z vidno starostjo podatkov in možnostjo ročne koordinacije. Integracije potrebujejo nadzor dostopa, revizijsko sled, zaščito povezav, dogovor o obsegu podatkov in spremljanje napak.
 

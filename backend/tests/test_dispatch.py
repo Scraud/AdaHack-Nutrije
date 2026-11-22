@@ -326,7 +326,7 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     new_id = state["incidents"][-1]["task_id"]
     assert {task["id"]: (task["priority"], task["facility_id"])
             for task in state["tasks"] if task["id"] != new_id} == before
-    assert {"task_id": new_id, "vehicle_id": None, "code": "NO_COMPATIBLE_VEHICLE"} in (
+    assert {"task_id": new_id, "vehicle_id": None, "code": "INSUFFICIENT_VEHICLE_CAPACITY"} in (
         replan(demo, state)[0]["plan"]["unassigned"]
     )
 
@@ -348,6 +348,20 @@ def test_priority_task_uses_local_address_and_priority_pickup_window(demo):
         assert (task["pickup_name"], task["facility_id"]) == (address["name"], "F1")
         assert (task["earliest_pickup"], task["latest_pickup"]) == (now, latest)
         assert "preferred_arrival" not in task and "latest_arrival" not in task
+
+
+def test_demo_task_matches_a_manual_submission(demo):
+    state = post(demo, "demo/reset")
+    assert {task["type"] for task in state["tasks"]} == {"PRIORITY_TRANSPORT"}
+    for priority in ("P1", "P2", "P3"):
+        demo_task = next(task for task in state["tasks"] if task["priority"] == priority)
+        form = {field: demo_task[field] for field in (
+            "priority", "pickup", "pickup_name", "passenger_count", "equipment", "earliest_pickup",
+        )}
+        submitted = post(demo, "incidents", {"type": "NEW_TASK", "task": form})
+        added_id = submitted["incidents"][-1]["task_id"]
+        added_task = next(task for task in submitted["tasks"] if task["id"] == added_id)
+        assert {**added_task, "id": demo_task["id"]} == demo_task
 
 
 @pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])

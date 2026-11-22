@@ -1,11 +1,15 @@
-from app.planning.contracts import Equipment, Facility, Point, Priority, Task, Vehicle
+from collections import Counter
+
+from app.api.schemas import NewTask
+from app.planning.contracts import Equipment, Facility, Node, Point, Priority, Task, Vehicle
+from app.planning.snapshot_builder import travel_snapshot
+from app.planning.task_creation import facility_nodes, priority_transport
 
 DEMO_START = "2026-11-21T07:00:00Z"
 
 
 def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
     facilities = [
-        # Daily arrival quotas leave headroom above the seeded load (F1 receives 8) for new tasks.
         Facility(id="F1", name="Center Trnovski most", location=Point(lat=46.038, lon=14.503), quota=12),
         Facility(id="F2", name="Center Zeleni gaj", location=Point(lat=46.066, lon=14.476), quota=12),
         Facility(id="F3", name="Center Severni park", location=Point(lat=46.084, lon=14.512), quota=12),
@@ -22,7 +26,7 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
                 task_types=["PLANNED_TRANSPORT", "PRIORITY_TRANSPORT", "EQUIPMENT_DELIVERY"])
         for i, (lat, lon) in enumerate(starts)
     ]
-    tasks = []
+    requests: list[tuple[str, NewTask, int]] = []
     waves = (22, 140, 285, 430)
     # Every wave asks for four oxygen transports within minutes, but only V3, V4 and V5 carry oxygen,
     # so priority decides who waits: red at once, medium within 45 min, low within 2 hours.
@@ -34,11 +38,22 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
         for lane, priority in enumerate(priorities):
             i = wave * len(priorities) + lane
             facility = facilities[lane % len(facilities)]
-            tasks.append(Task(
-                id=f"T{i + 1:02}", type="PLANNED_TRANSPORT", priority=priority,
+            earliest = (minute + lane * 2) * 60
+            requests.append((f"T{i + 1:02}", NewTask(
+                priority=priority,
                 pickup=Point(lat=facility.location.lat + (lane % 3 - 1) * .006 + wave * .001,
                              lon=facility.location.lon + (-1) ** lane * (.012 + wave * .002)),
-                facility_id=facility.id, passenger_count=2 if i % 7 == 0 else 1,
-                equipment=[requirements[lane]], earliest_pickup=(minute + lane * 2) * 60,
-            ))
+                pickup_name="Izbrana točka na zemljevidu", passenger_count=2 if i % 7 == 0 else 1,
+                equipment=[requirements[lane]], earliest_pickup=earliest,
+            ), earliest))
+    nodes = tuple(Node(task_id, "PICKUP", request.pickup) for task_id, request, _ in requests)
+    travel = travel_snapshot(nodes + facility_nodes(facilities), 0, [], None)
+    booked: Counter[str] = Counter()
+    tasks = []
+    for task_id, request, earliest in requests:
+        task = priority_transport(task_id, request, earliest, facilities, booked, travel)
+        if task is None:
+            raise ValueError(f"Demo pickup {task_id} has no route to a facility")
+        tasks.append(task)
+        booked[task.facility_id] += 1
     return vehicles, facilities, tasks

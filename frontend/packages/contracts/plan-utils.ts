@@ -88,7 +88,8 @@ export function timelineStatus(state:DispatchState,assignment:Assignment,isPrevi
   const vehicle=state.vehicles.find(v=>v.id===assignment.vehicle_id);
   const blocked=!isPreview&&state.issues?.some(i=>i.task_id===assignment.task_id&&[
     'MANUAL_COORDINATION','LOCKED_EXECUTION_BLOCKED','VEHICLE_UNAVAILABLE',
-    'NO_COMPATIBLE_VEHICLE','UNREACHABLE_ROUTE','INVALID_TRAVEL_TIME','HARD_TIME_WINDOW',
+    'NO_COMPATIBLE_VEHICLE','NO_VEHICLES','NO_VEHICLE_FOR_TASK_TYPE','MISSING_VEHICLE_EQUIPMENT','INSUFFICIENT_VEHICLE_CAPACITY',
+    'REASSIGNMENT_REQUIRED','UNREACHABLE_ROUTE','INVALID_TRAVEL_TIME','HARD_TIME_WINDOW',
   ].includes(i.code));
   if(assignment.status==='FAILED'||task?.status==='FAILED'||vehicle?.status==='BROKEN'||blocked)return 'failed';
   return assignment.status==='IN_PROGRESS'?'active':'future';

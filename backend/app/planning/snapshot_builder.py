@@ -69,7 +69,9 @@ def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilit
                    legacy_timing: bool = False, released: frozenset[str] = frozenset()) -> PlanningSnapshot:
     destinations = {f.id: f for f in facilities}
     current = {a.task_id: a for a in assignments}
-    frozen = {a.task_id: a for a in assignments if (a.is_locked or a.status != "PLANNED") and a.task_id not in released}
+    retired = {vehicle.id for vehicle in vehicles if vehicle.retired}
+    frozen = {a.task_id: a for a in assignments if a.task_id not in released
+              and (a.status != "PLANNED" or (a.is_locked and a.vehicle_id not in retired))}
     nodes = build_nodes(vehicles, tasks, destinations)
     travel = travel_snapshot(nodes, now, incidents, road_matrix, legacy_timing=legacy_timing)
     anchors = {}

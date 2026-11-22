@@ -7,6 +7,7 @@ from app.api.schemas import CreateIncident
 from app.models import AssignmentRecord, FacilityRecord, IncidentRecord, Scenario, SnapshotRecord, TaskRecord, VehicleRecord
 from app.planning.contracts import Facility, HORIZON, Incident, Node, Point, Reroute, Task, Vehicle
 from app.planning.snapshot_builder import MatrixProvider, after_repositioning, routes, travel_snapshot
+from app.planning.task_creation import facility_nodes, priority_transport
 from app.planning.validator import validate_plan
 from app.providers.roads import active_conditions, center_distance, road_network
 from app.services.state import active_plan, audit, entities, inputs, problem, timestamp
@@ -60,19 +61,12 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         facilities = entities(db, scope, FacilityRecord, Facility)
         incidents = entities(db, scope, IncidentRecord, Incident)
         booked = Counter(task.facility_id for task in entities(db, scope, TaskRecord, Task))
-        nodes = (Node("pickup", "PICKUP", request.task.pickup),
-                 *(Node(f.id, "DELIVERY", f.location) for f in facilities))
-        travel = travel_snapshot(nodes, scope.now, incidents, road_matrix)
-        reachable = [(seconds, travel.meters("pickup", f.id) or 0, f.id) for f in facilities
-                     if (seconds := travel.seconds("pickup", f.id)) is not None]
-        if not reachable:
-            raise problem(400, "NO_REACHABLE_FACILITY", "Od izbranega prevzema ni cestne poti do ustanove.")
-        # Nearest centre that still accepts and has quota left, so a new task never forces another one out.
-        open_facilities = {f.id for f in facilities if f.accepting and booked[f.id] < f.quota}
-        _, _, facility_id = min((item for item in reachable if item[2] in open_facilities), default=min(reachable))
         task_id = f"N{scope.revision + 1:03}"
-        task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,
-                    **request.task.model_dump(exclude={"earliest_pickup"}))
+        nodes = (Node(task_id, "PICKUP", request.task.pickup), *facility_nodes(facilities))
+        travel = travel_snapshot(nodes, scope.now, incidents, road_matrix)
+        task = priority_transport(task_id, request.task, earliest, facilities, booked, travel)
+        if task is None:
+            raise problem(400, "NO_REACHABLE_FACILITY", "Od izbranega prevzema ni cestne poti do ustanove.")
         db.add(TaskRecord(id=task.id, scenario_id=scope.id, payload=task.model_dump(mode="json")))
         event.task_id = task.id
         event.priority = task.priority

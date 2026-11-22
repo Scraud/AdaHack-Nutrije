@@ -1,33 +1,64 @@
 from collections import Counter
 from statistics import median
 
-from app.planning.contracts import Assignment, Change, Issue, Metrics, PlanningSnapshot
+from app.planning.contracts import Assignment, Change, Issue, Metrics, PlanningSnapshot, Task, Vehicle
 from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, routes, transport_distance
 
 
-def explain(snapshot: PlanningSnapshot, task_id: str, assignments: list[Assignment] = ()) -> Issue:
+def _fleet_options(snapshot: PlanningSnapshot, task: Task) -> tuple[list[Vehicle], str | None]:
+    fleet = [vehicle for vehicle in snapshot.vehicles.values() if not vehicle.retired]
+    if not fleet:
+        return [], "NO_VEHICLES"
+    supporting_type = [vehicle for vehicle in fleet if task.type in vehicle.task_types]
+    if not supporting_type:
+        return [], "NO_VEHICLE_FOR_TASK_TYPE"
+    compatible_vehicles = [vehicle for vehicle in supporting_type if compatible(vehicle, task)]
+    if not compatible_vehicles:
+        return [], ("MISSING_VEHICLE_EQUIPMENT" if any(v.capacity >= task.passenger_count for v in supporting_type)
+                    else "INSUFFICIENT_VEHICLE_CAPACITY")
+    operational = [vehicle for vehicle in compatible_vehicles if not snapshot.anchors[vehicle.id].blocked]
+    return operational, None if operational else "VEHICLE_UNAVAILABLE"
+
+
+def explain(snapshot: PlanningSnapshot, task_id: str, assignments: list[Assignment] | tuple[Assignment, ...] = (), *,
+            coverage_proven: bool = False) -> Issue:
     task = snapshot.tasks[task_id]
     facility = snapshot.facilities[task.facility_id]
-    vehicles = [v for v in snapshot.vehicles.values() if compatible(v, task)]
-    loaded = snapshot.travel.seconds(pickup(task.id), delivery(task.id))
+    booked = Counter(snapshot.tasks[row.task_id].facility_id for row in assignments if row.task_id not in snapshot.frozen)
+    vehicles, fleet_issue = _fleet_options(snapshot, task)
     if not facility.accepting:
         code = "FACILITY_NOT_ACCEPTING"
-    elif sum(1 for row in assignments if row.task_id not in snapshot.frozen
-             and snapshot.tasks[row.task_id].facility_id == facility.id) >= facility_remaining(snapshot, facility.id):
-        code = "FACILITY_CAPACITY"
-    elif not vehicles:
-        code = "NO_COMPATIBLE_VEHICLE"
-    elif all(snapshot.anchors[v.id].blocked for v in vehicles):
-        code = "VEHICLE_UNAVAILABLE"
-    elif loaded is None:
-        code = "UNREACHABLE_ROUTE"
-    elif max(snapshot.now, task.earliest_pickup) > (
-        snapshot.horizon - loaded - task.pickup_service - task.dropoff_service - task.cleaning
-    ):
-        code = "HARD_TIME_WINDOW"
+    elif booked[facility.id] >= facility_remaining(snapshot, facility.id):
+        accepting = [item.id for item in snapshot.facilities.values() if item.accepting]
+        all_full = len(accepting) > 1 and all(booked[key] >= facility_remaining(snapshot, key) for key in accepting)
+        code = "ALL_FACILITIES_FULL" if all_full and task.type == "PRIORITY_TRANSPORT" else "FACILITY_CAPACITY"
+    elif fleet_issue:
+        code = fleet_issue
     else:
-        code = "NOT_SCHEDULED_WITHIN_BUDGET"
+        code = _route_issue(snapshot, task, vehicles)
+        if code is None:
+            code = "SCHEDULE_CONFLICT" if coverage_proven else "NOT_SCHEDULED_WITHIN_BUDGET"
     return Issue(code=code, task_id=task.id)
+
+
+def _route_issue(snapshot: PlanningSnapshot, task: Task, vehicles: list[Vehicle]) -> str | None:
+    loaded = snapshot.travel.seconds(pickup(task.id), delivery(task.id))
+    approaches = [(vehicle, seconds) for vehicle in vehicles
+                  if (seconds := snapshot.travel.seconds(snapshot.anchors[vehicle.id].node, pickup(task.id))) is not None]
+    if loaded is None or not approaches:
+        return "UNREACHABLE_ROUTE"
+    after_pickup = task.pickup_service + loaded + task.dropoff_service + task.cleaning
+    fits_shift = False
+    for vehicle, approach in approaches:
+        departure = max(snapshot.anchors[vehicle.id].time, task.earliest_pickup - approach)
+        duration = approach + after_pickup
+        fits_shift |= departure + duration <= snapshot.horizon
+        for begin, end in sorted(vehicle.unavailable):
+            if departure < end and begin < departure + duration:
+                departure = end
+        if departure + duration <= snapshot.horizon:
+            return None
+    return "VEHICLE_UNAVAILABLE" if fits_shift else "HARD_TIME_WINDOW"
 
 
 def predecessors(assignments: list[Assignment]) -> dict[str, str | None]:
@@ -125,11 +156,8 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
                 continue
             task = snapshot.tasks[row.task_id]
             facility = snapshot.facilities[task.facility_id]
-            if anchor.blocked:
-                report("VEHICLE_UNAVAILABLE")
-                continue
-            if not compatible(vehicle, task):
-                report("NO_COMPATIBLE_VEHICLE")
+            if anchor.blocked or not compatible(vehicle, task):
+                report(_fleet_options(snapshot, task)[1] or "REASSIGNMENT_REQUIRED")
                 continue
             if not facility.accepting:
                 report("FACILITY_NOT_ACCEPTING")
@@ -147,7 +175,7 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
             arrive = take + task.pickup_service + loaded
             end = arrive + task.dropoff_service + task.cleaning
             if any(depart < until and begin < end for begin, until in vehicle.unavailable):
-                report("VEHICLE_UNAVAILABLE")
+                report(_fleet_options(snapshot, task)[1] or "REASSIGNMENT_REQUIRED")
                 continue
             if (
                 end > snapshot.horizon

@@ -127,3 +127,23 @@ def test_a_lowered_quota_is_named_as_the_reason(tmp_path):
         state = post(client, "incidents", {"type": "FACILITY_CAPACITY_CHANGE", "facility_id": "F1", "quota": 6})
         unassigned = replan(client, state)[0]["plan"]["unassigned"]
         assert len(unassigned) == 2 and {issue["code"] for issue in unassigned} == {"FACILITY_CAPACITY"}
+
+
+def test_all_full_facilities_are_reported_for_manual_and_demo_tasks(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.services.advisor import Advisor
+    from tests.test_dispatch import post
+
+    with TestClient(create_app(tmp_path / "x.sqlite", advisor=Advisor(None, "x"))) as client:
+        state = client.get("/api/state").json()
+        for facility in state["facilities"]:
+            post(client, "incidents", {"type": "FACILITY_CAPACITY_CHANGE", "facility_id": facility["id"], "quota": 0})
+        state = post(client, "incidents", {"type": "NEW_TASK", "task": {
+            "priority": "P1", "pickup": {"lat": 46.0343, "lon": 14.5117},
+        }})
+        plan = post(client, "plans/generate")["active_plan"]
+        assert {issue["task_id"]: issue["code"] for issue in plan["unassigned"]} == dict.fromkeys(
+            (task["id"] for task in state["tasks"]), "ALL_FACILITIES_FULL",
+        )

@@ -6,7 +6,25 @@ export type BackendState=Omit<Schema['State'],'incidents'> & {incidents:(Schema[
 export type BackendRecommendation=Omit<Schema['RecommendationView'],'plan'> & {
   plan:Schema['PlanView'] & {strategy:Recommendation['strategy']};incident_ids?:number[];
 };
-const labels:Record<string,string>={MANUAL_COORDINATION:'Začeti prevoz zahteva ročno koordinacijo.',LOCKED_EXECUTION_BLOCKED:'Zaščitena dodelitev je blokirana.',HARD_TIME_WINDOW:'Naloge ni mogoče opraviti do konca delovnega časa.',NO_COMPATIBLE_VEHICLE:'Nobeno vozilo nima potrebne opreme, vrste naloge ali kapacitete.',VEHICLE_UNAVAILABLE:'Dodeljeno vozilo ni operativno.',UNREACHABLE_ROUTE:'Do prevzema ali ustanove ni cestne poti.',INVALID_TRAVEL_TIME:'Motnja je podaljšala vožnjo.',FACILITY_CAPACITY:'Ciljna ustanova je polna – dnevna kvota prihodov je porabljena.',FACILITY_NOT_ACCEPTING:'Ciljna ustanova ne sprejema prihodov.',NOT_SCHEDULED_WITHIN_BUDGET:'Izračun naloge ni umestil v časovnem proračunu – izračunajte znova.'};
+const labels:Record<string,string>={
+  MANUAL_COORDINATION:'Začeti prevoz zahteva ročno koordinacijo.',
+  LOCKED_EXECUTION_BLOCKED:'Zaščitena dodelitev je blokirana.',
+  HARD_TIME_WINDOW:'Naloge ni mogoče opraviti do konca delovnega časa.',
+  NO_VEHICLES:'V floti ni vozil.',
+  NO_VEHICLE_FOR_TASK_TYPE:'Nobeno vozilo ne podpira te vrste prevoza.',
+  NO_COMPATIBLE_VEHICLE:'Nobeno vozilo ne izpolnjuje zahtev prevoza.',
+  INSUFFICIENT_VEHICLE_CAPACITY:'Nobeno vozilo za to vrsto prevoza nima dovolj mest.',
+  MISSING_VEHICLE_EQUIPMENT:'Nobeno vozilo za to vrsto prevoza s potrebno kapaciteto nima zahtevane opreme.',
+  VEHICLE_UNAVAILABLE:'Nobeno ustrezno vozilo ni na voljo.',
+  REASSIGNMENT_REQUIRED:'Trenutno dodelitev je treba prerazporediti. Ustvarite nov predlog.',
+  UNREACHABLE_ROUTE:'Do prevzema ali ustanove ni cestne poti.',
+  INVALID_TRAVEL_TIME:'Motnja je podaljšala vožnjo.',
+  FACILITY_CAPACITY:'Ciljna ustanova je porabila dnevno kvoto prihodov.',
+  ALL_FACILITIES_FULL:'Vse ustanove, ki sprejemajo, so porabile dnevno kvoto prihodov.',
+  FACILITY_NOT_ACCEPTING:'Ciljna ustanova ne sprejema prihodov.',
+  SCHEDULE_CONFLICT:'Razpored ob drugih nalogah in omejitvah ne omogoča dodelitve.',
+  NOT_SCHEDULED_WITHIN_BUDGET:'Izračun v razpoložljivem času ni našel dodelitve.',
+};
 const strategies={MIN_DELAY:{title:'Najmanj zamud',trade:'Prednost imajo želeni prevzemi; možnih je več sprememb razporeda.'},MIN_CHANGES:{title:'Najmanj sprememb',trade:'Ohranja obstoječe dodelitve; lahko pomeni daljše zamude.'},MAX_BUFFER:{title:'Največ časovne rezerve',trade:'Ohranja prostor za naslednje motnje; lahko spremeni več dodelitev.'}};
 export const at=(start:string,seconds:number)=>new Date(Date.parse(start)+seconds*1000).toISOString();
 const coordinate=(p:Schema['Point'])=>`${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`;
@@ -33,8 +51,9 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
     active.assignments=active.assignments.filter(a=>!orphaned.includes(a));
     const assigned=new Set(active.assignments.map(a=>a.task_id));
     active.unassigned_task_ids=raw.tasks.filter(t=>!assigned.has(t.id)).map(t=>t.id);
-    active.unassigned_reasons={...active.unassigned_reasons,...Object.fromEntries(raw.baseline.affected.filter(i=>active.unassigned_task_ids.includes(i.task_id)).map(i=>[i.task_id,issueText(i)])),
-      ...Object.fromEntries(orphaned.map(a=>[a.task_id,`${a.task_id}: Vozilo ${a.vehicle_id} je odstranjeno iz flote. Nalogo prerazporedite s predlogom.`]))};
+    active.unassigned_reasons={...active.unassigned_reasons,
+      ...Object.fromEntries(orphaned.map(a=>[a.task_id,`${a.task_id}: Vozilo ${a.vehicle_id} je odstranjeno iz flote. Nalogo prerazporedite s predlogom.`])),
+      ...Object.fromEntries(raw.baseline.affected.map(i=>[i.task_id,issueText(i)]))};
   }
   const recommendations:Recommendation[]=items.map(rec=>{
     const changes=rec.plan.changes??[],info=strategies[rec.plan.strategy];
@@ -42,7 +61,7 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
     return {id:rec.id,incident_id:incidents.at(-1)??'',incident_ids:incidents,base_plan_id:rec.base_plan_id,base_state_revision:rec.base_revision,
       strategy:rec.plan.strategy,status:['PROPOSED','ACCEPTED','REJECTED','STALE'].includes(rec.status)?rec.status as Recommendation['status']:'STALE',title:info.title,
       explanation:`${rec.plan.assignments.length} dodelitev, ${changes.length} sprememb in ${rec.plan.unassigned.length} nerazporejenih nalog.`,
-      trade_off:info.trade,feasibility_reasons:[`Izračun: ${rec.plan.solver_status}.`,rec.plan.coverage_proven?'Pokritost nalog je dokazana.':'Prikazana je najboljša najdena pokritost v časovnem proračunu.',...rec.plan.blocking.map(issueText)],
+      trade_off:info.trade,feasibility_reasons:[`Izračun: ${rec.plan.solver_status}.`,rec.plan.coverage_proven?'Pokritost nalog je dokazana.':'Prikazana je najboljša najdena pokritost v časovnem proračunu.',...rec.plan.blocking.map(issueText),...rec.plan.unassigned.map(issueText)],
       proposed_plan:adaptPlan(rec.plan,raw),solver_status:['OPTIMAL','FEASIBLE','INFEASIBLE','UNKNOWN','MODEL_INVALID'].includes(rec.plan.solver_status)?rec.plan.solver_status as Recommendation['solver_status']:'UNKNOWN'};
   });
   const incidents:Incident[]=raw.incidents.map(i=>{

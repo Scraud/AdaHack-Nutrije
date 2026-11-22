@@ -85,7 +85,8 @@ def inputs(db: Session, scope: Scenario, plan: Plan | None, road_matrix: MatrixP
 
     by_task = {task.id: task for task in tasks}
     by_vehicle = {vehicle.id: vehicle for vehicle in vehicles}
-    committed = {row.task_id for row in rows if row.status != "PLANNED" or row.is_locked}
+    committed = {row.task_id for row in rows if row.status != "PLANNED"
+                 or (row.is_locked and not by_vehicle[row.vehicle_id].retired)}
     urgent = [task for task in tasks if task.asap and task.id not in committed
               and task.earliest_pickup <= scope.now and task.actual_pickup is None]
     releasable = {row.vehicle_id: row.task_id for row in rows if row.status == "IN_PROGRESS" and not row.is_locked

@@ -13,6 +13,12 @@ python routing/build_ljubljana.py routing/data/slovenia.osm.pbf backend/app/prov
 
 [Slovenski izsek na Geofabriku](https://download.geofabrik.de/europe/slovenia.html)
 
+Zemljevid flote na zavihku **Domov** uporablja večji izsek istega vira. Prikaz zajema Ljubljano in okolico od Cerknice do Kranja ter od Vrhnike do Litije. Podatki za prikaz se strežejo skupaj s frontendom. Izsek za izbiro odsekov in izračun poti ostaja omejen na Ljubljano.
+
+```sh
+python routing/build_ljubljana.py --regional-map routing/data/slovenia.osm.pbf frontend/public/maps/ljubljana-region.json.gz
+```
+
 ## Izbirni OSRM
 
 Iz korena projekta pripravite cestni graf in zaženite Compose s profilom `routing`.

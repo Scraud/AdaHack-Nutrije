@@ -4,8 +4,12 @@ from json import dumps
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 
+from app.db import Database
 from app.main import create_app
+from app.models import TaskRecord, VehicleRecord
+from app.planning.contracts import HORIZON
 from app.providers import osrm
 
 
@@ -253,3 +257,67 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     assert {"task_id": new_id, "vehicle_id": None, "code": "NO_COMPATIBLE_VEHICLE"} in (
         replan(demo, state)[0]["plan"]["unassigned"]
     )
+
+
+def test_priority_task_uses_local_address_and_automatic_arrival_window(demo):
+    response = demo.get("/api/map/addresses", params={"query": "  zaloska cesta, 2 "})
+    assert response.is_success
+    [address] = response.json()
+    assert address["name"] == "Zaloška cesta 2"
+    now = 12000
+    post(demo, "demo/advance-time", {"to": now})
+    for priority, preferred, latest in (("P1", now, HORIZON), ("P2", now + 1800, now + 3600),
+                                         ("P3", now + 5400, now + 7200)):
+        state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
+            "pickup": {"lat": address["lat"], "lon": address["lon"]},
+            "pickup_name": address["name"], "priority": priority,
+        }})
+        event = state["incidents"][-1]
+        task = next(task for task in state["tasks"] if task["id"] == event["task_id"])
+        assert (task["pickup_name"], task["facility_id"]) == (address["name"], "F1")
+        assert task["arrival_policy"] == ("ASAP" if priority == "P1" else "PRIORITY_WINDOW")
+        assert (task["earliest_pickup"], task["preferred_arrival"], task["latest_arrival"]) == (now, preferred, latest)
+
+
+def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger(demo, tmp_path):
+    database = Database(tmp_path / "dispatch.sqlite")
+    with database.session(write=True) as db:
+        db.execute(delete(TaskRecord))
+        db.execute(delete(VehicleRecord).where(VehicleRecord.id != "V3"))
+    database.engine.dispose()
+
+    def add_task(priority, lat, lon):
+        state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
+            "priority": priority, "pickup": {"lat": lat, "lon": lon}, "equipment": ["OXYGEN"],
+        }})
+        return state, state["incidents"][-1]["task_id"]
+
+    _, low = add_task("P3", 46.04, 14.55)
+    initial = post(demo, "plans/generate")
+    [approach] = initial["active_plan"]["assignments"]
+    assert approach["planned_departure"] == 0
+    now = approach["planned_pickup"] // 2
+    post(demo, "demo/advance-time", {"to": now})
+    state, high = add_task("P1", 46.065, 14.535)
+    original = demo.get("/api/tracking").json()["vehicles"][0]
+    assert original["task_id"] == low and original["status"] == "TO_PICKUP"
+    item = replan(demo, state)[0]
+    assert item["plan"]["released_task_ids"] == [low]
+    first, second = item["plan"]["assignments"]
+    assert first["task_id"] == high and second["task_id"] == low
+    assert first["planned_departure"] == now
+    preview = demo.get("/api/tracking", params={"plan_id": item["plan"]["id"]}).json()["vehicles"][0]
+    assert preview["task_id"] == high
+    assert preview["location"] == original["location"]
+    assert demo.get("/api/tracking").json()["vehicles"][0] == original
+    post(demo, f"recommendations/{item['id']}/accept")
+    assert demo.get("/api/tracking").json()["vehicles"][0] == preview
+
+    post(demo, "demo/advance-time", {"to": second["planned_pickup"] + 1})
+    state, next_high = add_task("P1", 46.06, 14.52)
+    [item] = replan(demo, state)
+    assert item["plan"]["released_task_ids"] == []
+    active_low = next(row for row in state["active_plan"]["assignments"] if row["task_id"] == low)
+    assignments = {row["task_id"]: row for row in item["plan"]["assignments"]}
+    assert assignments[low] == active_low
+    assert assignments[next_high]["planned_departure"] >= active_low["planned_end"]

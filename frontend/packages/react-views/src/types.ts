@@ -1,4 +1,4 @@
-import type { DispatchPlan, DispatchState, PlanDiff, TrackingFrame, RoadMap, RoadSegment } from '../../contracts';
+import type { DispatchPlan, DispatchState, Location, PlanDiff, TrackingFrame, RoadMap, RoadSegment } from '../../contracts';
 export interface DispatchViewProps {
   state: DispatchState;
   plan: DispatchPlan | null;
@@ -13,5 +13,7 @@ export interface DispatchViewProps {
   roads?: RoadMap | null;
   pickingRoad?: boolean;
   roadPreview?: RoadSegment | null;
+  pickingLocation?: boolean;
+  locationPreview?: Location | null;
   onPickRoad?: (location: [number, number]) => void;
 }

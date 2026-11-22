@@ -41,6 +41,24 @@ class ScheduleModel:
         weights = {"P1": base * base, "P2": base, "P3": 1}
         self.coverage = sum(weights[state.tasks[key].priority] * present
                             for key, present in self.present.items() if key not in state.frozen)
+        urgent = []
+        urgent_count = []
+        routine = []
+        for key, times in self.times.items():
+            task = state.tasks[key]
+            if key in state.frozen or task.arrival_policy is None:
+                continue
+            present = self.present[key]
+            # Unscheduled pickups equal their lower bound and contribute zero elapsed time.
+            elapsed = times.pickup - times.lower + present * (times.lower + times.to_dropoff - task.earliest_pickup)
+            if task.arrival_policy == "ASAP":
+                urgent.append(elapsed)
+                urgent_count.append(present)
+            else:
+                routine.append(elapsed * (2 if task.priority == "P2" else 1))
+        urgent_weight = HORIZON * len(urgent) + 1
+        self.urgent = sum(urgent) - urgent_weight * sum(urgent_count) if urgent else None
+        self.routine = sum(routine) if routine else None
 
     def _add_tasks(self):
         blocked = {issue.task_id for issue in self.state.blocking}
@@ -160,10 +178,11 @@ class ScheduleModel:
                 continue
             task = self.state.tasks[key]
             present = self.present[key]
-            delay = self.model.new_int_var(0, HORIZON, f"delay_{key}")
-            self.model.add(delay >= times.pickup + times.to_dropoff - task.preferred_arrival).only_enforce_if(present)
-            self.model.add(delay == 0).only_enforce_if(~present)
-            delays.append(delay * (4 if task.priority == "P1" else 1))
+            if task.arrival_policy != "ASAP":
+                delay = self.model.new_int_var(0, HORIZON, f"delay_{key}")
+                self.model.add(delay >= times.pickup + times.to_dropoff - task.preferred_arrival).only_enforce_if(present)
+                self.model.add(delay == 0).only_enforce_if(~present)
+                delays.append(delay * (4 if task.priority == "P1" else 1))
             old = self.state.previous.get(key)
             if old is None:
                 continue
@@ -220,16 +239,23 @@ class ScheduleModel:
                 explain(self.state, key) for key in self.state.tasks if key not in assignments
             ], blocking=validation, metrics=result, changes=changes, solver_status=status,
             coverage_proven=coverage_proven, solve_ms=elapsed_ms,
+            released_task_ids=sorted(key for key, row in self.state.previous.items()
+                                     if row.status == "IN_PROGRESS" and key not in self.state.frozen),
         ), status)
 
 
-def _solve(model: cp.CpModel, seconds: float) -> tuple[cp.CpSolver, str]:
+def _solve(model: cp.CpModel, seconds: float, hint: cp.CpSolver | None = None) -> tuple[cp.CpSolver, str]:
+    if hint is not None:
+        for index in range(len(hint.response_proto.solution)):
+            variable = model.get_int_var_from_proto_index(index)
+            model.add_hint(variable, hint.value(variable))
     solver = cp.CpSolver()
     solver.parameters.num_workers = 1
     solver.parameters.random_seed = 42
     solver.parameters.max_time_in_seconds = seconds
     solver.parameters.max_deterministic_time = seconds / 4
     status = solver.solve(model)
+    model.clear_hints()
     return solver, solver.status_name(status)
 
 
@@ -241,22 +267,34 @@ class CpSatPlanner:
                      budget: SolveBudget = SolveBudget()) -> list[PlanCandidate]:
         started = monotonic()
         schedule = ScheduleModel(snapshot)
+        hint = None
+        if schedule.urgent is not None:
+            schedule.model.minimize(schedule.urgent)
+            hint, status = _solve(schedule.model, budget.coverage_seconds)
+            if status not in ("OPTIMAL", "FEASIBLE"):
+                return [PlanCandidate(None, status)]
+            schedule.model.add(schedule.urgent == hint.value(schedule.urgent))
         schedule.model.maximize(schedule.coverage)
-        coverage_solver, coverage_status = _solve(schedule.model, budget.coverage_seconds)
+        coverage_solver, coverage_status = _solve(schedule.model, budget.coverage_seconds, hint)
         if coverage_status not in ("OPTIMAL", "FEASIBLE"):
-            return [PlanCandidate(None, coverage_status)]
-        schedule.model.add(schedule.coverage == round(coverage_solver.objective_value))
+            if hint is None:
+                return [PlanCandidate(None, coverage_status)]
+            coverage_solver, coverage_status = hint, status
+            coverage_proven = False
+        else:
+            coverage_proven = coverage_status == "OPTIMAL"
+        schedule.model.add(schedule.coverage == coverage_solver.value(schedule.coverage))
+        if schedule.routine is not None:
+            schedule.model.minimize(schedule.routine)
+            sooner, sooner_status = _solve(schedule.model, budget.strategy_seconds, coverage_solver)
+            if sooner_status in ("OPTIMAL", "FEASIBLE"):
+                schedule.model.add(schedule.routine == sooner.value(schedule.routine))
+                coverage_solver, coverage_status = sooner, sooner_status
         output = []
-        coverage_proven = coverage_status == "OPTIMAL"
         for strategy in strategies:
             strategy_start = monotonic()
             schedule.set_objective(strategy)
-            if not output:
-                for index in range(len(coverage_solver.response_proto.solution)):
-                    variable = schedule.model.get_int_var_from_proto_index(index)
-                    schedule.model.add_hint(variable, coverage_solver.value(variable))
-            solver, status = _solve(schedule.model, budget.strategy_seconds)
-            schedule.model.clear_hints()
+            solver, status = _solve(schedule.model, budget.strategy_seconds, coverage_solver if not output else None)
             if status not in ("OPTIMAL", "FEASIBLE"):
                 if output:
                     output.append(PlanCandidate(None, status))

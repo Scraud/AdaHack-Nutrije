@@ -163,7 +163,7 @@
                   <tr [id]="'task-' + task.id" tabindex="-1" [class.highlight]="selectedTask() === task.id">
                     <th scope="row">{{ task.id }}
                       <small>{{ task.type === 'PRIORITY_TRANSPORT' ? 'Dodana' : 'Naročena' }}</small></th>
-                    <td><span class="priority" [attr.data-priority]="task.priority">{{ task.priority }}</span></td>
+                    <td><span class="priority" [attr.data-priority]="task.priority">{{ priorityLabels[task.priority] }}</span></td>
                     <td>{{ clock(state.start_at, task.earliest_pickup) }}
                       @if (task.latest_pickup != null) { – {{ clock(state.start_at, task.latest_pickup) }} }
                       <small>Rok prihoda {{ clock(state.start_at, task.latest_arrival) }}</small></td>

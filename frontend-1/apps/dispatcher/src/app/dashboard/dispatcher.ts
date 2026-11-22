@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { clock, type Assignment } from '../../../../../packages/contracts';
 import { DispatchStore } from '../core/dispatch-store';
-import { issueLabels } from '../core/labels';
+import { issueLabels, priorityLabels } from '../core/labels';
 import { PlanHistory } from '../history/plan-history';
 import { IncidentCenter } from '../incidents/incident-center';
 import { ReactViewHost } from '../react-host/react-view-host';
@@ -15,6 +15,7 @@ import { RecommendationComparison } from '../recommendations/recommendation-comp
 export class Dispatcher {
   readonly store = inject(DispatchStore);
   readonly clock = clock;
+  readonly priorityLabels = priorityLabels;
   readonly issues = issueLabels;
   readonly selectedTask = signal('');
   readonly shownPlan = computed(() => this.store.preview() ?? this.store.state()?.active_plan ?? null);

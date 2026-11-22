@@ -310,6 +310,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/map/addresses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Addresses */
+        get: operations["addresses_api_map_addresses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/map/roads/street": {
         parameters: {
             query?: never;
@@ -675,9 +692,9 @@ export interface components {
              * @enum {string}
              */
             priority: "P1" | "P2" | "P3";
-            /** Facility Id */
-            facility_id: string;
             pickup: components["schemas"]["Point"];
+            /** Pickup Name */
+            pickup_name?: string | null;
             /**
              * Passenger Count
              * @default 1
@@ -686,13 +703,18 @@ export interface components {
             /** Equipment */
             equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
             /** Earliest Pickup */
-            earliest_pickup: number;
+            earliest_pickup?: number | null;
             /** Latest Pickup */
             latest_pickup?: number | null;
-            /** Preferred Arrival */
-            preferred_arrival: number;
-            /** Latest Arrival */
-            latest_arrival: number;
+        };
+        /** PickupAddress */
+        PickupAddress: {
+            /** Lat */
+            lat: number;
+            /** Lon */
+            lon: number;
+            /** Name */
+            name: string;
         };
         /** PlanSummary */
         PlanSummary: {
@@ -724,6 +746,8 @@ export interface components {
             metrics: components["schemas"]["Metrics"];
             /** Changes */
             changes?: components["schemas"]["Change"][];
+            /** Released Task Ids */
+            released_task_ids?: string[];
             /** Solver Status */
             solver_status: string;
             /** Coverage Proven */
@@ -936,6 +960,8 @@ export interface components {
              */
             priority: "P1" | "P2" | "P3";
             pickup: components["schemas"]["Point"];
+            /** Pickup Name */
+            pickup_name?: string | null;
             /** Facility Id */
             facility_id: string;
             /** Passenger Count */
@@ -946,6 +972,8 @@ export interface components {
             earliest_pickup: number;
             /** Latest Pickup */
             latest_pickup?: number | null;
+            /** Arrival Policy */
+            arrival_policy?: ("ASAP" | "PRIORITY_WINDOW") | null;
             /** Preferred Arrival */
             preferred_arrival: number;
             /** Latest Arrival */
@@ -1063,6 +1091,8 @@ export interface components {
                 number,
                 number
             ][];
+            /** Repositioned At */
+            repositioned_at?: number | null;
             /**
              * Status
              * @enum {string}
@@ -1534,6 +1564,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoadMap"];
+                };
+            };
+        };
+    };
+    addresses_api_map_addresses_get: {
+        parameters: {
+            query: {
+                query: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupAddress"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

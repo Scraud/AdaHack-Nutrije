@@ -3,14 +3,14 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, Request, Response
+from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from app.api.schemas import (
-    Advance, Baseline, CreateIncident, PlanSummary, PlanView, RecommendationView, Recommendations,
+    Advance, Baseline, CreateIncident, PickupAddress, PlanSummary, PlanView, RecommendationView, Recommendations,
     Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State,
 )
 from app.db import Database
@@ -175,6 +175,10 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     def road_map():
         return Response(road_network().basemap(), media_type="application/json",
                         headers={"Cache-Control": "public, max-age=3600"})
+
+    @app.get("/api/map/addresses")
+    def addresses(query: str = Query(min_length=2, max_length=200)) -> list[PickupAddress]:
+        return road_network().find_addresses(query)
 
     @app.get("/api/map/roads/street", response_model=RoadSegment)
     def road_street(name: str):

@@ -5,11 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import CreateIncident
 from app.models import AssignmentRecord, FacilityRecord, IncidentRecord, Scenario, SnapshotRecord, TaskRecord, VehicleRecord
-from app.planning.contracts import Facility, HORIZON, Incident, Point, Reroute, Task, Vehicle
-from app.planning.snapshot_builder import MatrixProvider, routes
+from app.planning.contracts import Facility, HORIZON, Incident, Node, Point, Reroute, Task, Vehicle
+from app.planning.snapshot_builder import MatrixProvider, after_repositioning, routes, travel_snapshot
 from app.planning.validator import validate_plan
 from app.providers.roads import active_conditions, center_distance, road_network
-from app.services.state import active_plan, audit, inputs, problem, timestamp
+from app.services.state import active_plan, audit, entities, inputs, problem, timestamp
+
+
+ARRIVAL_MINUTES = {"P1": (0, None), "P2": (30, 60), "P3": (90, 120)}
 
 
 def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None):
@@ -50,18 +53,33 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
     elif event.type == "NEW_TASK":
         if request.task is None:
             raise problem(400, "TASK_REQUIRED", "Vnesite podatke nove naloge.")
-        if not db.get(FacilityRecord, (request.task.facility_id, scope.id)):
-            raise problem(404, "FACILITY_NOT_FOUND", "Ustanova ne obstaja.")
-        if scope.now > request.task.earliest_pickup:
+        earliest = request.task.earliest_pickup if request.task.earliest_pickup is not None else scope.now
+        if scope.now > earliest:
             raise problem(400, "PICKUP_IN_PAST", "Prevzema ni mogoče naročiti v preteklosti.")
+        facilities = entities(db, scope, FacilityRecord, Facility)
+        incidents = entities(db, scope, IncidentRecord, Incident)
+        nodes = (Node("pickup", "PICKUP", request.task.pickup),
+                 *(Node(f.id, "DELIVERY", f.location) for f in facilities))
+        travel = travel_snapshot(nodes, scope.now, incidents, road_matrix)
+        reachable = [(seconds, travel.meters("pickup", f.id) or 0, f.id) for f in facilities
+                     if (seconds := travel.seconds("pickup", f.id)) is not None]
+        if not reachable:
+            raise problem(400, "NO_REACHABLE_FACILITY", "Od izbranega prevzema ni cestne poti do ustanove.")
+        _, _, facility_id = min(reachable)
+        preferred, deadline = ARRIVAL_MINUTES[request.task.priority]
         task_id = f"N{scope.revision + 1:03}"
         try:
-            task = Task(id=task_id, type="PRIORITY_TRANSPORT", **request.task.model_dump())
+            task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id,
+                        arrival_policy="ASAP" if deadline is None else "PRIORITY_WINDOW",
+                        earliest_pickup=earliest, preferred_arrival=min(HORIZON, earliest + preferred * 60),
+                        latest_arrival=HORIZON if deadline is None else min(HORIZON, earliest + deadline * 60),
+                        **request.task.model_dump(exclude={"earliest_pickup"}))
         except ValidationError as exc:
             raise problem(400, "INVALID_TASK_TIME", exc.errors()[0]["msg"]) from exc
         db.add(TaskRecord(id=task.id, scenario_id=scope.id, payload=task.model_dump(mode="json")))
         event.task_id = task.id
         event.priority = task.priority
+        event.location = task.pickup
     record = IncidentRecord(scenario_id=scope.id, payload=event.model_dump(mode="json"))
     db.add(record)
     db.flush()
@@ -156,7 +174,8 @@ def reroute(db: Session, scope: Scenario, road_matrix: MatrixProvider | None):
             task = state.tasks[row.task_id]
             facility = state.facilities[task.facility_id]
             if row.status == "COMPLETED" or task.actual_arrival is not None:
-                origin = facility.location
+                if after_repositioning(vehicle, row):
+                    origin = facility.location
                 available = max(available, row.planned_end)
                 continue
             if vehicle.broken:

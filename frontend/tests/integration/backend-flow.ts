@@ -2,7 +2,7 @@ import '@angular/compiler';
 import assert from 'node:assert/strict';
 import { HttpDispatchGateway } from '../../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../../apps/dispatcher/src/app/core/dispatch-store';
-import { candidateProblem, formatTime } from '../../packages/contracts/plan-utils';
+import { arrivalAsap, candidateProblem, formatTime } from '../../packages/contracts/plan-utils';
 
 // Run only against an explicitly selected disposable backend: this resets its scenario.
 async function main(){
@@ -19,12 +19,18 @@ await store.prepareDemo();healthy();
 assert.equal(formatTime(store.state()!.simulated_time),'11:20');
 assert.equal(store.state()!.tasks.length,20);
 const active=store.activePlan()!.id;
-await store.createIncident({incident_type:'NEW_TASK',priority:'P1',description:'Integration: prednostni prevoz'});healthy();
+const [pickup]=await gateway.findAddresses('Zaloška cesta 2');
+assert.ok(pickup,'Expected a local address from the backend.');
+await store.createIncident({incident_type:'NEW_TASK',priority:'P1',description:'Integration: prednostni prevoz',task:{pickup,passenger_count:1,equipment:['OXYGEN']}});healthy();
 assert.equal(store.selectedIncident(),null,'Incoming events must keep their solutions collapsed.');
 const incident=store.state()!.incidents.find(i=>i.id===store.lastCreatedIncidentId())!;
 store.toggleIncident(incident.id);
 assert.equal(incident.description,'Integration: prednostni prevoz');
 assert.equal(store.state()!.tasks.length,21);
+const task=store.state()!.tasks.find(item=>item.id===incident.affected_task_ids[0])!;
+assert.equal(task.origin.name,pickup.name);
+assert.equal(task.earliest_pickup,store.state()!.simulated_time);
+assert.ok(arrivalAsap(task));
 assert.equal(store.metrics().unassigned,1);
 assert.equal(store.activePlan()!.unassigned_task_ids.length,1);
 await store.generate(incident.id);healthy();

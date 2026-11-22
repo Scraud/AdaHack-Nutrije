@@ -7,6 +7,7 @@ export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCH
 export const statusLabel = (value: string) => ({ AVAILABLE: 'Na voljo', EN_ROUTE: 'Na poti', TRANSPORTING: 'V prevozu', SERVICE:'Predaja / čiščenje', UNAVAILABLE: 'Nedosegljivo', BROKEN: 'Okvara' }[value] ?? value);
 export const incidentStatus = (value: string) => ({ OPEN: 'Novo', AWAITING_DECISION: 'Čaka na odločitev', RESOLVED: 'Rešeno' }[value] ?? value);
 export const incidentType = (value: string) => ({ NEW_TASK: 'Prednostna naloga', VEHICLE_BREAKDOWN: 'Okvara vozila', TRAFFIC_DELAY: 'Prometni zastoj', ROAD_CLOSURE: 'Zapora ceste', VEHICLE_UNAVAILABLE: 'Nedosegljivost',WEATHER_DELAY:'Slabo vreme',FACILITY_CAPACITY_CHANGE:'Sprememba kapacitete' }[value] ?? value);
+export const arrivalAsap = (task: TransportTask) => task.arrival_policy === 'ASAP';
 
 export function comparePlans(base: DispatchPlan | null, candidate: DispatchPlan | null): PlanDiff {
   const diff: PlanDiff = { added: new Set(), changed: new Set(), removed: new Set(), vehicle_ids: new Set() };
@@ -16,7 +17,7 @@ export function comparePlans(base: DispatchPlan | null, candidate: DispatchPlan 
   for (const [id, item] of next) {
     const old = previous.get(id);
     if (!old) { diff.added.add(id); diff.vehicle_ids.add(item.vehicle_id); }
-    else if (old.vehicle_id !== item.vehicle_id || old.planned_pickup !== item.planned_pickup || old.planned_end !== item.planned_end || old.planned_dropoff !== item.planned_dropoff || old.planned_departure !== item.planned_departure) {
+    else if (old.status !== item.status || old.vehicle_id !== item.vehicle_id || old.planned_pickup !== item.planned_pickup || old.planned_end !== item.planned_end || old.planned_dropoff !== item.planned_dropoff || old.planned_departure !== item.planned_departure) {
       diff.changed.add(id); diff.vehicle_ids.add(old.vehicle_id); diff.vehicle_ids.add(item.vehicle_id);
     }
   }
@@ -29,7 +30,7 @@ export function calculatePlanMetrics(plan: DispatchPlan | null, tasks: Transport
   let delay = 0, atRisk = 0;
   for (const assignment of plan?.assignments ?? []) {
     const task = taskMap.get(assignment.task_id);
-    if (!task || new Date(assignment.planned_end) <= new Date(now)) continue;
+    if (!task || arrivalAsap(task) || new Date(assignment.planned_end) <= new Date(now)) continue;
     const minutes = Math.max(0, Math.ceil((Date.parse(assignment.planned_dropoff) - Date.parse(task.preferred_arrival)) / 60_000));
     delay += minutes;
     if (minutes > 0) atRisk++;
@@ -111,6 +112,8 @@ export function candidateProblem(base: DispatchPlan | null, candidate: DispatchP
     if (row.some((a, i) => i > 0 && Date.parse(a.planned_departure) < Date.parse(row[i - 1].planned_end))) return 'Predlog vsebuje prekrivajoči se dodelitvi.';
   }
   for (const locked of base?.assignments.filter(a => a.is_locked || a.status === 'COMPLETED' || a.status === 'IN_PROGRESS') ?? []) {
+    const task = tasks.find(t => t.id === locked.task_id);
+    if (!locked.is_locked && locked.status === 'IN_PROGRESS' && task && task.priority !== 'P1' && task.actual_pickup == null && task.actual_arrival == null && candidate.released_task_ids?.includes(task.id)) continue;
     const next = candidate.assignments.find(a => a.task_id === locked.task_id);
     if (!next || next.vehicle_id !== locked.vehicle_id || next.planned_pickup !== locked.planned_pickup || next.planned_end !== locked.planned_end || next.planned_departure !== locked.planned_departure || next.planned_dropoff !== locked.planned_dropoff) return 'Predlog spreminja zaščiteno dodelitev.';
   }

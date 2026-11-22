@@ -28,6 +28,7 @@ class Vehicle(BaseModel):
     available_at: int = 0
     broken: bool = False
     unavailable: list[tuple[int, int]] = Field(default_factory=list)
+    repositioned_at: int | None = None
 
 
 class Facility(BaseModel):
@@ -43,11 +44,13 @@ class Task(BaseModel):
     type: TaskType
     priority: Priority
     pickup: Point
+    pickup_name: str | None = None
     facility_id: str
     passenger_count: int = Field(ge=0, le=8)
     equipment: list[Equipment] = Field(default_factory=list)
     earliest_pickup: int = Field(ge=0, le=HORIZON)
     latest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
+    arrival_policy: Literal["ASAP", "PRIORITY_WINDOW"] | None = None
     preferred_arrival: int = Field(ge=0, le=HORIZON)
     latest_arrival: int = Field(ge=0, le=HORIZON)
     pickup_service: int = Field(default=240, ge=0, le=3600)
@@ -148,6 +151,7 @@ class Candidate(BaseModel):
     blocking: list[Issue]
     metrics: Metrics
     changes: list[Change] = Field(default_factory=list)
+    released_task_ids: list[str] = Field(default_factory=list)
     solver_status: str
     coverage_proven: bool
     solve_ms: int

@@ -45,7 +45,7 @@
     <form class="inline-form" (ngSubmit)="createTask()">
       <div class="form-grid">
         <label>Prioriteta<select name="priority" [(ngModel)]="priority">
-          <option>P1</option><option>P2</option><option>P3</option>
+          <option value="P1">Visoka</option><option value="P2">Srednja</option><option value="P3">Nizka</option>
         </select></label>
         <label>Oprema<select name="equipment" [(ngModel)]="equipment">
           <option value="OXYGEN">Kisik</option><option value="STRETCHER">Nosila</option><option value="WHEELCHAIR">Voziček</option>

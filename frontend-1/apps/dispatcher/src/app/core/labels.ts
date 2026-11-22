@@ -1,5 +1,7 @@
+export const priorityLabels = { P1: 'Visoka', P2: 'Srednja', P3: 'Nizka' } as const;
+
 export const strategies: Record<string, { name: string; description: string }> = {
-  MIN_DELAY: { name: 'Najmanj zamud', description: 'Poudarek na želenih prihodih, z večjo težo pri nalogah P1.' },
+  MIN_DELAY: { name: 'Najmanj zamud', description: 'Poudarek na želenih prihodih, z večjo težo pri nalogah z visoko prioriteto.' },
   MIN_CHANGES: { name: 'Najmanj sprememb', description: 'Prednost imajo obstoječa vozila, zaporedje in časi prevzemov.' },
   MAX_BUFFER: { name: 'Največ rezerve', description: 'Poveča najmanjšo razpoložljivo rezervo v zaporedju nalog.' },
 };

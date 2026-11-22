@@ -13,8 +13,8 @@ from app.models import (
     AssignmentRecord, Audit, Decision, FacilityRecord, IncidentRecord, Plan, Recommendation,
     Scenario, SnapshotRecord, TaskRecord, VehicleRecord,
 )
-from app.planning.contracts import Assignment, Candidate, Facility, Incident, PlanningSnapshot, Task, Vehicle
-from app.planning.snapshot_builder import MatrixProvider, build_snapshot, routes
+from app.planning.contracts import Assignment, Candidate, Facility, Incident, PlanningSnapshot, Point, Task, Vehicle
+from app.planning.snapshot_builder import MatrixProvider, after_repositioning, build_snapshot, compatible, routes
 from app.seed.scenario import DEMO_START, demo_data
 from app.services.metrics import project_existing
 
@@ -64,19 +64,49 @@ def assignments(db: Session, plan: Plan | None) -> list[Assignment]:
 
 
 def inputs(db: Session, scope: Scenario, plan: Plan | None, road_matrix: MatrixProvider | None = None, *,
-           preserve_active_timing: bool = False):
+           preserve_active_timing: bool = False, preview: bool = False):
     vehicles = entities(db, scope, VehicleRecord, Vehicle)
     tasks = entities(db, scope, TaskRecord, Task)
     facilities = entities(db, scope, FacilityRecord, Facility)
     incidents = entities(db, scope, IncidentRecord, Incident)
     rows = assignments(db, plan)
-    provider = None
-    if preserve_active_timing and plan:
-        provider = db.get(SnapshotRecord, plan.snapshot_id).payload["provider"]
-        if provider != "OSRM":
-            road_matrix = None
-    return build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents, road_matrix,
-                          legacy_timing=provider == "HAVERSINE"), incidents, rows
+    saved = db.get(SnapshotRecord, plan.snapshot_id).payload if plan else {}
+    provider = saved.get("provider")
+    if preview:
+        origins = {row["id"]: Vehicle.model_validate(row) for row in saved.get("vehicles", [])
+                   if row.get("repositioned_at") == scope.now}
+        vehicles = [origins.get(vehicle.id, vehicle) for vehicle in vehicles]
+
+    active_matrix = road_matrix if not plan or provider == "OSRM" else None
+    if preserve_active_timing:
+        snapshot = build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents, active_matrix,
+                                  legacy_timing=provider == "HAVERSINE")
+        return snapshot, incidents, rows
+
+    by_task = {task.id: task for task in tasks}
+    by_vehicle = {vehicle.id: vehicle for vehicle in vehicles}
+    assigned = {row.task_id for row in rows}
+    urgent = [by_task[event.task_id] for event in incidents if event.type == "NEW_TASK" and event.status == "OPEN"
+              and event.task_id in by_task and event.task_id not in assigned
+              and by_task[event.task_id].arrival_policy == "ASAP" and by_task[event.task_id].earliest_pickup <= scope.now]
+    releasable = {row.vehicle_id: row.task_id for row in rows if row.status == "IN_PROGRESS" and not row.is_locked
+                  and by_task[row.task_id].priority != "P1" and by_task[row.task_id].actual_pickup is None
+                  and any(compatible(by_vehicle[row.vehicle_id], task) for task in urgent)}
+    released = frozenset()
+    if releasable:
+        from app.services.tracking import demo_positions, planned_path
+
+        current = build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents, active_matrix,
+                                 legacy_timing=provider == "HAVERSINE")
+        positions = {row.id: row.location for row in demo_positions(
+            current, incidents, rows, planned_path(saved, active_matrix), saved.get("now", 0),
+        ) if row.id in releasable and not current.anchors[row.id].blocked}
+        released = frozenset(releasable[key] for key in positions)
+        vehicles = [vehicle.model_copy(update={"location": Point(lat=positions[vehicle.id][0], lon=positions[vehicle.id][1]),
+                                               "repositioned_at": scope.now})
+                    if vehicle.id in positions else vehicle for vehicle in vehicles]
+    snapshot = build_snapshot(scope.now, vehicles, tasks, facilities, rows, incidents, road_matrix, released=released)
+    return snapshot, incidents, rows
 
 
 def snapshot_payload(state: PlanningSnapshot, incidents: list[Incident]) -> tuple[str, dict]:
@@ -85,8 +115,11 @@ def snapshot_payload(state: PlanningSnapshot, incidents: list[Incident]) -> tupl
         "nodes": [{"id": node.id, "kind": node.kind, "point": node.point.model_dump()}
                   for node in state.travel.nodes],
         "durations": [list(row) for row in state.travel.durations],
-        "vehicles": [vehicle.model_dump(mode="json") for vehicle in state.vehicles.values()],
-        "tasks": [task.model_dump(mode="json") for task in state.tasks.values()],
+        "vehicles": [vehicle.model_dump(mode="json", exclude={"repositioned_at"} if vehicle.repositioned_at is None else None)
+                     for vehicle in state.vehicles.values()],
+        "tasks": [task.model_dump(mode="json", exclude={field for field in ("pickup_name", "arrival_policy")
+                                                        if getattr(task, field) is None})
+                  for task in state.tasks.values()],
         "facilities": [facility.model_dump(mode="json") for facility in state.facilities.values()],
         "previous": [row.model_dump(mode="json", exclude={"distance_meters"} if row.distance_meters is None else None)
                      for row in state.previous.values()],
@@ -161,7 +194,7 @@ def vehicle_views(state: PlanningSnapshot, rows: list[Assignment]) -> list[Vehic
         next_available = max(vehicle.available_at, state.now)
         for row in by_vehicle.get(vehicle.id, []):
             task = state.tasks[row.task_id]
-            if row.status == "COMPLETED" or task.actual_arrival is not None:
+            if (row.status == "COMPLETED" or task.actual_arrival is not None) and after_repositioning(vehicle, row):
                 location = state.facilities[task.facility_id].location
             if row.status == "IN_PROGRESS":
                 status = "EN_ROUTE"

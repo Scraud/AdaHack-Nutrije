@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models import Decision, IncidentRecord, Plan, Recommendation, Scenario, SnapshotRecord
+from app.models import Decision, IncidentRecord, Plan, Recommendation, Scenario, SnapshotRecord, VehicleRecord
 from app.planning.snapshot_builder import MatrixProvider
 from app.planning.validator import validate_plan
 from app.services.state import (
@@ -30,6 +30,9 @@ def decide(db: Session, scope: Scenario, rec_id: str, *, accept: bool, reason: s
             raise problem(409, "STALE_RECOMMENDATION", "Vhodni podatki so se spremenili.")
         if candidate.result["blocking"] or validate_plan(state, assignments(db, candidate)):
             raise problem(409, "BLOCKED_PLAN", "Pred potrditvijo je potrebna ročna koordinacija.")
+        for task_id in candidate.result.get("released_task_ids", []):
+            vehicle = state.vehicles[state.previous[task_id].vehicle_id]
+            db.get(VehicleRecord, (vehicle.id, scope.id)).payload = vehicle.model_dump(mode="json")
         active.status = "SUPERSEDED"
         db.flush()
         candidate.status = "ACTIVE"

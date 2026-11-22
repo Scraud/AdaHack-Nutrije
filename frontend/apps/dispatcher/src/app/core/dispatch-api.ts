@@ -1,4 +1,4 @@
-import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
 import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
@@ -18,6 +18,7 @@ export interface DispatchGateway {
   getTracking?(planId?:string): Promise<TrackingFrame>;
   getRoads?(): Promise<RoadMap>;
   findStreet?(name:string): Promise<RoadSegment>;
+  findAddresses?(query:string): Promise<Location[]>;
   pickRoad?(location:[number,number]): Promise<RoadSegment>;
   setPlayback?(playing:boolean,speed:Playback['speed']): Promise<Playback>;
   resolveIncident?(id:string): Promise<DispatchState>;
@@ -52,6 +53,7 @@ export class HttpDispatchGateway implements DispatchGateway {
   getTracking(planId?:string){return this.request<TrackingFrame>(`/tracking${planId?'?plan_id='+encodeURIComponent(planId):''}`);}
   getRoads(){return this.request<RoadMap>('/map/roads');}
   findStreet(name:string){return this.request<RoadSegment>(`/map/roads/street?name=${encodeURIComponent(name.trim())}`);}
+  findAddresses(query:string){return this.request<Location[]>(`/map/addresses?query=${encodeURIComponent(query)}`);}
   pickRoad([lat,lon]:[number,number]){return this.request<RoadSegment>(`/map/roads/nearest?lat=${lat}&lon=${lon}`);}
   setPlayback(playing:boolean,speed:Playback['speed']){return this.request<Playback>('/tracking/playback',{playing,speed});}
   resolveIncident(id:string){return this.mutate(`/incidents/${encodeURIComponent(id)}/resolve`,{});}
@@ -59,12 +61,18 @@ export class HttpDispatchGateway implements DispatchGateway {
   async advanceTime(to:string){const state=await this.request<BackendState>('/state');return this.mutate('/demo/advance-time',{to:Math.round((Date.parse(to)-Date.parse(state.start_at))/1000)});}
   async createIncident(input: IncidentInput) {
     if(input.incident_type==='TRAFFIC_DELAY'||input.incident_type==='ROAD_CLOSURE')input={...ROAD_EVENT_DEFAULTS,...input};
-    const state=await this.request<BackendState>('/state');
-    const offset=(time:string)=>Math.round((Date.parse(time)-Date.parse(state.start_at))/1000);
     const body:components['schemas']['CreateIncident']={type:input.incident_type,description:input.description??'',priority:input.priority,
       vehicle_id:input.affected_vehicle_id,road_id:input.road_id,duration:input.duration_minutes?input.duration_minutes*60:undefined,multiplier:input.delay_multiplier,location:input.location?{lat:input.location.lat,lon:input.location.lon}:undefined};
-    if(input.task)body.task={facility_id:input.task.facility_id,priority:input.priority,pickup:{lat:input.task.pickup.lat,lon:input.task.pickup.lon},passenger_count:input.task.passenger_count,equipment:input.task.equipment,earliest_pickup:offset(input.task.earliest_pickup),preferred_arrival:offset(input.task.preferred_arrival),latest_arrival:offset(input.task.latest_arrival)};
-    else if(input.incident_type==='NEW_TASK')body.task={facility_id:'F3',priority:input.priority,pickup:{lat:46.068,lon:14.542},passenger_count:1,equipment:['OXYGEN'],earliest_pickup:state.now+15*60,preferred_arrival:state.now+45*60,latest_arrival:state.now+70*60};
+    if(input.task){
+      const {pickup,passenger_count,equipment,earliest_pickup}=input.task;
+      body.task={priority:input.priority,pickup:{lat:pickup.lat,lon:pickup.lon},pickup_name:pickup.name,passenger_count,equipment};
+      if(earliest_pickup){
+        const state=await this.request<BackendState>('/state');
+        body.task.earliest_pickup=Math.round((Date.parse(earliest_pickup)-Date.parse(state.start_at))/1000);
+      }
+    }else if(input.incident_type==='NEW_TASK'){
+      body.task={priority:input.priority,pickup:{lat:46.068,lon:14.542},pickup_name:'Simulirana lokacija prevzema',passenger_count:1,equipment:['OXYGEN']};
+    }
     return this.mutate('/incidents',body);
   }
   async generateRecommendations(_incidentId: string, _state: DispatchState) {
@@ -94,7 +102,7 @@ export class DemoDispatchGateway implements DispatchGateway {
     if (input.incident_type !== 'NEW_TASK') throw new Error('Vzorčni scenarij podpira novo prednostno nalogo. Ostale dogodke pripravi backend.');
     if (this.state.tasks.some(t => t.id === 'N021')) return this.copy();
     this.state.tasks.push({ id:'N021', task_type:'PRIORITY_TRANSPORT', priority:'P1', status:'PENDING', origin:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, destination:{lat:46.0545,lon:14.5257,name:'UKC Ljubljana'}, passenger_count:1, required_equipment:['STRETCHER','OXYGEN'], earliest_pickup:demoTime('11:20'), preferred_arrival:demoTime('12:20'), latest_arrival:demoTime('13:15') });
-    this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana prometna nesreča na Celovški cesti. Zahtevani prevoz do UKC Ljubljana; prioriteto P1 in opremo je določil dispečer.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
+    this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana prometna nesreča na Celovški cesti z visoko prioriteto.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
     this.state.active_plan!.unassigned_task_ids = ['N021'];
     this.state.state_revision++;
     return this.copy();

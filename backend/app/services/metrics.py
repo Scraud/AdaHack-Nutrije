@@ -53,7 +53,7 @@ def metrics(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> tuple[
         row, before = current.get(task_id), snapshot.previous.get(task_id)
         if row is None:
             result.unassigned[task.priority] += 1
-        else:
+        elif task.arrival_policy != "ASAP":
             delay = max(0, row.planned_dropoff - task.preferred_arrival)
             result.late_tasks += int(delay > 0)
             result.delay_seconds += delay

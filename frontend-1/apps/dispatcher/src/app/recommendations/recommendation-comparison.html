@@ -25,8 +25,8 @@
             <div><dt>Čas vožnje</dt><dd>{{ minutes(item.plan.metrics.travel_seconds) }} min</dd></div>
           </dl>
           @if (item.plan.unassigned.length) {
-            <p>Nedodeljene · P1 {{ item.plan.metrics.unassigned?.P1 ?? 0 }} ·
-              P2 {{ item.plan.metrics.unassigned?.P2 ?? 0 }} · P3 {{ item.plan.metrics.unassigned?.P3 ?? 0 }}</p>
+            <p>Nedodeljene · Visoka {{ item.plan.metrics.unassigned?.P1 ?? 0 }} ·
+              Srednja {{ item.plan.metrics.unassigned?.P2 ?? 0 }} · Nizka {{ item.plan.metrics.unassigned?.P3 ?? 0 }}</p>
           }
           @if (!item.plan.coverage_proven) { <p class="small">Pokritost je najboljša najdena v časovnem proračunu.</p> }
           @for (issue of item.plan.blocking; track issue.task_id + issue.code) {

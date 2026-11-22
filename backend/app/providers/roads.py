@@ -5,6 +5,7 @@ from functools import lru_cache
 from heapq import heappop, heappush
 from math import ceil, cos, radians
 from pathlib import Path
+from unicodedata import combining, normalize
 
 from app.planning.contracts import Incident, Node, Point, TravelMatrix, TravelSnapshot
 from app.providers.haversine import local_snapshot
@@ -21,6 +22,11 @@ def center_distance(a: Coordinate, b: Coordinate) -> float:
 
 def edge_key(a: int, b: int) -> tuple[int, int]:
     return min(a, b), max(a, b)
+
+
+def address_key(value: str) -> str:
+    stripped = "".join(char for char in normalize("NFD", value.casefold()) if not combining(char))
+    return " ".join(stripped.replace(",", " ").split())
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,20 @@ class RoadNetwork:
                     self.edges[b].append((a, seconds, meters))
         self.neighbors = neighbors
         self.street_names = tuple(sorted({way[2] for way in self.ways if way[2]}))
+        self.addresses = [(address_key(name), {"name": name, "lat": lat, "lon": lon})
+                          for name, lat, lon in extract.get("addresses", ())]
+
+    def find_addresses(self, query: str) -> list[dict]:
+        key = address_key(query)
+        if not key:
+            return []
+        matches = {}
+        for normalized, address in self.addresses:
+            if normalized == key:
+                return [address]
+            if normalized.startswith(key):
+                matches.setdefault(address["name"], address)
+        return list(matches.values())[:8]
 
     def segment_json(self, segment: Segment) -> dict:
         return {"id": segment.id, "name": segment.name,

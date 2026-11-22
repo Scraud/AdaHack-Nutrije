@@ -82,9 +82,10 @@ function tooltip(label: string) {
   return element;
 }
 
-export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPreview, onPick }: {
+export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPreview, onPick, pickingLocation, locationPreview }: {
   state: State; roads: RoadMap | null; frame: TrackingFrame | null; onSelect: (id: string) => void;
   pickingRoad: boolean; roadPreview: RoadSegment | null; onPick: (location: Coordinate) => void;
+  pickingLocation: boolean; locationPreview: { lat: number; lon: number; name: string } | null;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const layers = useRef<{
@@ -139,7 +140,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
 
   useEffect(() => {
     const map = layers.current;
-    if (!map || !pickingRoad) return;
+    if (!map || (!pickingRoad && !pickingLocation)) return;
     const container = map.leaf.getContainer();
     container.style.cursor = 'crosshair';
     const pick = (event: L.LeafletMouseEvent) => onPick([event.latlng.lat, event.latlng.lng]);
@@ -148,7 +149,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
       container.style.cursor = '';
       map.leaf.off('click', pick);
     };
-  }, [pickingRoad, onPick]);
+  }, [pickingRoad, pickingLocation, onPick]);
 
   useEffect(() => {
     const map = layers.current;
@@ -182,7 +183,13 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
           lineCap: 'round', interactive: false }).addTo(map.selection);
       }
     }
-  }, [roadPreview]);
+    if (locationPreview) {
+      const point: Coordinate = [locationPreview.lat, locationPreview.lon];
+      L.circleMarker(point, { pane: 'road-selection', color: '#fff', weight: 3, radius: 10,
+        fillColor: '#1e5ec1', fillOpacity: 1, interactive: false }).addTo(map.selection);
+      if (!map.leaf.getBounds().contains(point)) map.leaf.panTo(point);
+    }
+  }, [roadPreview, locationPreview]);
 
   useEffect(() => {
     const map = layers.current;
@@ -193,18 +200,19 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
     const pickedUpTasks = new Set(vehicles.filter(vehicle =>
       vehicle.task_id && (vehicle.status === 'TO_HOSPITAL' || vehicle.status === 'AT_HOSPITAL'))
       .map(vehicle => vehicle.task_id));
-    const pickups = state.tasks.filter(task => (shownTasks.has(task.id) || !state.active_plan)
+    const pickups = state.tasks.filter(task => !pickingLocation && (shownTasks.has(task.id) || !state.active_plan)
       && task.actual_pickup == null && task.actual_arrival == null && !pickedUpTasks.has(task.id));
-    const sites = JSON.stringify([state.scenario_id, state.facilities, pickups.map(task => task.id)]);
+    const sites = JSON.stringify([state.scenario_id, pickingLocation, state.facilities, pickups.map(task => task.id)]);
     if (sites !== siteKey.current) {
       siteKey.current = sites;
       map.sites.clearLayers();
       for (const site of state.facilities) {
-        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48), title: site.name, alt: site.name })
+        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48), title: site.name, alt: site.name,
+          interactive: !pickingLocation, keyboard: !pickingLocation })
           .bindTooltip(tooltip(site.name)).addTo(map.sites);
       }
       for (const task of pickups) {
-        const title = `Prevzem ${task.id}`;
+        const title = task.pickup_name ?? `Prevzem ${task.id}`;
         L.marker([task.pickup.lat, task.pickup.lon], { icon: icon(task.id, '', 'pickup-pin', 32), title, alt: title })
           .bindTooltip(tooltip(title)).on('click', () => onSelect(task.id)).addTo(map.sites);
       }
@@ -361,7 +369,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
       };
       animationFrame.current = requestAnimationFrame(animate);
     }
-  }, [state, roads, frame, onSelect]);
+  }, [state, roads, frame, onSelect, pickingLocation]);
 
   return <div ref={element} className="dispatch-map" aria-label="Zemljevid cest in reševalnih vozil" />;
 }

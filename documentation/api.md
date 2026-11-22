@@ -53,8 +53,10 @@ Records an incident. Pauses playback. Returns updated state. For `TRAFFIC_DELAY`
 | `multiplier` | TRAFFIC_DELAY | Travel time multiplier (1.0–5.0) |
 | `facility_id` | FACILITY_CAPACITY_CHANGE | Target facility |
 | `quota` | FACILITY_CAPACITY_CHANGE | New quota value |
-| `location` | WEATHER_DELAY, NEW_TASK; optional for TRAFFIC_DELAY, ROAD_CLOSURE | GPS point; for road events without `road_id` the nearest road segment is used |
+| `location` | WEATHER_DELAY and optional for TRAFFIC_DELAY or ROAD_CLOSURE | GPS point. For road events without `road_id` the nearest road segment is used. |
 | `task` | NEW_TASK | `NewTask` object |
+
+`NewTask` takes `priority` and `pickup` with optional `pickup_name`, `passenger_count`, `equipment`, `earliest_pickup`, and `latest_pickup`. The backend selects the facility with the shortest travel time from pickup and sets the arrival window. `GET /api/map/addresses?query=...` returns local matches with `name`, `lat`, and `lon`.
 
 ### `POST /api/incidents/{incident_id}/resolve` → `State`
 Manually ends an active `TRAFFIC_DELAY` or `ROAD_CLOSURE` (sets `ended_at = now`). Pauses playback and recomputes detours, so vehicles return to the fastest route.

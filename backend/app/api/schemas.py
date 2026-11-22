@@ -11,14 +11,12 @@ from app.planning.contracts import (
 
 class NewTask(BaseModel):
     priority: Priority
-    facility_id: str
     pickup: Point
+    pickup_name: str | None = Field(default=None, min_length=1, max_length=200)
     passenger_count: int = Field(default=1, ge=1, le=8)
     equipment: list[Equipment] = Field(default_factory=list)
-    earliest_pickup: int = Field(ge=0, le=HORIZON)
+    earliest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
     latest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
-    preferred_arrival: int = Field(ge=0, le=HORIZON)
-    latest_arrival: int = Field(ge=0, le=HORIZON)
 
 
 class CreateIncident(BaseModel):
@@ -136,3 +134,7 @@ class RoadMap(BaseModel):
     timestamp: str
     layers: list[RoadLayer]
     streets: list[str]
+
+
+class PickupAddress(Point):
+    name: str

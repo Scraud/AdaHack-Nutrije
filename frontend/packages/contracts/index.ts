@@ -3,6 +3,8 @@ export type TrackingFrame = components['schemas']['TrackingFrame'];
 export type Playback = components['schemas']['Playback'];
 export type RoadMap = components['schemas']['RoadMap'];
 export type RoadSegment = components['schemas']['RoadSegment'];
+export type Priority = components['schemas']['NewTask']['priority'];
+export const PRIORITY_LABELS: Record<Priority, string> = { P1: 'Visoka', P2: 'Srednja', P3: 'Nizka' };
 export type SourceStatus = components['schemas']['SourceStatus'];
 export type BackendState = components['schemas']['State'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
@@ -16,9 +18,10 @@ export interface Vehicle {
 export interface Facility extends Location { id: string; short_name: string; accepting: boolean }
 export interface TransportTask {
   id: string; task_type: 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
-  priority: 'P1' | 'P2' | 'P3'; status: string; origin: Location; destination: Location;
+  priority: Priority; status: string; origin: Location; destination: Location;
   passenger_count: number; required_equipment: Equipment[];
   earliest_pickup: string; preferred_arrival: string; latest_arrival: string;
+  arrival_policy?: components['schemas']['Task']['arrival_policy'];
   latest_pickup?: string | null; actual_pickup?: string | null; actual_arrival?: string | null;
   cleaning_minutes?: number;
 }
@@ -37,13 +40,14 @@ export interface DispatchPlan {
   assignments: Assignment[]; unassigned_task_ids: string[]; routes?: VehicleRoute[];
   metrics?: { remaining_buffer_minutes?: number; delay_minutes?: number; at_risk_tasks?: number; travel_minutes?: number; solve_ms?: number };
   blocking_issues?: string[]; unassigned_reasons?: Record<string,string>;
+  released_task_ids?: string[];
 }
 export type IncidentType = 'NEW_TASK' | 'VEHICLE_BREAKDOWN' | 'TRAFFIC_DELAY' | 'ROAD_CLOSURE' | 'VEHICLE_UNAVAILABLE' | 'WEATHER_DELAY' | 'FACILITY_CAPACITY_CHANGE';
 // Same traffic simulation parameters as main's IncidentCenter.traffic().
 export const ROAD_EVENT_DEFAULTS = {duration_minutes:90,delay_multiplier:2.3} as const;
 export interface Incident {
   id: string; incident_type: IncidentType; title: string; description: string;
-  priority: 'P1' | 'P2' | 'P3'; status: 'OPEN' | 'AWAITING_DECISION' | 'RESOLVED';
+  priority: Priority; status: 'OPEN' | 'AWAITING_DECISION' | 'RESOLVED';
   occurred_at: string; location: Location; affected_vehicle_ids: string[]; affected_task_ids: string[];
   selected_recommendation_id?: string;
   has_location?: boolean; duration_minutes?: number; delay_multiplier?: number;
@@ -72,10 +76,10 @@ export interface DispatchState {
   backend?: BackendState;
 }
 export interface IncidentInput {
-  incident_type: IncidentType; affected_vehicle_id?: string; priority: 'P1' | 'P2' | 'P3';
+  incident_type: IncidentType; affected_vehicle_id?: string; priority: Priority;
   scenario?: 'priority_transport_1120' | 'vehicle_breakdown' | 'traffic_delay';
   description?: string; duration_minutes?: number; delay_multiplier?: number; location?: Location; road_id?: string;
-  task?: {facility_id:string;pickup:Location;passenger_count:number;equipment:Equipment[];earliest_pickup:string;preferred_arrival:string;latest_arrival:string};
+  task?: {pickup:Location;passenger_count:number;equipment:Equipment[];earliest_pickup?:string};
 }
 export interface RuntimeConfig { dataSource: 'demo' | 'api'; apiBaseUrl: string }
 export interface PlanDiff { added: Set<string>; changed: Set<string>; removed: Set<string>; vehicle_ids: Set<string> }

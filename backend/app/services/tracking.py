@@ -12,7 +12,7 @@ from app.db import Database
 from app.models import Plan, Recommendation, SnapshotRecord, VehicleRecord
 from sqlalchemy import select
 from app.planning.contracts import HORIZON, Incident, Point
-from app.planning.snapshot_builder import routes
+from app.planning.snapshot_builder import after_repositioning, routes
 from app.planning.validator import validate_plan
 from app.providers.osrm import RoadMatrix
 from app.providers.roads import Coordinate, active_conditions, center_distance, road_network
@@ -159,7 +159,8 @@ class Tracking:
                         or plan is None or recommendation.base_plan_id != plan.id):
                     raise problem(409, "STALE_RECOMMENDATION", "Predogled ni več veljaven.")
                 plan = candidate
-            state, incidents, rows = inputs(db, scope, plan, self.road_matrix, preserve_active_timing=True)
+            state, incidents, rows = inputs(db, scope, plan, self.road_matrix, preserve_active_timing=True,
+                                            preview=plan_id is not None)
             if self.gps_key and plan_id is None:
                 now = datetime.now(UTC)
                 vehicles = [TrackedVehicle(
@@ -168,13 +169,8 @@ class Tracking:
                 ) for fix in fixes]
             else:
                 saved = db.get(SnapshotRecord, plan.snapshot_id).payload if plan else {}
-                planned_incidents = [Incident.model_validate(event) for event in saved.get("incidents", [])]
                 planned_at = saved.get("now", 0)
-                roads = road_network()
-                path = partial(roads.road_path, effects=roads.effects(active_conditions(planned_at, planned_incidents)))
-                if saved.get("provider") == "OSRM" and self.road_matrix is not None:
-                    path = self.road_matrix.path
-                vehicles = demo_positions(state, incidents, rows, path, planned_at)
+                vehicles = demo_positions(state, incidents, rows, planned_path(saved, self.road_matrix), planned_at)
             overlays = []
             for event in active_conditions(scope.now, incidents):
                 if not event.road_id or event.type not in ("TRAFFIC_DELAY", "ROAD_CLOSURE"):
@@ -190,6 +186,14 @@ class Tracking:
                                  vehicles=vehicles, incidents=overlays)
 
 
+def planned_path(saved: dict, road_matrix: RoadMatrix | None) -> Callable[[Point, Point], list[Coordinate]]:
+    if saved.get("provider") == "OSRM" and road_matrix is not None:
+        return road_matrix.path
+    incidents = [Incident.model_validate(event) for event in saved.get("incidents", [])]
+    roads = road_network()
+    return partial(roads.road_path, effects=roads.effects(active_conditions(saved.get("now", 0), incidents)))
+
+
 def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], list[Coordinate]], planned_at: int,
                    *, respect_blocking: bool = True):
     by_vehicle = routes(rows)
@@ -198,14 +202,17 @@ def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], l
     result = []
     for vehicle in state.vehicles.values():
         origin = vehicle.location
+        relocated = vehicle.repositioned_at is not None
         upcoming = None
         for row in by_vehicle.get(vehicle.id, []):
             if row.status == "COMPLETED":
-                origin = state.facilities[state.tasks[row.task_id].facility_id].location
+                if after_repositioning(vehicle, row):
+                    origin = state.facilities[state.tasks[row.task_id].facility_id].location
+                    relocated = False
             elif row.status == "IN_PROGRESS" or (not vehicle.broken and row.planned_departure >= state.now):
                 upcoming = row
                 break
-        location = position_on_path(road_path(origin, origin), 0, origin)
+        location = (origin.lat, origin.lon) if relocated else position_on_path(road_path(origin, origin), 0, origin)
         if upcoming is None:
             result.append(TrackedVehicle(id=vehicle.id, location=location,
                                          status="STOPPED" if vehicle.broken else "WAITING"))
@@ -229,6 +236,8 @@ def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], l
         else:
             approach = road_path(origin, task.pickup)
             delivery = road_path(task.pickup, destination)
+            if relocated and approach and approach[0] != location:
+                approach = [location, *approach]
         at = state.now
         stopped = respect_blocking and (vehicle.broken or task.id in blocked)
         if stopped:

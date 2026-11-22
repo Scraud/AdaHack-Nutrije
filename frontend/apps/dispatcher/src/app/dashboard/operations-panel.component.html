@@ -4,7 +4,7 @@
   @for(incident of alerts();track incident.id){
    <button class="warning-card" (click)="inspect.emit(incident.id)" aria-haspopup="dialog" [attr.aria-label]="incident.title+' — odpri pregled rešitev'">
     <span class="warning-icon" [class.resolved]="incident.status==='RESOLVED'"><app-icon [name]="incident.status==='RESOLVED'?'check':'alert'" [size]="18"/></span>
-    <span><span class="warning-card-title"><b>{{incident.title}}</b><span class="priority-badge" [class.low]="incident.priority!=='P1'">{{incident.priority}}</span></span><small>{{incident.description}}</small><span class="warning-impact">{{incident.affected_vehicle_ids.join(', ')||'Pregled razporeda'}} · {{incident.affected_task_ids.length}} nalog · {{status(incident.status)}}</span></span>
+    <span><span class="warning-card-title"><b>{{incident.title}}</b><span class="priority-badge" [class.medium]="incident.priority==='P2'" [class.low]="incident.priority==='P3'">{{priorityLabels[incident.priority]}}</span></span><small>{{incident.description}}</small><span class="warning-impact">{{incident.affected_vehicle_ids.join(', ')||'Pregled razporeda'}} · {{incident.affected_task_ids.length}} nalog · {{status(incident.status)}}</span></span>
     <time>{{time(incident.occurred_at)}}</time><span class="warning-chevron"><app-icon name="external" [size]="16"/></span>
    </button>
   }@empty{<div class="alerts-empty"><app-icon name="shield" [size]="27"/><b>Ni odprtih opozoril.</b><p>Obvestila se prikažejo ob novem dogodku.</p></div>}

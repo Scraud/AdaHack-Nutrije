@@ -52,22 +52,26 @@ def road_conditions(travel: TravelSnapshot, conditions: list[Incident]) -> Trave
     return replace(travel, durations=durations, distances=distances)
 
 
-def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilities: list[Facility],
-                   assignments: list[Assignment], incidents: list[Incident], road_matrix: MatrixProvider | None = None, *,
-                   legacy_timing: bool = False) -> PlanningSnapshot:
-    destinations = {f.id: f for f in facilities}
-    current = {a.task_id: a for a in assignments}
-    frozen = {a.task_id: a for a in assignments if a.is_locked or a.status != "PLANNED"}
-    nodes = build_nodes(vehicles, tasks, destinations)
+def travel_snapshot(nodes: tuple[Node, ...], now: int, incidents: list[Incident],
+                    road_matrix: MatrixProvider | None, *, legacy_timing: bool = False) -> TravelSnapshot:
     conditions = active_conditions(now, incidents)
     if any(event.road_id for event in conditions):
-        travel = road_network().snapshot(nodes, conditions)
-    elif legacy_timing:
-        travel = local_snapshot(nodes, conditions)
-    elif road_matrix is not None:
-        travel = road_conditions(road_matrix(nodes), conditions)
-    else:
-        travel = road_network().snapshot(nodes, conditions)
+        return road_network().snapshot(nodes, conditions)
+    if legacy_timing:
+        return local_snapshot(nodes, conditions)
+    if road_matrix is not None:
+        return road_conditions(road_matrix(nodes), conditions)
+    return road_network().snapshot(nodes, conditions)
+
+
+def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilities: list[Facility],
+                   assignments: list[Assignment], incidents: list[Incident], road_matrix: MatrixProvider | None = None, *,
+                   legacy_timing: bool = False, released: frozenset[str] = frozenset()) -> PlanningSnapshot:
+    destinations = {f.id: f for f in facilities}
+    current = {a.task_id: a for a in assignments}
+    frozen = {a.task_id: a for a in assignments if (a.is_locked or a.status != "PLANNED") and a.task_id not in released}
+    nodes = build_nodes(vehicles, tasks, destinations)
+    travel = travel_snapshot(nodes, now, incidents, road_matrix, legacy_timing=legacy_timing)
     anchors = {}
     blocking = []
     by_task = {t.id: t for t in tasks}
@@ -75,7 +79,7 @@ def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilit
         history = sorted((a for a in frozen.values() if a.vehicle_id == vehicle.id),
                          key=lambda a: a.planned_departure)
         in_progress = next((a for a in history if a.status == "IN_PROGRESS"), None)
-        completed = [a for a in history if a.status == "COMPLETED"]
+        completed = [a for a in history if a.status == "COMPLETED" and after_repositioning(vehicle, a)]
         anchor = Anchor(start(vehicle.id), max(now, vehicle.available_at))
         if completed:
             anchor = Anchor(delivery(completed[-1].task_id), max(now, vehicle.available_at))
@@ -109,6 +113,10 @@ def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilit
         anchors[vehicle.id] = Anchor(anchor.node, anchor.time, blocked)
     return PlanningSnapshot(now, {v.id: v for v in vehicles}, by_task, destinations,
                             current, frozen, anchors, travel, tuple(blocking))
+
+
+def after_repositioning(vehicle: Vehicle, assignment: Assignment) -> bool:
+    return vehicle.repositioned_at is None or assignment.planned_end > vehicle.repositioned_at
 
 
 def compatible(vehicle: Vehicle, task: Task) -> bool:

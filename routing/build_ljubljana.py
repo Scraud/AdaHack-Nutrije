@@ -17,8 +17,18 @@ def build(document):
     by_id = {}
     points = []
     ways = []
+    addresses = set()
     for entry in sorted(document["elements"], key=lambda item: item["id"]):
         tags = entry.get("tags", {})
+        street, number = tags.get("addr:street"), tags.get("addr:housenumber")
+        if street and number:
+            geometry = ([entry] if "lat" in entry else entry.get("geometry", ()))
+            locations = [point for point in geometry if point is not None]
+            if locations:
+                lat = sum(point["lat"] for point in locations) / len(locations)
+                lon = sum(point["lon"] for point in locations) / len(locations)
+                if south <= lat <= north and west <= lon <= east:
+                    addresses.add((f"{street} {number}", round(lat, 6), round(lon, 6)))
         road = tags.get("highway", "").removesuffix("_link")
         if road not in CLASSES or tags.get("area") == "yes":
             continue
@@ -45,7 +55,8 @@ def build(document):
             route.append(by_id[node])
         if len(route) >= 2:
             ways.append([f'{entry["id"]}-{len(ways)}', rank, tags.get("name", ""), direction, speed, route])
-    return {"bounds": BOUNDS, "timestamp": document["osm3s"]["timestamp_osm_base"], "points": points, "ways": ways}
+    return {"bounds": BOUNDS, "timestamp": document["osm3s"]["timestamp_osm_base"], "points": points,
+            "ways": ways, "addresses": sorted(addresses)}
 
 
 def pbf_document(source: Path):
@@ -55,27 +66,31 @@ def pbf_document(source: Path):
         def __init__(self):
             super().__init__()
             self.points = {}
-            self.ways = []
+            self.elements = []
 
         def node(self, node):
             lat, lon = node.location.lat, node.location.lon
             south, west, north, east = BOUNDS
             if south <= lat <= north and west <= lon <= east:
                 self.points[node.id] = {"lat": lat, "lon": lon}
+                if node.tags.get("addr:street") and node.tags.get("addr:housenumber"):
+                    self.elements.append({"id": node.id, "tags": dict(node.tags), "lat": lat, "lon": lon})
 
         def way(self, way):
-            if way.tags.get("highway", "").removesuffix("_link") not in CLASSES:
+            road = way.tags.get("highway", "").removesuffix("_link") in CLASSES
+            address = way.tags.get("addr:street") and way.tags.get("addr:housenumber")
+            if not road and not address:
                 return
             nodes = [node.ref for node in way.nodes]
             geometry = [self.points.get(node) for node in nodes]
             if sum(point is not None for point in geometry) >= 2:
-                self.ways.append({"id": way.id, "tags": dict(way.tags), "nodes": nodes, "geometry": geometry})
+                self.elements.append({"id": way.id, "tags": dict(way.tags), "nodes": nodes, "geometry": geometry})
 
     with osmium.io.Reader(str(source)) as reader:
         timestamp = reader.header().get("osmosis_replication_timestamp")
     osm = Extract()
     osm.apply_file(str(source))
-    return {"elements": osm.ways, "osm3s": {"timestamp_osm_base": timestamp}}
+    return {"elements": osm.elements, "osm3s": {"timestamp_osm_base": timestamp}}
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 ## Cestni izsek za demo
 
-Datoteka `backend/app/providers/data/ljubljana.json.gz` vsebuje omejen izsek OpenStreetMap za Ljubljano. Cestna geometrija in podatki so na voljo pod licenco ODbL 1.0. Izsek uporablja enosmerne ceste ter grobe hitrosti po kategorijah. Omejitve zavijanja in trenutni promet zunaj dogodkov v demu niso modelirani. [© avtorji OpenStreetMap](https://www.openstreetmap.org/copyright)
+Datoteka `backend/app/providers/data/ljubljana.json.gz` vsebuje omejen izsek OpenStreetMap za Ljubljano, vključno z naslovi za iskanje lokacije prevzema. Cestna geometrija in podatki so na voljo pod licenco ODbL 1.0. Izsek uporablja enosmerne ceste ter grobe hitrosti po kategorijah. Omejitve zavijanja in trenutni promet zunaj dogodkov v demu niso modelirani. [© avtorji OpenStreetMap](https://www.openstreetmap.org/copyright)
 
 Izvor je Geofabrikov slovenski izsek s časom replikacije `2026-11-20T21:21:21Z`. Za obnovitev prenesite izsek v `routing/data/slovenia.osm.pbf` ter zaženite:
 

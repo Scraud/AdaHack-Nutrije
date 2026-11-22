@@ -1,3 +1,4 @@
+import { PRIORITY_LABELS } from '@rescueflow/contracts';
 import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
 import type { Recommendation } from '@rescueflow/contracts';
 import { calculatePlanMetrics, candidateProblem, comparePlans, formatTime, incidentStatus } from '@rescueflow/contracts/plan-utils';
@@ -6,6 +7,7 @@ import { IconComponent } from '../shared/icon.component';
 
 @Component({selector:'app-operations-panel',standalone:true,imports:[IconComponent],templateUrl:'./operations-panel.component.html'})
 export class OperationsPanelComponent {
+  readonly priorityLabels = PRIORITY_LABELS;
  @Input()mode:'alerts'|'solutions'='alerts';@Output()inspect=new EventEmitter<string>();
  readonly store=inject(DispatchStore);@Output()confirm=new EventEmitter<Recommendation>();@Output()simulate=new EventEmitter<void>();time=formatTime;status=incidentStatus;readonly sort=signal('priority');readonly showResolved=signal(false);
  readonly alerts=computed(()=>[...new Map((this.store.state()?.incidents??[]).map(i=>[i.id,i])).values()].filter(i=>this.showResolved()||i.status!=='RESOLVED'||i.id===this.store.selectedIncidentId()).sort((a,b)=>this.sort()==='priority'?a.priority.localeCompare(b.priority)||Date.parse(b.occurred_at)-Date.parse(a.occurred_at):this.sort()==='oldest'?Date.parse(a.occurred_at)-Date.parse(b.occurred_at):Date.parse(b.occurred_at)-Date.parse(a.occurred_at)));

@@ -8,8 +8,10 @@ export function DispatchMap(props: DispatchViewProps) {
   return <div className="main-dispatch-map">
     <MainDispatchMap state={state} roads={props.roads??null} frame={props.tracking??null}
       onSelect={props.onSelectTask} pickingRoad={!!props.pickingRoad}
-      roadPreview={props.roadPreview??null} onPick={props.onPickRoad??(()=>undefined)}/>
-    <div className="map-legend"><span><i aria-hidden="true">🚑</i> Reševalno vozilo</span><span><i aria-hidden="true">🏥</i> Ustanova</span><span><i className="legend-line"/> Do pacienta</span><span><i className="legend-line dotted"/> Do ustanove</span><span><i className="legend-line traffic"/> Zastoj</span><span><i aria-hidden="true">⛔</i> Zapora</span></div>
+      roadPreview={props.roadPreview??null} onPick={props.onPickRoad??(()=>undefined)}
+      pickingLocation={!!props.pickingLocation} locationPreview={props.locationPreview??null}/>
+    {props.pickingLocation?<p className="main-map-message">Kliknite lokacijo prevzema na zemljevidu.</p>:
+      <div className="map-legend"><span><i aria-hidden="true">🚑</i> Reševalno vozilo</span><span><i aria-hidden="true">🏥</i> Ustanova</span><span><i className="legend-line"/> Do pacienta</span><span><i className="legend-line dotted"/> Do ustanove</span><span><i className="legend-line traffic"/> Zastoj</span><span><i aria-hidden="true">⛔</i> Zapora</span></div>}
     {props.pickingRoad&&<p className="main-map-message" role="status">Kliknite cestni odsek na zemljevidu.</p>}
     {props.isPreview&&!props.tracking&&<p className="main-map-message" role="status">Cestni predogled še ni na voljo.</p>}
   </div>;

@@ -16,7 +16,7 @@ export function adaptPlan(plan:Schema['PlanView'],state:BackendState):DispatchPl
     assignments:[...plan.assignments].sort((a,b)=>a.planned_departure-b.planned_departure||a.task_id.localeCompare(b.task_id)).map(a=>{
       const sequence=order.get(a.vehicle_id)??0;order.set(a.vehicle_id,sequence+1);
       return {id:`${plan.id}:${a.task_id}`,task_id:a.task_id,vehicle_id:a.vehicle_id,sequence_order:sequence,planned_departure:at(state.start_at,a.planned_departure),planned_pickup:at(state.start_at,a.planned_pickup),planned_dropoff:at(state.start_at,a.planned_dropoff),planned_end:at(state.start_at,a.planned_end),status:a.status,is_locked:a.is_locked};
-    }),unassigned_task_ids:plan.unassigned.map(i=>i.task_id),unassigned_reasons:Object.fromEntries(plan.unassigned.map(i=>[i.task_id,issueText(i)])),blocking_issues:plan.blocking.map(issueText),
+    }),unassigned_task_ids:plan.unassigned.map(i=>i.task_id),unassigned_reasons:Object.fromEntries(plan.unassigned.map(i=>[i.task_id,issueText(i)])),blocking_issues:plan.blocking.map(issueText),released_task_ids:plan.released_task_ids,
     metrics:{remaining_buffer_minutes:Math.floor(plan.metrics.min_buffer_seconds/60),delay_minutes:Math.ceil(plan.metrics.delay_seconds/60),at_risk_tasks:plan.metrics.late_tasks,travel_minutes:Math.ceil(plan.metrics.travel_seconds/60),solve_ms:plan.solve_ms}};
 }
 
@@ -44,7 +44,7 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
     return {id:String(i.id),incident_type:i.type,title:incidentType(i.type),priority:task?.priority??i.priority??'P2',
       description:i.description||`${incidentType(i.type)}${i.vehicle_id?` · ${i.vehicle_id}`:''}${i.task_id?` · ${i.task_id}`:''}.`,
       status:i.ended_at!=null||(i.duration!=null&&raw.now>=i.occurred_at+i.duration)||i.status==='RESOLVED'?'RESOLVED':recommendations.some(r=>r.incident_ids?.includes(String(i.id))&&r.status==='PROPOSED'&&r.base_state_revision===raw.revision)?'AWAITING_DECISION':'OPEN',
-      occurred_at:at(raw.start_at,i.occurred_at),location:{lat:point?.lat??0,lon:point?.lon??0,name:point?coordinate(point):'Lokacija ni podana'},has_location:!!point,
+      occurred_at:at(raw.start_at,i.occurred_at),location:{lat:point?.lat??0,lon:point?.lon??0,name:point?task?.pickup_name??coordinate(point):'Lokacija ni podana'},has_location:!!point,
       affected_vehicle_ids:i.vehicle_id?[i.vehicle_id]:[],affected_task_ids:affected,selected_recommendation_id:i.selected_recommendation_id??undefined,
       duration_minutes:i.duration?i.duration/60:undefined,delay_multiplier:['WEATHER_DELAY','TRAFFIC_DELAY'].includes(i.type)?i.multiplier:undefined};
   });
@@ -54,7 +54,7 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
     tasks:raw.tasks.map(t=>{
       const facility=raw.facilities.find(f=>f.id===t.facility_id);if(!facility)throw new Error(`Manjka cilj naloge ${t.id}.`);
       const a=raw.active_plan?.assignments.find(a=>a.task_id===t.id);
-      return {id:t.id,task_type:t.type,priority:t.priority,status:a?.status==='COMPLETED'?'COMPLETED':a?.status==='IN_PROGRESS'?(t.actual_pickup!=null&&t.actual_arrival==null?'PICKED_UP':'EN_ROUTE_TO_PICKUP'):a?'ASSIGNED':'PENDING',origin:{...t.pickup,name:`Prevzem ${t.id} · ${coordinate(t.pickup)}`},destination:{...facility.location,name:facility.name},passenger_count:t.passenger_count,cleaning_minutes:t.cleaning/60,required_equipment:t.equipment??[],earliest_pickup:at(raw.start_at,t.earliest_pickup),latest_pickup:t.latest_pickup==null?null:at(raw.start_at,t.latest_pickup),preferred_arrival:at(raw.start_at,t.preferred_arrival),latest_arrival:at(raw.start_at,t.latest_arrival),actual_pickup:t.actual_pickup==null?null:at(raw.start_at,t.actual_pickup),actual_arrival:t.actual_arrival==null?null:at(raw.start_at,t.actual_arrival)};
+      return {id:t.id,task_type:t.type,priority:t.priority,status:a?.status==='COMPLETED'?'COMPLETED':a?.status==='IN_PROGRESS'?(t.actual_pickup!=null&&t.actual_arrival==null?'PICKED_UP':'EN_ROUTE_TO_PICKUP'):a?'ASSIGNED':'PENDING',origin:{...t.pickup,name:t.pickup_name??`Prevzem ${t.id} · ${coordinate(t.pickup)}`},destination:{...facility.location,name:facility.name},passenger_count:t.passenger_count,arrival_policy:t.arrival_policy,cleaning_minutes:t.cleaning/60,required_equipment:t.equipment??[],earliest_pickup:at(raw.start_at,t.earliest_pickup),latest_pickup:t.latest_pickup==null?null:at(raw.start_at,t.latest_pickup),preferred_arrival:at(raw.start_at,t.preferred_arrival),latest_arrival:at(raw.start_at,t.latest_arrival),actual_pickup:t.actual_pickup==null?null:at(raw.start_at,t.actual_pickup),actual_arrival:t.actual_arrival==null?null:at(raw.start_at,t.actual_arrival)};
     }),active_plan:active,incidents,recommendations,
     decisions:items.filter(r=>r.decided_at&&(r.status==='ACCEPTED'||r.status==='REJECTED')).map(r=>({id:`decision:${r.id}`,recommendation_id:r.id,action:r.status as 'ACCEPTED'|'REJECTED',reason:r.decision_reason||'Odločitev je zapisana v zaledju.',decided_at:r.decided_at!,actor:'Dispečer'})),
     affected_task_ids:[...new Set(raw.baseline.affected.map(i=>i.task_id))],issues:raw.baseline.affected.map(i=>({...i,message:issueText(i)})),history:history.map(p=>({id:p.id,version:p.version,status:p.status,created_at:p.created_at,strategy:p.strategy}))};

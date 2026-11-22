@@ -32,7 +32,7 @@ npm.cmd run contracts
 | POST | `/api/demo/advance-time` | `{to}`; relativne sekunde, samo naprej |
 | POST | `/api/demo/reset` | `{}`; nov scenarij, brez aktivnega plana |
 
-Nova naloga ima `task: {priority, facility_id, pickup, passenger_count, equipment, earliest_pickup, preferred_arrival, latest_arrival}`. UI pošlje prioriteto tudi znotraj naloge. Okvara in nedosegljivost uporabljata `vehicle_id`, slednja še `duration` v sekundah. Vreme uporablja `location`, `duration` in `multiplier`; zastoj/zapora pošljeta izbrani `road_id`, trajanje in pri zastoju faktor časa vožnje.
+Nova naloga ima `task: {priority, pickup, pickup_name, passenger_count, equipment, earliest_pickup}`. Če `earliest_pickup` ni podan, je prevzem mogoč od trenutka oddaje. Pri iskanju naslova UI uporabi `GET /api/map/addresses?query=...` in izbran rezultat pošlje kot `pickup` in `pickup_name`. Backend izbere ustanovo z najkrajšim cestnim časom od prevzema ter določi časovno okno po prioriteti. Okvara in nedosegljivost uporabljata `vehicle_id`, slednja še `duration` v sekundah. Vreme uporablja `location`, `duration` in `multiplier`. Pri zastoju ali zapori UI pošlje `road_id`, trajanje in po potrebi faktor časa vožnje.
 
 Opisi in prioritete dogodkov se shranijo v JSON podatke incidentov. Kandidati vsebujejo ID-je odprtih dogodkov iz vhodnega posnetka. Ob sprejemu backend označi te dogodke kot `RESOLVED` in zapiše `selected_recommendation_id` ter `resolved_at`. To pomeni obdelano plansko odločitev: fizična motnja še velja do svojega izteka oziroma po pravilih simulacije. Zgodovina odločitev se bere iz predlogov tudi po spremembi revizije.
 

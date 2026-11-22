@@ -39,7 +39,7 @@ Before the solver runs, `build_snapshot()` constructs a `PlanningSnapshot`:
 1. Collects all entities from DB.
 2. Determines each vehicle's current **anchor** — where it is right now and when it will be free — based on its last completed or in-progress assignment.
 3. Builds the **travel matrix** by calling either `RoadMatrix` (OSRM) or `RoadNetwork` (OSM graph) with all relevant nodes (vehicle anchors, task pickups, facility delivery points).
-4. Identifies **frozen assignments** (IN_PROGRESS or COMPLETED tasks that cannot be rescheduled).
+4. Freezes completed and locked assignments and ongoing transports. When an immediate high-priority task is waiting, an unlocked trip to a lower-priority pickup can be replanned from the vehicle's simulated position. This position takes effect when the dispatcher accepts a proposal.
 5. Identifies **blocked tasks** from `validate_plan` (tasks that cannot proceed due to breakdowns, closures, etc.) and stores them as `blocking`.
 
 ---
@@ -62,9 +62,9 @@ For each **(vehicle, task)** pair:
 For each **arc** (edge in the route graph):
 - `arc_{vehicle}_{origin}_{target}` — boolean: is this sequence edge active?
 
-### Coverage Objective (Phase 1)
+### Arrival and Coverage Objectives
 
-The model first maximises **coverage** — the weighted count of scheduled tasks:
+For new tasks with the `ASAP` arrival policy, the model first maximises their assigned count and then minimises their total time to hospital. With those results fixed, it maximises **coverage**, the weighted count of scheduled tasks:
 
 ```
 P1 tasks have weight base²
@@ -73,9 +73,9 @@ P3 tasks have weight 1
 (where base = num_tasks + 1)
 ```
 
-This guarantees that high-priority tasks are always scheduled before lower-priority ones. The solver runs for up to `coverage_seconds` (default 3 s).
+The weights prioritise the number of high-priority assignments. The urgent and coverage solves each run for up to `coverage_seconds` (default 3 s). With coverage fixed, the planner seeks earlier arrivals for tasks with automatic medium and low priority windows before comparing strategies.
 
-### Strategy Objectives (Phase 2)
+### Strategy Objectives
 
 Once maximum coverage is locked in (by adding a constraint `coverage == optimal_value`), the model is re-solved for each of three **strategies**, each for up to `strategy_seconds` (default 2 s):
 
@@ -85,7 +85,7 @@ Once maximum coverage is locked in (by adding a constraint `coverage == optimal_
 | `MIN_CHANGES` | Minimise vehicle reassignments, then sequence changes, then time shifts (suitable for re-planning) |
 | `MAX_BUFFER` | Maximise the minimum slack buffer across all tasks (most robust schedule) |
 
-The solver uses the coverage solution as a **warm start hint** for all strategy solves.
+The planner uses the last feasible solution as a warm start for the first strategy solve.
 
 ### Circuit Constraint
 

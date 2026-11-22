@@ -23,6 +23,8 @@ export const latestPickupFor = (priority: Priority, earliest: string) => {
 };
 export const pickupAsap = (task: TransportTask) => task.priority === 'P1';
 export const latestPickupLabel = (task: TransportTask) => pickupAsap(task) ? 'Čim prej' : formatTime(task.latest_pickup);
+export const windowOverrunMinutes = (task: TransportTask, plannedPickup: string | undefined) =>
+  !plannedPickup || task.latest_pickup === null ? 0 : Math.max(0, Math.ceil((Date.parse(plannedPickup) - Date.parse(task.latest_pickup)) / 60_000));
 export const pickupWaitMinutes = (task: TransportTask, plannedPickup: string) =>
   Math.max(0, Math.ceil((Date.parse(plannedPickup) - Date.parse(task.earliest_pickup)) / 60_000));
 
@@ -122,8 +124,8 @@ export function candidateProblem(base: DispatchPlan | null, candidate: DispatchP
     const task = tasks.find(t => t.id === item.task_id);
     const times = [item.planned_departure, item.planned_pickup, item.planned_dropoff, item.planned_end].map(Date.parse);
     if (times.some(t => !Number.isFinite(t)) || times.some((t, i) => i > 0 && t < times[i - 1])) return 'Predlog vsebuje neveljavne čase.';
-    if (!task || times[3] > Date.parse(horizon_end) || times[1] < Date.parse(task.earliest_pickup) ||
-        (task.latest_pickup !== null && times[1] > Date.parse(task.latest_pickup))) return 'Predlog krši časovno okno naloge.';
+    // Latest pickups are soft: a proposal may shift lower priorities past them instead of dropping tasks.
+    if (!task || times[3] > Date.parse(horizon_end) || times[1] < Date.parse(task.earliest_pickup)) return 'Predlog krši časovno okno naloge.';
   }
   for (const vehicleId of new Set(candidate.assignments.map(a => a.vehicle_id))) {
     const row = candidate.assignments.filter(a => a.vehicle_id === vehicleId).sort((a, b) => Date.parse(a.planned_departure) - Date.parse(b.planned_departure));

@@ -109,3 +109,4 @@ body{font-size:1rem}
 .checkbox-group legend{padding:0;margin-bottom:9px;width:100%;color:#7c978b;font-size:.75rem}
 .checkbox-option{display:inline-flex;align-items:center;gap:8px;color:#4f6f62;font-size:.8125rem;cursor:pointer}
 .checkbox-option input{width:16px;height:16px;accent-color:#2f8f75;margin:0}
+.window-overrun{color:#b5655c;font-weight:600}

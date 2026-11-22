@@ -5,10 +5,11 @@ DEMO_START = "2026-11-21T07:00:00Z"
 
 def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
     facilities = [
-        Facility(id="F1", name="Center Trnovski most", location=Point(lat=46.038, lon=14.503), quota=8),
-        Facility(id="F2", name="Center Zeleni gaj", location=Point(lat=46.066, lon=14.476), quota=8),
-        Facility(id="F3", name="Center Severni park", location=Point(lat=46.084, lon=14.512), quota=8),
-        Facility(id="F4", name="Center Vzhodni breg", location=Point(lat=46.051, lon=14.566), quota=8),
+        # Daily arrival quotas leave headroom above the seeded load (F1 receives 8) for new tasks.
+        Facility(id="F1", name="Center Trnovski most", location=Point(lat=46.038, lon=14.503), quota=12),
+        Facility(id="F2", name="Center Zeleni gaj", location=Point(lat=46.066, lon=14.476), quota=12),
+        Facility(id="F3", name="Center Severni park", location=Point(lat=46.084, lon=14.512), quota=12),
+        Facility(id="F4", name="Center Vzhodni breg", location=Point(lat=46.051, lon=14.566), quota=12),
     ]
     equipment: list[list[Equipment]] = [
         ["WHEELCHAIR"], ["STRETCHER"], ["STRETCHER", "OXYGEN"],

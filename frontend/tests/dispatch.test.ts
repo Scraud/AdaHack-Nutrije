@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { DemoDispatchGateway } from '../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../apps/dispatcher/src/app/core/dispatch-store';
 import type { TrackingFrame } from '../packages/contracts';
-import { calculatePlanMetrics, candidateProblem, comparePlans, formatTime, latestPickupLabel, MAX_WAIT_MINUTES, passengerOnBoard, timelineStatus, timelineBounds, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
+import { calculatePlanMetrics, candidateProblem, comparePlans, formatTime, latestPickupLabel, MAX_WAIT_MINUTES, windowOverrunMinutes, passengerOnBoard, timelineStatus, timelineBounds, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
 
 async function scenario() {
   const gateway=new DemoDispatchGateway();
@@ -110,11 +110,14 @@ test('red is ASAP; medium and low get their latest pickup from priority',async()
   const candidate=store.recommendations()[0].proposed_plan;
   assert.equal(candidateProblem(state.active_plan,candidate,state),null);
   const tooLate=structuredClone(candidate);
-  const row=tooLate.assignments.find(a=>a.status==='PLANNED'&&!!state.tasks.find(t=>t.id===a.task_id)?.latest_pickup)!;
+  const lastOfVehicle=(a:typeof tooLate.assignments[number])=>!tooLate.assignments.some(b=>b.vehicle_id===a.vehicle_id&&Date.parse(b.planned_departure)>Date.parse(a.planned_departure));
+  const row=tooLate.assignments.find(a=>a.status==='PLANNED'&&lastOfVehicle(a)&&!!state.tasks.find(t=>t.id===a.task_id)?.latest_pickup)!;
   const task=state.tasks.find(t=>t.id===row.task_id)!;
   const shift=Date.parse(task.latest_pickup!)-Date.parse(row.planned_pickup)+60_000;
   for(const key of ['planned_departure','planned_pickup','planned_dropoff','planned_end'] as const)row[key]=new Date(Date.parse(row[key])+shift).toISOString();
-  assert.equal(candidateProblem(state.active_plan,tooLate,state),'Predlog krši časovno okno naloge.');
+  // Windows are soft: a later pickup is shown, not rejected, so no task has to be dropped.
+  assert.equal(candidateProblem(state.active_plan,tooLate,state),null);
+  assert.equal(windowOverrunMinutes(task,row.planned_pickup),1);
 });
 test('reset restores the deterministic fixture and clears selection and previews',async()=>{
   const {store}=await scenario();store.pin(store.recommendations()[0].id);store.selectVehicle('V3');await store.reset();

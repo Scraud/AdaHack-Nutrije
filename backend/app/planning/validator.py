@@ -54,7 +54,6 @@ def validate_plan(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> 
                   or row.planned_dropoff != row.planned_pickup + task.pickup_service + loaded):
                 fail("INVALID_TRAVEL_TIME")
             if (row.planned_departure < available or row.planned_pickup < task.earliest_pickup
-                or (task.latest_pickup is not None and row.planned_pickup > task.latest_pickup)
                 or row.planned_end > HORIZON
                 or row.planned_end != row.planned_dropoff + task.dropoff_service + task.cleaning
                 or any(row.planned_departure < end and begin < row.planned_end

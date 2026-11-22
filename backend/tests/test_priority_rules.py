@@ -56,3 +56,74 @@ def test_seed_plan_respects_every_pickup_window():
     assert sum(waits["P2"]) / len(waits["P2"]) < sum(waits["P3"]) / len(waits["P3"])
     assert max(waits["P3"]) > 0
     assert {row.vehicle_id for row in plan.assignments} == {vehicle.id for vehicle in vehicles}
+
+
+def test_overloaded_vehicle_never_drops_tasks_and_shifts_low_priority_first():
+    _, facilities, _ = demo_data()
+    vehicle = Vehicle(id="V1", location=Point(lat=46.046, lon=14.494), capacity=2, equipment=[],
+                      task_types=["PLANNED_TRANSPORT"])
+    # Six simultaneous pickups across town for one vehicle: not every window can be met.
+    jobs = [task(f"M{i}", "P2", 46.078 + i * .002, 14.508) for i in range(2)]
+    jobs += [task(f"L{i}", "P3", 46.08 + i * .002, 14.52) for i in range(4)]
+    snapshot = build_snapshot(0, [vehicle], jobs, facilities, [], [])
+    plan = CpSatPlanner().alternatives(snapshot)[0].plan
+    assert plan.unassigned == []
+    assert validate_plan(snapshot, plan.assignments) == []
+    by_id = {job.id: job for job in jobs}
+    over = {row.task_id: max(0, row.planned_pickup - by_id[row.task_id].latest_pickup) for row in plan.assignments}
+    assert all(over[job.id] == 0 for job in jobs if job.priority == "P2")
+    assert any(over[job.id] > 0 for job in jobs if job.priority == "P3")
+
+
+def test_overloaded_day_with_a_new_red_task_keeps_every_task(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.services.advisor import Advisor
+    from tests.test_dispatch import post, replan
+
+    with TestClient(create_app(tmp_path / "x.sqlite", advisor=Advisor(None, "x"))) as client:
+        post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V5"})
+        post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V3"})
+        assert post(client, "plans/generate")["active_plan"]["unassigned"] == []
+        post(client, "demo/advance-time", {"to": 12000})
+        state = post(client, "incidents", {"type": "NEW_TASK", "priority": "P1", "task": {
+            "priority": "P1", "pickup": {"lat": 46.075, "lon": 14.47}, "equipment": ["OXYGEN"]}})
+        items = replan(client, state)
+        assert items and all(item["plan"]["unassigned"] == [] for item in items)
+        flags = client.get(f"/api/recommendations/{items[0]['id']}/explanation").json()["flags"]
+        assert any(flag["code"] == "WINDOW_EXCEEDED" for flag in flags)
+
+
+def test_new_task_goes_to_a_centre_with_room_so_no_task_is_dropped(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.services.advisor import Advisor
+    from tests.test_dispatch import post, replan
+
+    with TestClient(create_app(tmp_path / "x.sqlite", advisor=Advisor(None, "x"))) as client:
+        post(client, "plans/generate")
+        post(client, "demo/advance-time", {"to": 12000})
+        post(client, "incidents", {"type": "FACILITY_CAPACITY_CHANGE", "facility_id": "F1", "quota": 8})
+        state = post(client, "incidents", {"type": "NEW_TASK", "priority": "P1", "task": {
+            "priority": "P1", "pickup": {"lat": 46.0343, "lon": 14.5117}, "equipment": ["OXYGEN"],
+            "earliest_pickup": 18000}})
+        new = next(task for task in state["tasks"] if task["id"].startswith("N"))
+        assert new["facility_id"] != "F1"
+        items = replan(client, state)
+        assert items and all(item["plan"]["unassigned"] == [] for item in items)
+
+
+def test_a_lowered_quota_is_named_as_the_reason(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.services.advisor import Advisor
+    from tests.test_dispatch import post, replan
+
+    with TestClient(create_app(tmp_path / "x.sqlite", advisor=Advisor(None, "x"))) as client:
+        post(client, "plans/generate")
+        state = post(client, "incidents", {"type": "FACILITY_CAPACITY_CHANGE", "facility_id": "F1", "quota": 6})
+        unassigned = replan(client, state)[0]["plan"]["unassigned"]
+        assert len(unassigned) == 2 and {issue["code"] for issue in unassigned} == {"FACILITY_CAPACITY"}

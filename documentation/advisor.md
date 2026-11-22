@@ -50,6 +50,7 @@ The comparison baseline is the **active plan under current conditions** (the sam
 | Code | Severity | When it fires |
 |---|---|---|
 | `UNASSIGNED` | HIGH for P1, else MEDIUM | The proposal leaves a task without a vehicle (with the reason) |
+| `WINDOW_EXCEEDED` | HIGH for P2, else MEDIUM | A P2/P3 task is picked up after its `latest_pickup` because not every window fits |
 | `TIGHT_DEADLINE` | MEDIUM | A planned P2/P3 task is picked up less than 10 min before its `latest_pickup` |
 | `CASCADE` | HIGH if the affected task is P1, else MEDIUM | On one vehicle, the next task has under 3 min of idle slack after the previous one **and** is either red (P1) or under 15 min from its latest pickup, so any delay on the first task carries straight into the second |
 | `LATER_PICKUP` | HIGH for P1, else MEDIUM | A task waits at least 5 min longer after its desired pickup than in the active plan |

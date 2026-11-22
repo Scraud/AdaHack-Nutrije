@@ -87,7 +87,7 @@ class Recommendations(BaseModel):
 
 
 class Flag(BaseModel):
-    code: Literal["UNASSIGNED", "RESOLVED", "CREW_NOTICE", "TIGHT_DEADLINE", "LATER_PICKUP", "CASCADE",
+    code: Literal["UNASSIGNED", "RESOLVED", "CREW_NOTICE", "TIGHT_DEADLINE", "WINDOW_EXCEEDED", "LATER_PICKUP", "CASCADE",
                   "FACILITY_BUNCHING", "SHARED_DELAY_EXPOSURE"]
     severity: Literal["HIGH", "MEDIUM", "INFO"]
     message: str

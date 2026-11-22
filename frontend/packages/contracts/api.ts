@@ -644,7 +644,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "UNASSIGNED" | "RESOLVED" | "CREW_NOTICE" | "TIGHT_DEADLINE" | "LATER_PICKUP" | "CASCADE" | "FACILITY_BUNCHING" | "SHARED_DELAY_EXPOSURE";
+            code: "UNASSIGNED" | "RESOLVED" | "CREW_NOTICE" | "TIGHT_DEADLINE" | "WINDOW_EXCEEDED" | "LATER_PICKUP" | "CASCADE" | "FACILITY_BUNCHING" | "SHARED_DELAY_EXPOSURE";
             /**
              * Severity
              * @enum {string}

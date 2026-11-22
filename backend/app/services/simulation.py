@@ -1,3 +1,4 @@
+from collections import Counter
 from math import ceil
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -56,6 +57,7 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
             raise problem(400, "PICKUP_IN_PAST", "Prevzema ni mogoče naročiti v preteklosti.")
         facilities = entities(db, scope, FacilityRecord, Facility)
         incidents = entities(db, scope, IncidentRecord, Incident)
+        booked = Counter(task.facility_id for task in entities(db, scope, TaskRecord, Task))
         nodes = (Node("pickup", "PICKUP", request.task.pickup),
                  *(Node(f.id, "DELIVERY", f.location) for f in facilities))
         travel = travel_snapshot(nodes, scope.now, incidents, road_matrix)
@@ -63,7 +65,9 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
                      if (seconds := travel.seconds("pickup", f.id)) is not None]
         if not reachable:
             raise problem(400, "NO_REACHABLE_FACILITY", "Od izbranega prevzema ni cestne poti do ustanove.")
-        _, _, facility_id = min(reachable)
+        # Nearest centre that still accepts and has quota left, so a new task never forces another one out.
+        open_facilities = {f.id for f in facilities if f.accepting and booked[f.id] < f.quota}
+        _, _, facility_id = min((item for item in reachable if item[2] in open_facilities), default=min(reachable))
         task_id = f"N{scope.revision + 1:03}"
         try:
             task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,

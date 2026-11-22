@@ -27,7 +27,7 @@ ISSUE_NAMES = {
     "VEHICLE_UNAVAILABLE": "vozilo ni operativno",
     "NO_COMPATIBLE_VEHICLE": "ni vozila z ustrezno opremo",
     "UNREACHABLE_ROUTE": "relacija je nedosegljiva",
-    "HARD_TIME_WINDOW": "najpoznejšega prevzema ni mogoče ohraniti",
+    "HARD_TIME_WINDOW": "naloge ni mogoče opraviti do konca dneva",
     "INVALID_TRAVEL_TIME": "motnja je spremenila čas vožnje",
     "FACILITY_NOT_ACCEPTING": "ustanova ne sprejema prihodov",
     "FACILITY_CAPACITY": "kvota ustanove je porabljena",
@@ -173,7 +173,14 @@ def analyse(rec_id: str, start_at: str, state: PlanningSnapshot, incidents: list
     for row in upcoming:
         task = tasks[row.task_id]
         left = margin(task, row)
-        if task.id not in cascaded and task.latest_pickup is not None and left < TIGHT:
+        if task.latest_pickup is not None and left < 0:
+            flags.append(Flag(code="WINDOW_EXCEEDED", severity="HIGH" if task.priority == "P2" else "MEDIUM",
+                              task_ids=[task.id], vehicle_ids=[row.vehicle_id],
+                              short=f"{task.id} ({task.priority}) {minutes(-left)} min čez okno",
+                              message=f"{task.id} ({task.priority}, {row.vehicle_id}) bo prevzet {minutes(-left)} min po "
+                                      f"najpoznejšem prevzemu {at(task.latest_pickup)}. Vseh nalog ni mogoče umestiti "
+                                      "v okna, zato je zamaknjena naloga nižje prioritete."))
+        elif task.id not in cascaded and task.latest_pickup is not None and left < TIGHT:
             flags.append(Flag(code="TIGHT_DEADLINE", severity="MEDIUM",
                               task_ids=[task.id], vehicle_ids=[row.vehicle_id],
                               short=f"{task.id} ({task.priority}) le {minutes(left)} min do roka",

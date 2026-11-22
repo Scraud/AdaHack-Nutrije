@@ -13,6 +13,8 @@ from app.services.metrics import explain, metrics, predecessors
 STRATEGIES: tuple[Strategy, ...] = ("MIN_DELAY", "MIN_CHANGES", "MAX_BUFFER")
 Arc = tuple[str, str | None, str | None]
 PRIORITY_WEIGHT = {"P1": 8, "P2": 3, "P3": 1}
+# Cost of a second past the latest pickup; low priority is shifted first when not every window fits.
+OVERRUN_WEIGHT = {"P2": 10, "P3": 1}
 BUFFER_TARGET = 20 * 60
 NEAR_TERM = 3600
 SCALE = 100
@@ -61,8 +63,10 @@ class Times:
 
 
 class ScheduleModel:
-    def __init__(self, state: PlanningSnapshot):
+    def __init__(self, state: PlanningSnapshot, soft_windows: bool = False):
         self.state = state
+        self.soft_windows = soft_windows
+        self.window_dropped = 0
         self.model = cp.CpModel()
         self.times: dict[str, Times] = {}
         self.choices: dict[tuple[str, str], cp.IntVar] = {}
@@ -70,6 +74,7 @@ class ScheduleModel:
         self.present: dict[str, cp.IntVar] = {}
         self.min_buffer = self.model.new_int_var(0, HORIZON, "min_buffer")
         self._terms: Terms | None = None
+        self.overruns: list[tuple[str, cp.IntVar]] = []
         self._add_tasks()
         self._add_routes()
         base = len(state.tasks) + 1
@@ -88,6 +93,7 @@ class ScheduleModel:
             urgent_count.append(present)
         urgent_weight = HORIZON * len(urgent) + 1
         self.urgent = sum(urgent) - urgent_weight * sum(urgent_count) if urgent else None
+        self.overrun = sum(OVERRUN_WEIGHT[priority] * over for priority, over in self.overruns) if self.overruns else None
 
     def _add_tasks(self):
         blocked = {issue.task_id for issue in self.state.blocking}
@@ -100,9 +106,13 @@ class ScheduleModel:
                 continue
             to_dropoff = task.pickup_service + loaded
             to_end = to_dropoff + task.dropoff_service + task.cleaning
-            upper = min(task.latest_pickup if task.latest_pickup is not None else HORIZON, HORIZON - to_end)
+            # With soft windows only the end of the day is a hard limit and the latest pickup is priced as overrun.
+            upper = HORIZON - to_end
+            if task.latest_pickup is not None and not self.soft_windows:
+                upper = min(upper, task.latest_pickup)
             lower = max(task.earliest_pickup, self.state.now)
             if upper < lower and fixed is None:
+                self.window_dropped += lower <= HORIZON - to_end
                 continue
             model = self.model
             if fixed:
@@ -120,6 +130,13 @@ class ScheduleModel:
                 model.add(present == 1)
                 model.add(times.departure == fixed.planned_departure)
             else:
+                if task.latest_pickup is not None and self.soft_windows:
+                    over = model.new_int_var(0, HORIZON, f"over_{key}")
+                    model.add(over >= times.pickup - task.latest_pickup).only_enforce_if(present)
+                    model.add(over == 0).only_enforce_if(~present)
+                    # Buffer is measured against the window, or against the pickup once the window is exceeded.
+                    model.add(times.latest <= task.latest_pickup + over).only_enforce_if(present)
+                    self.overruns.append((task.priority, over))
                 model.add(self.min_buffer <= times.latest - times.pickup).only_enforce_if(present)
                 model.add(times.pickup == lower).only_enforce_if(~present)
         for facility in self.state.facilities.values():
@@ -294,7 +311,7 @@ class ScheduleModel:
         result, changes = metrics(self.state, ordered)
         return PlanCandidate(Candidate(
             strategy=strategy, assignments=ordered, unassigned=[
-                explain(self.state, key) for key in self.state.tasks if key not in assignments
+                explain(self.state, key, ordered) for key in self.state.tasks if key not in assignments
             ], blocking=validation, metrics=result, changes=changes, solver_status=status,
             coverage_proven=coverage_proven, solve_ms=elapsed_ms,
             released_task_ids=sorted(key for key, row in self.state.previous.items()
@@ -345,27 +362,52 @@ class CpSatPlanner:
     def solve(self, snapshot: PlanningSnapshot, strategy: Strategy, budget: SolveBudget) -> PlanCandidate:
         return self.alternatives(snapshot, (strategy,), budget)[0]
 
-    def alternatives(self, snapshot: PlanningSnapshot, strategies: tuple[Strategy, ...] = STRATEGIES,
-                     budget: SolveBudget = SolveBudget()) -> list[PlanCandidate]:
-        started = monotonic()
-        schedule = ScheduleModel(snapshot)
+    @staticmethod
+    def _prepare(schedule: ScheduleModel, budget: SolveBudget):
+        """Red first, then coverage, then (soft windows only) the smallest overrun; each result is locked."""
         hint = None
         if schedule.urgent is not None:
             schedule.model.minimize(schedule.urgent)
             hint, status = _solve(schedule.model, budget.coverage_seconds)
             if status not in ("OPTIMAL", "FEASIBLE"):
-                return [PlanCandidate(None, status)]
+                return status
             schedule.model.add(schedule.urgent == hint.value(schedule.urgent))
         schedule.model.maximize(schedule.coverage)
         coverage_solver, coverage_status = _solve(schedule.model, budget.coverage_seconds, hint)
         if coverage_status not in ("OPTIMAL", "FEASIBLE"):
             if hint is None:
-                return [PlanCandidate(None, coverage_status)]
+                return coverage_status
             coverage_solver, coverage_status = hint, status
             coverage_proven = False
         else:
             coverage_proven = coverage_status == "OPTIMAL"
         schedule.model.add(schedule.coverage == coverage_solver.value(schedule.coverage))
+        if schedule.overrun is not None:
+            schedule.model.minimize(schedule.overrun)
+            shifted, shifted_status = _solve(schedule.model, budget.strategy_seconds, coverage_solver)
+            if shifted_status in ("OPTIMAL", "FEASIBLE"):
+                schedule.model.add(schedule.overrun <= round(shifted.objective_value))
+                coverage_solver, coverage_status = shifted, shifted_status
+        return coverage_solver, coverage_status, coverage_proven
+
+    def alternatives(self, snapshot: PlanningSnapshot, strategies: tuple[Strategy, ...] = STRATEGIES,
+                     budget: SolveBudget = SolveBudget()) -> list[PlanCandidate]:
+        started = monotonic()
+        # Hard windows keep the model small and provably optimal; soft windows are used only when a task
+        # would otherwise be dropped, so no task is ever left out just because its window cannot be met.
+        schedule = ScheduleModel(snapshot)
+        prepared = self._prepare(schedule, budget)
+        complete = not isinstance(prepared, str) and not schedule.window_dropped and all(
+            prepared[0].boolean_value(present) for present in schedule.present.values())
+        if not complete:
+            soft = ScheduleModel(snapshot, soft_windows=True)
+            soft_prepared = self._prepare(soft, budget)
+            if not isinstance(soft_prepared, str) and (isinstance(prepared, str) or soft_prepared[0].value(
+                    soft.coverage) > prepared[0].value(schedule.coverage)):
+                schedule, prepared = soft, soft_prepared
+        if isinstance(prepared, str):
+            return [PlanCandidate(None, prepared)]
+        coverage_solver, coverage_status, coverage_proven = prepared
         output: list[PlanCandidate] = []
         found: list[frozenset[tuple[str, str]]] = []
         scores: list[tuple[int, ...]] = []

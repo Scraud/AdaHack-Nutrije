@@ -69,10 +69,12 @@ Each task has a **desired pickup** (`earliest_pickup`) and a **latest pickup** d
 | Priority | Latest pickup | Treatment |
 |---|---|---|
 | P1 (Visoka, red) | none | As soon as possible, absolute priority |
-| P2 (Srednja) | desired + 45 min | Hard window |
-| P3 (Nizka) | desired + 2 h | Hard window |
+| P2 (Srednja) | desired + 45 min | Soft window, overrun costs 10× |
+| P3 (Nizka) | desired + 2 h | Soft window, shifted first |
 
-There are no hospital arrival targets or deadlines; a pickup's upper bound is only `latest_pickup` and the end of the day. "Delay" everywhere means waiting after the desired pickup.
+There are no hospital arrival targets or deadlines. "Delay" everywhere means waiting after the desired pickup.
+
+**Windows never drop a task.** The planner first solves with the latest pickups as hard limits (small model, provably optimal). Only if that would leave a task out because of its window does it re-solve with **soft windows**: the only hard limit is the end of the day, and each P2/P3 task gets an overrun past its latest pickup. After red priority and coverage are locked, the planner minimises the weighted overrun (`OVERRUN_WEIGHT`: P2 10, P3 1), so low priority is shifted first, and locks that minimum before the strategies run. The soft plan is kept only if it covers more tasks than the hard one. A task stays unassigned only without a compatible vehicle, a road route, facility capacity, or time before the end of the day. The validator and the "keep current plan" baseline no longer treat a late pickup as a failure. The UI shows it as "Zamik čez okno +X min", and the advisor warns with `WINDOW_EXCEEDED`.
 
 **P1 absolute priority:** the model first maximises the number of assigned P1 tasks and then minimises their total waiting time; that result is locked before anything else is optimised. It then maximises **coverage**, the weighted count of scheduled tasks:
 

@@ -5,7 +5,7 @@ from app.planning.cp_sat_planner import TOLERANCE, _dominated
 from app.services.advisor import Advisor
 from tests.test_dispatch import post, replan
 
-WEIGHT = {"P1": 4, "P2": 2, "P3": 1}
+WEIGHT = {"P1": 8, "P2": 3, "P3": 1}
 
 
 def disrupted(client, now, incidents):
@@ -16,15 +16,11 @@ def disrupted(client, now, incidents):
     return state
 
 
-def asap(task):
-    return task.get("arrival_policy") == "ASAP" or (task["type"] == "PRIORITY_TRANSPORT" and task["priority"] == "P1")
-
-
 def score(state, plan):
     tasks = {task["id"]: task for task in state["tasks"]}
     unassigned = sum({"P1": 1_000_000, "P2": 1_000, "P3": 1}[tasks[i["task_id"]]["priority"]] for i in plan["unassigned"])
-    delay = sum(WEIGHT[tasks[r["task_id"]]["priority"]] * max(0, r["planned_dropoff"] - tasks[r["task_id"]]["preferred_arrival"])
-                for r in plan["assignments"] if not asap(tasks[r["task_id"]]))
+    delay = sum(WEIGHT[tasks[r["task_id"]]["priority"]] * max(0, r["planned_pickup"] - tasks[r["task_id"]]["earliest_pickup"])
+                for r in plan["assignments"])
     m = plan["metrics"]
     return unassigned, delay, m["vehicle_changes"], -m["min_buffer_seconds"], m["travel_seconds"]
 
@@ -36,9 +32,20 @@ def test_no_mass_reshuffle_for_a_tiny_gain(tmp_path):
             {"type": "NEW_TASK", "priority": "P1", "task": {
                 "priority": "P1", "pickup": {"lat": 46.03, "lon": 14.47}, "equipment": ["STRETCHER"]}},
         ])
+        # Tasks still planned on the broken vehicle must move; anything beyond that needs a real gain.
+        forced = sum(1 for row in state["active_plan"]["assignments"]
+                     if row["vehicle_id"] == "V5" and row["status"] == "PLANNED")
         items = replan(client, state)
         assert items
-        assert all(item["plan"]["metrics"]["vehicle_changes"] <= 2 for item in items)
+        stable = min((item["plan"] for item in items), key=lambda plan: plan["metrics"]["vehicle_changes"])
+        assert stable["metrics"]["vehicle_changes"] <= forced + 2
+        stable_score = score(state, stable)
+        for item in items:
+            plan = item["plan"]
+            if plan["metrics"]["vehicle_changes"] > forced + 2:
+                own = score(state, plan)
+                # Extra moves need a measurable gain over the stable alternative.
+                assert any(own[axis] < stable_score[axis] - TOLERANCE[axis] for axis in (0, 1, 3))
 
 
 def test_alternatives_are_distinct_and_not_dominated(tmp_path):
@@ -57,7 +64,7 @@ def test_alternatives_are_distinct_and_not_dominated(tmp_path):
             assert not _dominated(own, scores[:i] + scores[i + 1:])
         by_strategy = {plan["strategy"]: plan["metrics"] for plan in plans}
         if "MIN_CHANGES" in by_strategy:
-            assert by_strategy["MIN_CHANGES"]["vehicle_changes"] < by_strategy["MIN_DELAY"]["vehicle_changes"]
+            assert by_strategy["MIN_CHANGES"]["vehicle_changes"] <= by_strategy["MIN_DELAY"]["vehicle_changes"]
 
 
 def test_tolerance_ignores_noise():

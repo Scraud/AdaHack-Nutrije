@@ -93,7 +93,7 @@ Poimenovanje je namenoma enotno: **naloga = task**, **motnja = incident**. Prome
 - `priority`: `P1`, `P2`, `P3` — **vnesena, ne ocenjena z AI**
 - `pickup_lat`, `pickup_lon`, `dropoff_lat`, `dropoff_lon`, `destination_facility_id` (nullable)
 - `passenger_count`, `required_equipment`, `required_crew` (opcijsko)
-- `earliest_pickup`, `latest_pickup` (opcijsko), `preferred_arrival` (želeni čas za merjenje zamud), `latest_arrival` (trda meja)
+- `earliest_pickup` (želeni prevzem), `latest_pickup` (najkasneje v vozilu; izpeljano iz prioritete: srednja +45 min, nizka +2 h, visoka brez roka – čim prej in absolutna prednost). Želenega in najkasnejšega prihoda v ustanovo ni.
 - `pickup_service_minutes`, `dropoff_service_minutes`
 - `created_at`, `planned_pickup`, `planned_arrival`, `actual_pickup`, `actual_arrival`
 - `assigned_vehicle_id` (nullable; denormaliziran prikaz aktivne dodelitve, če ga potrebujemo)

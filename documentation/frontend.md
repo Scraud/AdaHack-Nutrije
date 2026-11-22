@@ -94,6 +94,14 @@ All state-changing actions go through `run(label, action)`, which sets `busy`, c
 
 ---
 
+## Fleet Management — `vehicles-page.component.ts` / `vehicle-form.component.ts`
+
+The Vozila page has a **Dodaj vozilo** button and, on every vehicle card, **Uredi opremo** and **Odstrani**. The form dialog (same style as the event dialog) has a starting centre (only when adding), capacity and checkboxes for every option: equipment (Nosila, Voziček, Kisik) and task types (Načrtovani prevoz, Prednostni prevoz, Dostava opreme; at least one is required). Removal asks for confirmation and is disabled while the vehicle is on a transport.
+
+The gateway methods `addVehicle`, `updateVehicle` and `removeVehicle` are optional (demo mode has none, so the controls are hidden). After a change the store points the dispatcher to the new **Sprememba flote** alert; its solutions panel offers *Izračunaj predloge* or *Zaključi brez spremembe razporeda*. Recommendation cards are always ordered Najmanj zamud → Največ rezerve → Najmanj sprememb.
+
+---
+
 ## Root Component — `Dispatcher`
 
 `dispatcher.html` is the top-level layout. It composes:

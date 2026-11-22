@@ -1,4 +1,4 @@
-import type { Assignment, DispatchPlan, DispatchState, PlanDiff, TransportTask, TrackingFrame } from './index';
+import type { Assignment, DispatchPlan, DispatchState, PlanDiff, Priority, TransportTask, TrackingFrame } from './index';
 
 export const VEHICLE_COLORS: Record<string, string> = { V1: '#1e5ec1', V2: '#00846e', V3: '#7d42bc', V4: '#a76a05', V5: '#ac397d' };
 export const colorFor = (id: string) => VEHICLE_COLORS[id] ?? '#64818a';
@@ -19,12 +19,23 @@ export function timelineBounds(state:DispatchState){
     end:Math.max(Date.parse(state.horizon_end),Math.ceil(now/hour)*hour)};
 }
 export const formatTime = (value: string | null) => value===null?'—':new Intl.DateTimeFormat('sl-SI', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Ljubljana' }).format(new Date(value));
+export const taskTypeLabel = (value: string) => ({ PLANNED_TRANSPORT: 'Načrtovani prevoz', PRIORITY_TRANSPORT: 'Prednostni prevoz', EQUIPMENT_DELIVERY: 'Dostava opreme' }[value] ?? value);
+// Display order of alternatives; the fewest-changes option is always last.
+export const STRATEGY_ORDER: Record<string, number> = { MIN_DELAY: 0, MAX_BUFFER: 1, MIN_CHANGES: 2 };
 export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCHAIR: 'Voziček', OXYGEN: 'Kisik' }[value] ?? value);
 export const statusLabel = (value: string) => ({ AVAILABLE: 'Na voljo', EN_ROUTE: 'Na poti', TRANSPORTING: 'V prevozu', SERVICE:'Predaja / čiščenje', UNAVAILABLE: 'Nedosegljivo', BROKEN: 'Okvara' }[value] ?? value);
 export const incidentStatus = (value: string) => ({ OPEN: 'Novo', AWAITING_DECISION: 'Čaka na odločitev', RESOLVED: 'Rešeno' }[value] ?? value);
-export const incidentType = (value: string) => ({ NEW_TASK: 'Prednostna naloga', VEHICLE_BREAKDOWN: 'Okvara vozila', TRAFFIC_DELAY: 'Prometni zastoj', ROAD_CLOSURE: 'Zapora ceste', VEHICLE_UNAVAILABLE: 'Nedosegljivost',WEATHER_DELAY:'Slabo vreme',FACILITY_CAPACITY_CHANGE:'Sprememba kapacitete' }[value] ?? value);
-export const arrivalAsap = (task: TransportTask) => task.arrival_policy === 'ASAP' || (task.task_type === 'PRIORITY_TRANSPORT' && task.priority === 'P1');
-export const preferredArrivalLabel = (task: TransportTask) => arrivalAsap(task) ? 'Čim prej' : formatTime(task.preferred_arrival);
+export const incidentType = (value: string) => ({ NEW_TASK: 'Prednostna naloga', VEHICLE_BREAKDOWN: 'Okvara vozila', TRAFFIC_DELAY: 'Prometni zastoj', ROAD_CLOSURE: 'Zapora ceste', VEHICLE_UNAVAILABLE: 'Nedosegljivost',WEATHER_DELAY:'Slabo vreme',FACILITY_CAPACITY_CHANGE:'Sprememba kapacitete',FLEET_CHANGE:'Sprememba flote' }[value] ?? value);
+// Longest wait after the desired pickup until the patient is in the vehicle; red has none and goes first.
+export const MAX_WAIT_MINUTES: Record<Priority, number | null> = { P1: null, P2: 45, P3: 120 };
+export const latestPickupFor = (priority: Priority, earliest: string) => {
+  const wait = MAX_WAIT_MINUTES[priority];
+  return wait === null ? null : new Date(Date.parse(earliest) + wait * 60_000).toISOString();
+};
+export const pickupAsap = (task: TransportTask) => task.priority === 'P1';
+export const latestPickupLabel = (task: TransportTask) => pickupAsap(task) ? 'Čim prej' : formatTime(task.latest_pickup);
+export const pickupWaitMinutes = (task: TransportTask, plannedPickup: string) =>
+  Math.max(0, Math.ceil((Date.parse(plannedPickup) - Date.parse(task.earliest_pickup)) / 60_000));
 
 export function comparePlans(base: DispatchPlan | null, candidate: DispatchPlan | null): PlanDiff {
   const diff: PlanDiff = { added: new Set(), changed: new Set(), removed: new Set(), vehicle_ids: new Set() };
@@ -47,8 +58,8 @@ export function calculatePlanMetrics(plan: DispatchPlan | null, tasks: Transport
   let delay = 0, atRisk = 0;
   for (const assignment of plan?.assignments ?? []) {
     const task = taskMap.get(assignment.task_id);
-    if (!task || arrivalAsap(task) || new Date(assignment.planned_end) <= new Date(now)) continue;
-    const minutes = Math.max(0, Math.ceil((Date.parse(assignment.planned_dropoff) - Date.parse(task.preferred_arrival)) / 60_000));
+    if (!task || new Date(assignment.planned_end) <= new Date(now)) continue;
+    const minutes = pickupWaitMinutes(task, assignment.planned_pickup);
     delay += minutes;
     if (minutes > 0) atRisk++;
   }
@@ -136,7 +147,7 @@ export function candidateProblem(base: DispatchPlan | null, candidate: DispatchP
     const times = [item.planned_departure, item.planned_pickup, item.planned_dropoff, item.planned_end].map(Date.parse);
     if (times.some(t => !Number.isFinite(t)) || times.some((t, i) => i > 0 && t < times[i - 1])) return 'Predlog vsebuje neveljavne čase.';
     if (!task || times[3] > Date.parse(horizon_end) || times[1] < Date.parse(task.earliest_pickup) ||
-        (!arrivalAsap(task) && times[2] > Date.parse(task.latest_arrival))) return 'Predlog krši časovno okno naloge.';
+        (task.latest_pickup !== null && times[1] > Date.parse(task.latest_pickup))) return 'Predlog krši časovno okno naloge.';
   }
   for (const vehicleId of new Set(candidate.assignments.map(a => a.vehicle_id))) {
     const row = candidate.assignments.filter(a => a.vehicle_id === vehicleId).sort((a, b) => Date.parse(a.planned_departure) - Date.parse(b.planned_departure));

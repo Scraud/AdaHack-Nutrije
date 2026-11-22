@@ -50,8 +50,7 @@ def test_group_capacity_and_sequential_transport_without_ride_pooling(passengers
     vehicle = vehicles[0].model_copy(update={"capacity": 2, "equipment": ["OXYGEN", "STRETCHER", "WHEELCHAIR"],
                                            "task_types": ["PLANNED_TRANSPORT"]})
     jobs = [task.model_copy(update={"passenger_count": passengers, "equipment": [], "type": "PLANNED_TRANSPORT",
-                                    "earliest_pickup": 0, "latest_pickup": None,
-                                    "preferred_arrival": 20000, "latest_arrival": 30000}) for task in tasks[:2]]
+                                    "earliest_pickup": 0, "latest_pickup": None}) for task in tasks[:2]]
     snapshot = build_snapshot(0, [vehicle], jobs, facilities, [], [])
     plan = CpSatPlanner().alternatives(snapshot)[0].plan
     assert plan is not None and len(plan.assignments) == expected

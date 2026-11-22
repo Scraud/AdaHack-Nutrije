@@ -4,13 +4,17 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 HORIZON = 10 * 3600
+DEMO_DAY_START = -8 * 3600
+DEMO_DAY_END = 16 * 3600 - 1
 Priority = Literal["P1", "P2", "P3"]
+# Longest wait between the desired pickup and the patient being in the vehicle; P1 has none and goes first.
+MAX_WAIT: dict[Priority, int | None] = {"P1": None, "P2": 45 * 60, "P3": 120 * 60}
 Strategy = Literal["MIN_DELAY", "MIN_CHANGES", "MAX_BUFFER"]
 Equipment = Literal["WHEELCHAIR", "STRETCHER", "OXYGEN"]
 TaskType = Literal["PLANNED_TRANSPORT", "PRIORITY_TRANSPORT", "EQUIPMENT_DELIVERY"]
 IncidentType = Literal[
     "VEHICLE_BREAKDOWN", "VEHICLE_UNAVAILABLE", "TRAFFIC_DELAY", "ROAD_CLOSURE",
-    "NEW_TASK", "WEATHER_DELAY", "FACILITY_CAPACITY_CHANGE",
+    "NEW_TASK", "WEATHER_DELAY", "FACILITY_CAPACITY_CHANGE", "FLEET_CHANGE",
 ]
 
 
@@ -29,6 +33,8 @@ class Vehicle(BaseModel):
     broken: bool = False
     unavailable: list[tuple[int, int]] = Field(default_factory=list)
     repositioned_at: int | None = None
+    # Removed from the fleet; kept so today's completed assignments still resolve their vehicle.
+    retired: bool = False
 
 
 class Facility(BaseModel):
@@ -48,11 +54,9 @@ class Task(BaseModel):
     facility_id: str
     passenger_count: int = Field(ge=0, le=8)
     equipment: list[Equipment] = Field(default_factory=list)
+    # Stored tasks can predate the current shift bounds.
     earliest_pickup: int = Field(ge=0)
     latest_pickup: int | None = Field(default=None, ge=0)
-    arrival_policy: Literal["ASAP", "PRIORITY_WINDOW"] | None = None
-    preferred_arrival: int = Field(ge=0)
-    latest_arrival: int = Field(ge=0)
     pickup_service: int = Field(default=240, ge=0, le=3600)
     dropoff_service: int = Field(default=240, ge=0, le=3600)
     cleaning: int = Field(default=120, ge=0, le=3600)
@@ -61,24 +65,24 @@ class Task(BaseModel):
     actual_arrival: int | None = None
 
     @property
-    def arrival_asap(self) -> bool:
-        return self.arrival_policy == "ASAP" or (self.type == "PRIORITY_TRANSPORT" and self.priority == "P1")
-
-    @property
-    def arrival_deadline(self) -> int:
-        return max(HORIZON, self.latest_arrival) if self.arrival_asap else self.latest_arrival
+    def asap(self) -> bool:
+        return self.priority == "P1"
 
     @model_validator(mode="after")
-    def check_windows(self):
-        if self.latest_pickup is not None and self.earliest_pickup > self.latest_pickup:
-            raise ValueError("Najpoznejši prevzem je pred najzgodnejšim prevzemom.")
-        if not self.earliest_pickup <= self.preferred_arrival <= self.latest_arrival:
-            raise ValueError("Želeni prihod mora biti med najzgodnejšim prevzemom in rokom.")
+    def priority_window(self):
+        # The latest pickup always follows from priority, so stored or submitted values cannot drift from the rule.
+        wait = MAX_WAIT[self.priority]
+        if wait is None:
+            self.latest_pickup = None
+        else:
+            latest = self.earliest_pickup + wait
+            self.latest_pickup = min(self.planning_horizon or HORIZON, latest) if self.earliest_pickup <= (self.planning_horizon or HORIZON) else latest
         return self
 
 
 class Reroute(BaseModel):
-    at: int = Field(ge=0)
+    at: int = Field(ge=DEMO_DAY_START)
+    # A delayed leg may start after the planning horizon.
     start: int = Field(ge=0)
     origin: Point | None = None
     leg: Literal["PICKUP", "HOSPITAL"] | None = None
@@ -107,7 +111,7 @@ class Incident(BaseModel):
     id: int = 0
     type: IncidentType
     occurred_at: int = 0
-    ended_at: int | None = Field(default=None, ge=0)
+    ended_at: int | None = Field(default=None, ge=DEMO_DAY_START)
     duration: int | None = Field(default=None, gt=0, le=HORIZON)
     vehicle_id: str | None = None
     facility_id: str | None = None
@@ -154,7 +158,7 @@ class Change(BaseModel):
 
 
 class Candidate(BaseModel):
-    strategy: Strategy
+    strategy: Strategy | Literal["MANUAL"]
     assignments: list[Assignment]
     unassigned: list[Issue]
     blocking: list[Issue]

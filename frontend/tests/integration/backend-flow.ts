@@ -2,7 +2,7 @@ import '@angular/compiler';
 import assert from 'node:assert/strict';
 import { HttpDispatchGateway } from '../../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../../apps/dispatcher/src/app/core/dispatch-store';
-import { arrivalAsap, candidateProblem, formatTime } from '../../packages/contracts/plan-utils';
+import { candidateProblem, formatTime, pickupAsap } from '../../packages/contracts/plan-utils';
 
 // Run only against an explicitly selected disposable backend: this resets its scenario.
 async function main(){
@@ -40,7 +40,7 @@ assert.equal(store.state()!.tasks.length,21);
 const task=store.state()!.tasks.find(item=>item.id===incident.affected_task_ids[0])!;
 assert.equal(task.origin.name,pickup.name);
 assert.equal(task.earliest_pickup,store.state()!.simulated_time);
-assert.ok(arrivalAsap(task));
+assert.ok(pickupAsap(task));
 assert.equal(store.metrics().unassigned,1);
 assert.equal(store.activePlan()!.unassigned_task_ids.length,1);
 await store.generate(incident.id);healthy();
@@ -63,7 +63,9 @@ assert.equal(store.activePlan()!.version,2);
 assert.equal(store.selectedIncident()!.status,'RESOLVED');
 assert.equal(store.state()!.decisions[0].action,'ACCEPTED');
 assert.equal(store.state()!.history!.length,2);
-assert.equal(store.metrics().unassigned,0);
+assert.ok(store.activePlan()!.assignments.some(a=>a.task_id===task.id),'The new P1 task must receive an assignment.');
+assert.equal(store.metrics().unassigned,selected.proposed_plan.unassigned_task_ids.length);
+assert.ok(store.activePlan()!.unassigned_task_ids.every(id=>store.state()!.tasks.find(t=>t.id===id)?.priority!=='P1'),'Lower-priority tasks may yield to the urgent transport.');
 console.log('PASS: actual backend planning, preview isolation, acceptance and event history.');
 
 await store.createIncident({incident_type:'WEATHER_DELAY',priority:'P2',description:'Integration: močan dež',duration_minutes:60,delay_multiplier:1.4,location:{lat:46.056,lon:14.505,name:'Ljubljana'}});healthy();

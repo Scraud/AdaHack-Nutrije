@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { DemoDispatchGateway } from '../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../apps/dispatcher/src/app/core/dispatch-store';
 import type { TrackingFrame } from '../packages/contracts';
-import { calculatePlanMetrics, candidateProblem, comparePlans, facilityCapacity, formatTime, passengerOnBoard, preferredArrivalLabel, timelineStatus, timelineBounds, trackingEtaLabel, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
+import { calculatePlanMetrics, candidateProblem, comparePlans, facilityCapacity, trackingEtaLabel, formatTime, latestPickupLabel, MAX_WAIT_MINUTES, passengerOnBoard, timelineStatus, timelineBounds, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
 
 async function scenario() {
   const gateway=new DemoDispatchGateway();
@@ -223,16 +223,24 @@ test('presentation guard blocks overlapping, late and modified locked assignment
   const late=structuredClone(rec.proposed_plan);late.assignments.at(-1)!.planned_dropoff='2026-11-21T20:00:00Z';late.assignments.at(-1)!.planned_end='2026-11-21T20:10:00Z';assert.ok(candidateProblem(state.active_plan,late,state));
   const overlap=structuredClone(rec.proposed_plan);const a=overlap.assignments.find(a=>a.task_id==='N021')!;const b=overlap.assignments.find(a=>a.task_id==='N003')!;a.planned_departure=b.planned_departure;a.planned_pickup=b.planned_pickup;assert.ok(candidateProblem(state.active_plan,overlap,state));
 });
-test('high-priority transports in older plans are ASAP and ignore the old arrival deadline',async()=>{
+test('red is ASAP; medium and low get their latest pickup from priority',async()=>{
   const {store}=await scenario();
   const state=store.state()!;
-  const candidate=store.recommendations()[0].proposed_plan;
   const high=state.tasks.find(task=>task.id==='N021')!;
-  high.latest_arrival=high.earliest_pickup;
-  assert.equal(preferredArrivalLabel(high),'Čim prej');
+  assert.equal(high.latest_pickup,null);
+  assert.equal(latestPickupLabel(high),'Čim prej');
+  for(const task of state.tasks.filter(task=>task.priority!=='P1')){
+    assert.equal((Date.parse(task.latest_pickup!)-Date.parse(task.earliest_pickup))/60_000,MAX_WAIT_MINUTES[task.priority]);
+    assert.equal(latestPickupLabel(task),formatTime(task.latest_pickup));
+  }
+  const candidate=store.recommendations()[0].proposed_plan;
   assert.equal(candidateProblem(state.active_plan,candidate,state),null);
-  const planned=state.tasks[0];
-  assert.equal(preferredArrivalLabel(planned),formatTime(planned.preferred_arrival));
+  const tooLate=structuredClone(candidate);
+  const row=tooLate.assignments.find(a=>a.status==='PLANNED'&&!!state.tasks.find(t=>t.id===a.task_id)?.latest_pickup)!;
+  const task=state.tasks.find(t=>t.id===row.task_id)!;
+  const shift=Date.parse(task.latest_pickup!)-Date.parse(row.planned_pickup)+60_000;
+  for(const key of ['planned_departure','planned_pickup','planned_dropoff','planned_end'] as const)row[key]=new Date(Date.parse(row[key])+shift).toISOString();
+  assert.equal(candidateProblem(state.active_plan,tooLate,state),'Predlog krši časovno okno naloge.');
 });
 test('reset restores the deterministic fixture and clears selection and previews',async()=>{
   const {store}=await scenario();store.pin(store.recommendations()[0].id);store.selectVehicle('V3');await store.reset();
@@ -333,4 +341,8 @@ test('vehicle service metrics average known cleaning durations and select the ne
   const future=assignments.filter(a=>a.status==='PLANNED'&&a.planned_departure>state.simulated_time).sort((a,b)=>a.planned_departure.localeCompare(b.planned_departure));
   assert.equal(stats.next_departure,future[0]?.planned_departure??null);
   assert.deepEqual(vehicleServiceStats(state,'unknown'),{average_cleaning_minutes:null,next_departure:null});
+});
+test('the fewest-changes recommendation is always listed last',async()=>{
+  const {store}=await scenario();
+  assert.deepEqual(store.recommendations().map(r=>r.strategy),['MIN_DELAY','MAX_BUFFER','MIN_CHANGES']);
 });

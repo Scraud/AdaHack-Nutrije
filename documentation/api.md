@@ -56,10 +56,25 @@ Records an incident. Pauses playback. Returns updated state. For `TRAFFIC_DELAY`
 | `location` | WEATHER_DELAY and optional for TRAFFIC_DELAY or ROAD_CLOSURE | GPS point. For road events without `road_id` the nearest road segment is used. |
 | `task` | NEW_TASK | `NewTask` object |
 
-`NewTask` takes `priority` and `pickup` with optional `pickup_name`, `passenger_count`, `equipment`, `earliest_pickup`, and `latest_pickup`. The backend selects the facility with the shortest travel time from pickup and sets the arrival window. `GET /api/map/addresses?query=...` returns local matches with `name`, `lat`, and `lon`.
+`NewTask` takes `priority` and `pickup` with optional `pickup_name`, `passenger_count`, `equipment` and `earliest_pickup` (desired pickup). The backend selects the facility with the shortest travel time from pickup; the latest pickup follows from priority (P2 +45 min, P3 +2 h, P1 none). `GET /api/map/addresses?query=...` returns local matches with `name`, `lat`, and `lon`.
 
 ### `POST /api/incidents/{incident_id}/resolve` → `State`
-Manually ends an active `TRAFFIC_DELAY` or `ROAD_CLOSURE` (sets `ended_at = now`). Pauses playback and recomputes detours, so vehicles return to the fastest route.
+Manually ends an active `TRAFFIC_DELAY` or `ROAD_CLOSURE` (sets `ended_at = now`). Pauses playback and recomputes detours, so vehicles return to the fastest route. Also closes an open `FLEET_CHANGE` without replanning (`status = RESOLVED`).
+
+---
+
+## Fleet
+
+Every change creates a `FLEET_CHANGE` incident (with `vehicle_id` and a Slovenian `description`), bumps the revision (older proposals become stale) and pauses playback. The incident is resolved when a recommendation computed for it is accepted, or manually via `/resolve`.
+
+### `POST /api/vehicles` body: `NewVehicle` → `State`
+Adds a vehicle: `{ capacity: 1–8, equipment: [STRETCHER|WHEELCHAIR|OXYGEN], task_types: [≥1 of PLANNED_TRANSPORT|PRIORITY_TRANSPORT|EQUIPMENT_DELIVERY], location: Point }`. The id is the next free `V<n>`; duplicate entries are removed.
+
+### `PUT /api/vehicles/{vehicle_id}` body: `VehicleSettings` → `State`
+Replaces capacity, equipment and task types. Planned tasks the vehicle can no longer serve appear in `baseline.affected` as `NO_COMPATIBLE_VEHICLE` until a replan moves them.
+
+### `DELETE /api/vehicles/{vehicle_id}` → `State`
+Removes a vehicle from the fleet (soft delete: `retired = true`, so today's completed assignments still resolve it). Retired vehicles are hidden from `State.vehicles` and tracking and are never planned; their planned tasks appear as affected (`VEHICLE_UNAVAILABLE`). Refused with `409 VEHICLE_IN_USE` while the vehicle has an `IN_PROGRESS` assignment.
 
 ---
 
@@ -189,7 +204,8 @@ Records a real GPS fix. Only available when `RESCUEFLOW_GPS_KEY` is configured.
 | `ROAD_NOT_FOUND` | 404 | Road segment id does not exist |
 | `ROAD_REQUIRED` | 400 | Road closure/delay needs a road_id or location |
 | `INCIDENT_NOT_FOUND` | 404 | Incident id does not exist |
-| `INCIDENT_NOT_RESOLVABLE` | 400 | Only traffic delays and road closures can be resolved manually |
+| `INCIDENT_NOT_RESOLVABLE` | 400 | Only traffic delays, road closures and fleet changes can be resolved manually |
+| `VEHICLE_IN_USE` | 409 | Vehicle is on a transport and cannot be removed yet |
 | `INCIDENT_ALREADY_ENDED` | 409 | Incident is no longer active |
 | `TASK_REQUIRED` | 400 | NEW_TASK incident needs a task object |
 | `PICKUP_IN_PAST` | 400 | Task pickup time is before current simulated time |

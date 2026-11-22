@@ -48,7 +48,6 @@ def create_scheduled_task(db: Session, scope: Scenario, request: CreateScheduled
                 pickup_name=request.pickup_name, facility_id=request.facility_id,
                 passenger_count=request.passenger_count, equipment=request.equipment,
                 earliest_pickup=seconds, latest_pickup=seconds + 1800,
-                preferred_arrival=seconds + 3600, latest_arrival=seconds + 7200,
                 planning_horizon=seconds + 7200 + 360)
     entry = ScheduledTaskView(id=task_id, scheduled_at=request.scheduled_at, task=task,
                               description=request.description)

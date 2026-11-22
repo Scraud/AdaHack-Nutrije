@@ -22,7 +22,7 @@ The solver works exclusively with frozen, validated Pydantic/dataclass objects �
 **Key types:**
 
 - `Vehicle` — id, location, capacity, equipment list, task_types, available_at, broken, unavailable windows
-- `Task` — id, type (PLANNED_TRANSPORT / PRIORITY_TRANSPORT / EQUIPMENT_DELIVERY), priority (P1/P2/P3), pickup location, facility_id, passenger_count, equipment, time windows (earliest_pickup, latest_pickup, preferred_arrival, latest_arrival), service durations
+- `Task` — id, type (PLANNED_TRANSPORT / PRIORITY_TRANSPORT / EQUIPMENT_DELIVERY), priority (P1/P2/P3), pickup location, facility_id, passenger_count, equipment, pickup window (`earliest_pickup` = desired pickup, `latest_pickup` derived from priority), service durations
 - `Facility` — id, name, location, quota (capacity remaining), accepting flag
 - `Assignment` — task_id, vehicle_id, planned_departure, planned_pickup, planned_dropoff, planned_end, deadhead (travel to pickup in seconds), status, distance_meters, reroute (automatic detour after a road event)
 - `TravelSnapshot` — a frozen N×N matrix of travel durations (and optionally distances) between all nodes (vehicle starts, pickups, deliveries)
@@ -62,9 +62,19 @@ For each **(vehicle, task)** pair:
 For each **arc** (edge in the route graph):
 - `arc_{vehicle}_{origin}_{target}` — boolean: is this sequence edge active?
 
-### Arrival and Coverage Objectives
+### Priority Rules and Coverage Objectives
 
-For new tasks with the `ASAP` arrival policy, the model first maximises their assigned count and then minimises their total time to hospital. With those results fixed, it maximises **coverage**, the weighted count of scheduled tasks:
+Each task has a **desired pickup** (`earliest_pickup`) and a **latest pickup** derived from its priority (`MAX_WAIT` in `contracts.py`, enforced by a model validator so stored or submitted values cannot drift):
+
+| Priority | Latest pickup | Treatment |
+|---|---|---|
+| P1 (Visoka, red) | none | As soon as possible, absolute priority |
+| P2 (Srednja) | desired + 45 min | Hard window |
+| P3 (Nizka) | desired + 2 h | Hard window |
+
+There are no hospital arrival targets or deadlines; a pickup's upper bound is only `latest_pickup` and the end of the day. "Delay" everywhere means waiting after the desired pickup.
+
+**P1 absolute priority:** the model first maximises the number of assigned P1 tasks and then minimises their total waiting time; that result is locked before anything else is optimised. It then maximises **coverage**, the weighted count of scheduled tasks:
 
 ```
 P1 tasks have weight base²
@@ -73,7 +83,7 @@ P3 tasks have weight 1
 (where base = num_tasks + 1)
 ```
 
-The weights prioritise the number of high-priority assignments. The urgent and coverage solves each run for up to `coverage_seconds` (default 3 s). With coverage fixed, the planner seeks earlier arrivals for tasks with automatic medium and low priority windows before comparing strategies.
+The weights prioritise the number of high-priority assignments. The urgent and coverage solves each run for up to `coverage_seconds` (default 3 s). P2/P3 waiting is then traded by the strategies within the hard windows.
 
 ### Strategy Objectives
 
@@ -83,7 +93,7 @@ All three strategies minimise **the same cost model**, expressed in *minutes of 
 
 | Criterion | What is counted | `MIN_DELAY` | `MIN_CHANGES` | `MAX_BUFFER` |
 |---|---|---|---|---|
-| Delay | Minutes past `preferred_arrival`, × P1 4 / P2 2 / P3 1 (not for ASAP tasks) | 1 | 1 | 0.5 |
+| Waiting | Minutes between desired and planned pickup, × P2 3 / P3 1 (P1 is already locked) | 1 | 1 | 0.5 |
 | Vehicle swap | Task moved to another vehicle (crew must be told) | 3 | 30 | 6 |
 | Urgent swap (extra) | Swap of a task departing within 60 min of now | +3 | +15 | +6 |
 | Route-order change | Task gets a different predecessor | 0.5 | 6 | 1 |
@@ -139,6 +149,8 @@ for strategy in strategies:
 ```
 
 The solver is deterministic (`random_seed = 42`) and single-threaded (`num_workers = 1`).
+
+**Display order:** alternatives are always listed as `MIN_DELAY` → `MAX_BUFFER` → `MIN_CHANGES`; the fewest-changes option is last. The backend sorts both the generate response and `GET /api/recommendations` (`STRATEGY_ORDER` in `services/planning.py`), and the frontend store sorts the same way (`STRATEGY_ORDER` in `plan-utils.ts`).
 
 **Choosing which alternatives to show:**
 

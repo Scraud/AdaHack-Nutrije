@@ -12,7 +12,7 @@ from app.services.metrics import explain, metrics, predecessors
 
 STRATEGIES: tuple[Strategy, ...] = ("MIN_DELAY", "MIN_CHANGES", "MAX_BUFFER")
 Arc = tuple[str, str | None, str | None]
-PRIORITY_WEIGHT = {"P1": 4, "P2": 2, "P3": 1}
+PRIORITY_WEIGHT = {"P1": 8, "P2": 3, "P3": 1}
 BUFFER_TARGET = 20 * 60
 NEAR_TERM = 3600
 SCALE = 100
@@ -78,22 +78,16 @@ class ScheduleModel:
                             for key, present in self.present.items() if key not in state.frozen)
         urgent = []
         urgent_count = []
-        routine = []
         for key, times in self.times.items():
             task = state.tasks[key]
-            if key in state.frozen or (not task.arrival_asap and task.arrival_policy is None):
+            if key in state.frozen or not task.asap:
                 continue
             present = self.present[key]
-            # Unscheduled pickups equal their lower bound and contribute zero elapsed time.
-            elapsed = times.pickup - times.lower + present * (times.lower + times.to_dropoff - task.earliest_pickup)
-            if task.arrival_asap:
-                urgent.append(elapsed)
-                urgent_count.append(present)
-            else:
-                routine.append(elapsed * (2 if task.priority == "P2" else 1))
+            # P1 waiting time from the desired pickup; unscheduled pickups sit at their lower bound and count as zero.
+            urgent.append(times.pickup - times.lower + present * (times.lower - task.earliest_pickup))
+            urgent_count.append(present)
         urgent_weight = self.state.horizon * len(urgent) + 1
         self.urgent = sum(urgent) - urgent_weight * sum(urgent_count) if urgent else None
-        self.routine = sum(routine) if routine else None
 
     def _add_tasks(self):
         blocked = {issue.task_id for issue in self.state.blocking}
@@ -106,8 +100,7 @@ class ScheduleModel:
                 continue
             to_dropoff = task.pickup_service + loaded
             to_end = to_dropoff + task.dropoff_service + task.cleaning
-            upper = min(task.latest_pickup if task.latest_pickup is not None else self.state.horizon,
-                        task.arrival_deadline - to_dropoff, self.state.horizon - to_end)
+            upper = min(task.latest_pickup if task.latest_pickup is not None else self.state.horizon, self.state.horizon - to_end)
             lower = max(task.earliest_pickup, self.state.now)
             if upper < lower and fixed is None:
                 continue
@@ -237,9 +230,9 @@ class ScheduleModel:
             shortfall = self.model.new_int_var(0, BUFFER_TARGET, f"shortfall_{key}")
             self.model.add(shortfall >= BUFFER_TARGET - (times.latest - times.pickup)).only_enforce_if(present)
             shortfalls.append(shortfall)
-            if not task.arrival_asap:
+            if not task.asap:
                 delay = self.model.new_int_var(0, self.state.horizon, f"delay_{key}")
-                self.model.add(delay >= times.pickup + times.to_dropoff - task.preferred_arrival).only_enforce_if(present)
+                self.model.add(delay >= times.pickup - task.earliest_pickup).only_enforce_if(present)
                 self.model.add(delay == 0).only_enforce_if(~present)
                 delays.append((task.priority, delay))
             old = self.state.previous.get(key)
@@ -333,8 +326,8 @@ def _score(state: PlanningSnapshot, plan: Candidate) -> tuple[int, ...]:
     unassigned = sum({"P1": 1_000_000, "P2": 1_000, "P3": 1}[state.tasks[issue.task_id].priority]
                      for issue in plan.unassigned)
     delay = sum(PRIORITY_WEIGHT[state.tasks[row.task_id].priority]
-                * max(0, row.planned_dropoff - state.tasks[row.task_id].preferred_arrival)
-                for row in plan.assignments if not state.tasks[row.task_id].arrival_asap)
+                * max(0, row.planned_pickup - state.tasks[row.task_id].earliest_pickup)
+                for row in plan.assignments)
     return (unassigned, delay, plan.metrics.vehicle_changes, -plan.metrics.min_buffer_seconds,
             plan.metrics.travel_seconds)
 
@@ -373,12 +366,6 @@ class CpSatPlanner:
         else:
             coverage_proven = coverage_status == "OPTIMAL"
         schedule.model.add(schedule.coverage == coverage_solver.value(schedule.coverage))
-        if schedule.routine is not None:
-            schedule.model.minimize(schedule.routine)
-            sooner, sooner_status = _solve(schedule.model, budget.strategy_seconds, coverage_solver)
-            if sooner_status in ("OPTIMAL", "FEASIBLE"):
-                schedule.model.add(schedule.routine == sooner.value(schedule.routine))
-                coverage_solver, coverage_status = sooner, sooner_status
         output: list[PlanCandidate] = []
         found: list[frozenset[tuple[str, str]]] = []
         scores: list[tuple[int, ...]] = []

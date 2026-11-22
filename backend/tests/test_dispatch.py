@@ -9,7 +9,7 @@ from sqlalchemy import delete
 from app.db import Database
 from app.main import create_app
 from app.models import AssignmentRecord, IncidentRecord, TaskRecord, VehicleRecord
-from app.planning.contracts import Assignment, HORIZON
+from app.planning.contracts import Assignment
 from app.providers import osrm
 
 
@@ -40,6 +40,56 @@ def test_demo_clock_outside_operating_shift(demo):
     assert demo.post("/api/demo/clock", json={"to": -1800}).status_code == 400
 
 
+def test_saved_pickup_after_shift_keeps_state_and_tracking_available(tmp_path):
+    db_path = tmp_path / "legacy.sqlite"
+    with TestClient(create_app(db_path)) as client:
+        state = client.get("/api/state").json()
+        with Database(db_path).session(write=True) as db:
+            task = db.get(TaskRecord, ("T19", state["scenario_id"]))
+            task.payload = {**task.payload, "priority": "P2", "earliest_pickup": 36_900, "latest_pickup": 39_300}
+
+        state = client.get("/api/state")
+        assert state.is_success, state.text
+        saved = next(task for task in state.json()["tasks"] if task["id"] == "T19")
+        assert (saved["earliest_pickup"], saved["latest_pickup"]) == (36_900, 39_600)
+        assert client.get("/api/tracking").is_success
+        active = post(client, "plans/generate")["active_plan"]
+        assert any(issue["task_id"] == "T19" and issue["code"] == "HARD_TIME_WINDOW" for issue in active["unassigned"])
+        assert all(row["task_id"] != "T19" for row in active["assignments"])
+
+        post(client, "demo/clock", {"to": 46_800})
+        response = client.post("/api/incidents", json={
+            "type": "NEW_TASK", "task": {"priority": "P2", "pickup": {"lat": 46.046, "lon": 14.494}},
+        })
+        assert response.status_code == 400 and response.json()["detail"]["code"] == "INVALID_TASK_TIME"
+
+
+def test_saved_reroute_after_shift_keeps_recommendation_history_available(tmp_path):
+    db_path = tmp_path / "late-reroute.sqlite"
+    with TestClient(create_app(db_path)) as client:
+        state = post(client, "plans/generate")
+        proposal = replan(client, state)[0]
+        plan = proposal["plan"]
+        task_id = plan["assignments"][0]["task_id"]
+        with Database(db_path).session(write=True) as db:
+            row = db.get(AssignmentRecord, (plan["id"], task_id))
+            row.payload = {**row.payload, "reroute": {"at": 36_500, "start": 36_745, "leg": "PICKUP"}}
+
+        history = client.get("/api/recommendations")
+        assert history.is_success, history.text
+        result = next(item for item in history.json() if item["id"] == proposal["id"])
+        row = next(item for item in result["plan"]["assignments"] if item["task_id"] == task_id)
+        assert (row["reroute"]["at"], row["reroute"]["start"]) == (36_500, 36_745)
+
+
+def test_road_incident_can_end_after_shift(demo):
+    state = post(demo, "incidents", {"type": "ROAD_CLOSURE", "location": {"lat": 46.056, "lon": 14.505}})
+    post(demo, "demo/clock", {"to": 46_800})
+    state = post(demo, f"incidents/{state['incidents'][0]['id']}/resolve")
+    assert state["incidents"][0]["ended_at"] == 46_800
+    assert demo.get("/api/tracking").is_success
+
+
 @pytest.mark.parametrize("instant", [-8 * 3600 - 1, 16 * 3600])
 def test_demo_clock_rejects_another_calendar_day(demo, instant):
     assert demo.post("/api/demo/clock", json={"to": instant}).status_code == 422
@@ -49,7 +99,7 @@ def disruption(client):
     initial = post(client, "plans/generate")
     assert initial["active_plan"]["metrics"]["assigned"] == 20
     live = post(client, "demo/advance-time", {"to": 12000})
-    assert live["baseline"]["simulated_arrivals"] == 8
+    assert live["baseline"]["simulated_arrivals"] == 10
     broken = post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V3",
                                          "description": "Tehnična okvara V3", "priority": "P1"})
     assert any(issue["vehicle_id"] == "V3" for issue in broken["baseline"]["affected"])
@@ -65,6 +115,84 @@ def replan(client, state):
 
 def signature(plan):
     return tuple((row["vehicle_id"], row["task_id"]) for row in plan["assignments"])
+
+
+def test_reject_then_manually_move_keeps_other_pickup_times(demo):
+    initial = post(demo, "plans/generate")["active_plan"]
+    state = post(demo, "vehicles", {"capacity": 8, "equipment": ["OXYGEN", "STRETCHER", "WHEELCHAIR"],
+                                    "task_types": ["PLANNED_TRANSPORT"], "location": {"lat": 46.051, "lon": 14.566}})
+    items = replan(demo, state)
+    rejected = post(demo, f"recommendations/{items[0]['id']}/reject")
+    assert rejected["status"] == "REJECTED"
+    assert demo.get("/api/state").json()["active_plan"]["id"] == initial["id"]
+
+    row = max(initial["assignments"], key=lambda item: item["planned_end"])
+    desired = row["planned_pickup"] + 60
+    updated = post(demo, "plans/manual-move", {"base_plan_id": initial["id"],
+                   "expected_state_revision": state["revision"], "task_id": row["task_id"],
+                   "vehicle_id": "V6", "planned_pickup": desired})
+    active = updated["active_plan"]
+    assert (active["version"], active["strategy"], active["blocking"]) == (2, "MANUAL", [])
+    moved = next(item for item in active["assignments"] if item["task_id"] == row["task_id"])
+    assert (moved["vehicle_id"], moved["planned_pickup"]) == ("V6", desired)
+    assert {item["task_id"]: item["planned_pickup"] for item in active["assignments"] if item != moved} == {
+        item["task_id"]: item["planned_pickup"] for item in initial["assignments"] if item != row
+    }
+    assert [(item["version"], item["status"]) for item in demo.get("/api/plans").json()] == [
+        (2, "ACTIVE"), (1, "SUPERSEDED"),
+    ]
+    if len(items) > 1:
+        assert demo.post(f"api/recommendations/{items[1]['id']}/accept").status_code == 409
+
+
+def test_manual_preview_keeps_suggestions_until_the_manual_solution_is_selected(demo):
+    initial = post(demo, "plans/generate")["active_plan"]
+    state = post(demo, "vehicles", {"capacity": 8, "equipment": ["OXYGEN", "STRETCHER", "WHEELCHAIR"],
+                                    "task_types": ["PLANNED_TRANSPORT"], "location": {"lat": 46.051, "lon": 14.566}})
+    incident = state["incidents"][-1]["id"]
+    proposals = replan(demo, state)
+    assert proposals
+
+    lane = initial["assignments"][0]["vehicle_id"]
+    first, following, *_ = [item for item in initial["assignments"] if item["vehicle_id"] == lane]
+    delayed = post(demo, f"incidents/{incident}/manual-preview", {
+        "base_plan_id": initial["id"], "expected_state_revision": state["revision"], "moves": [
+            {"task_id": first["task_id"], "vehicle_id": lane, "planned_pickup": following["planned_pickup"] - 60},
+        ],
+    })
+    follower = next(item for item in delayed["assignments"] if item["task_id"] == following["task_id"])
+    assert follower["planned_pickup"] > following["planned_pickup"]
+    assert delayed["metrics"]["delay_seconds"] > initial["metrics"]["delay_seconds"]
+
+    row = max(initial["assignments"], key=lambda item: item["planned_end"])
+    request = {"base_plan_id": initial["id"], "expected_state_revision": state["revision"], "moves": [
+        {"task_id": row["task_id"], "vehicle_id": "V6", "planned_pickup": row["planned_pickup"] + 60},
+    ]}
+    preview = post(demo, f"incidents/{incident}/manual-preview", request)
+    assert preview["status"] == "DRAFT" and not preview["blocking"]
+    assert demo.get("/api/state").json()["active_plan"]["id"] == initial["id"]
+    saved = post(demo, f"incidents/{incident}/manual-solution", request)
+    assert saved["active_plan"]["assignments"] == preview["assignments"]
+    assert {item["status"] for item in demo.get("/api/recommendations").json()} == {"STALE"}
+    assert saved["incidents"][-1]["status"] == "RESOLVED"
+
+
+def test_invalid_and_started_manual_moves_leave_plan_unchanged(demo):
+    state = post(demo, "plans/generate")
+    initial = state["active_plan"]
+    row = min(initial["assignments"], key=lambda item: item["planned_departure"])
+    request = {"base_plan_id": initial["id"], "expected_state_revision": state["revision"],
+               "task_id": row["task_id"], "vehicle_id": row["vehicle_id"], "planned_pickup": 0}
+    result = demo.post("/api/plans/manual-move", json=request)
+    assert result.status_code == 409 and result.json()["detail"]["code"] == "MANUAL_MOVE_INVALID"
+    after = post(demo, "demo/advance-time", {"to": max(1, row["planned_departure"] + 1)})
+    result = demo.post("/api/plans/manual-move", json=request)
+    assert result.status_code == 409 and result.json()["detail"]["code"] == "STALE_STATE"
+    request.update(expected_state_revision=after["revision"], planned_pickup=row["planned_pickup"] + 60)
+    result = demo.post("/api/plans/manual-move", json=request)
+    assert result.status_code == 409 and "že izvaja" in result.json()["detail"]["message"]
+    assert demo.get("/api/state").json()["active_plan"] == after["active_plan"]
+    assert len(demo.get("/api/plans").json()) == 1
 
 
 def test_demo_and_decisions(demo):
@@ -269,7 +397,6 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
         "priority": "P1", "facility_id": "F3", "pickup": {"lat": 46.068, "lon": 14.542},
         "passenger_count": 8, "equipment": ["OXYGEN"], "earliest_pickup": 12900,
-        "preferred_arrival": 14500, "latest_arrival": 17500,
     }})
     new_id = state["incidents"][-1]["task_id"]
     assert {task["id"]: (task["priority"], task["facility_id"])
@@ -279,15 +406,14 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     )
 
 
-def test_priority_task_uses_local_address_and_automatic_arrival_window(demo):
+def test_priority_task_uses_local_address_and_priority_pickup_window(demo):
     response = demo.get("/api/map/addresses", params={"query": "  zaloska cesta, 2 "})
     assert response.is_success
     [address] = response.json()
     assert address["name"] == "Zaloška cesta 2"
     now = 12000
     post(demo, "demo/advance-time", {"to": now})
-    for priority, preferred, latest in (("P1", now, HORIZON), ("P2", now + 1800, now + 3600),
-                                         ("P3", now + 5400, now + 7200)):
+    for priority, latest in (("P1", None), ("P2", now + 45 * 60), ("P3", now + 120 * 60)):
         state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
             "pickup": {"lat": address["lat"], "lon": address["lon"]},
             "pickup_name": address["name"], "priority": priority,
@@ -295,8 +421,8 @@ def test_priority_task_uses_local_address_and_automatic_arrival_window(demo):
         event = state["incidents"][-1]
         task = next(task for task in state["tasks"] if task["id"] == event["task_id"])
         assert (task["pickup_name"], task["facility_id"]) == (address["name"], "F1")
-        assert task["arrival_policy"] == ("ASAP" if priority == "P1" else "PRIORITY_WINDOW")
-        assert (task["earliest_pickup"], task["preferred_arrival"], task["latest_arrival"]) == (now, preferred, latest)
+        assert (task["earliest_pickup"], task["latest_pickup"]) == (now, latest)
+        assert "preferred_arrival" not in task and "latest_arrival" not in task
 
 
 @pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])
@@ -320,8 +446,9 @@ def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_pass
     state, high = add_task("P1", 46.065, 14.535)
     with database.session(write=True) as db:
         if urgency == "legacy":
+            # Payloads stored before the priority rules still load, and red stays first.
             record = db.get(TaskRecord, (high, state["scenario_id"]))
-            record.payload = {**record.payload, "arrival_policy": None,
+            record.payload = {**record.payload, "arrival_policy": None, "latest_pickup": now + 60,
                               "preferred_arrival": now + 60, "latest_arrival": now + 60}
         elif urgency == "already_assigned":
             # Simulate an older accepted plan that put the urgent transport behind the low one.

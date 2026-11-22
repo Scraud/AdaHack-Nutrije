@@ -83,7 +83,7 @@ def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilit
         anchor = Anchor(start(vehicle.id), max(now, vehicle.available_at))
         if completed:
             anchor = Anchor(delivery(completed[-1].task_id), max(now, vehicle.available_at))
-        blocked = vehicle.broken
+        blocked = vehicle.broken or vehicle.retired
         for assignment in history:
             if assignment.status == "COMPLETED":
                 continue
@@ -95,7 +95,7 @@ def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilit
                 approach = travel.seconds(anchor.node, pickup(task.id))
             reroute_leg = assignment.reroute.leg if assignment.reroute else None
             approaching = assignment.status == "IN_PROGRESS" and task.actual_pickup is None
-            failure = (vehicle.broken
+            failure = (vehicle.broken or vehicle.retired
                        or any(assignment.planned_departure < end and begin < assignment.planned_end
                               for begin, end in vehicle.unavailable)
                        or (approaching and reroute_leg != "PICKUP" and (approach is None or

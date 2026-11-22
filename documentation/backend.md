@@ -141,9 +141,10 @@ Calculates the `Metrics` object from a solved plan: late tasks, total delay, tra
 ## Seed Data — `seed/scenario.py`
 
 The demo scenario is generated procedurally:
-- **5 vehicles** (V1–V5), each at a fixed Ljubljana GPS position, with varying equipment sets.
+- **5 vehicles** (V1–V5), each at a fixed Ljubljana GPS position. Only V3, V4 and V5 carry oxygen.
 - **4 facilities** (F1–F4), representing care centres at different parts of Ljubljana.
-- **20 tasks** (T01–T20), spread across 5 time waves, each tied to a facility with specific time windows.
+- **20 tasks** (T01–T20) in 4 waves of 5 (08:22, 10:20, 12:45, 15:10). Each task has only a desired pickup; its latest pickup follows from priority (P2 +45 min, P3 +2 h, P1 none).
+- Every wave asks for **four oxygen transports within minutes** (P3, P2, P1, P2) for three oxygen vehicles, plus one wheelchair/stretcher transport for V1/V2. Priority therefore decides who waits: in the initial plan red waits 0 min, medium almost always 0, low up to about 30 min. `tests/test_priority_rules.py` checks this.
 
 The demo day starts at `2026-11-21T07:00:00Z` (08:00 Ljubljana local time). All internal times are seconds-since-start integers (0 = 08:00, 36000 = 18:00).
 

@@ -1,8 +1,10 @@
-import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight, NewVehicleInput, VehicleSettings } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, ManualMove, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight, NewVehicleInput, VehicleSettings } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
-import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
+import { adaptBackendState, adaptPlan, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
 import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
+
+export type ManualSolution = components['schemas']['ManualSolution'];
 
 export interface DispatchGateway {
   readonly isDemo: boolean;
@@ -14,6 +16,9 @@ export interface DispatchGateway {
   generateRecommendations(incidentId: string, state: DispatchState): Promise<DispatchState>;
   accept(id: string, state: DispatchState, reason?: string): Promise<DispatchState>;
   reject(id: string, state: DispatchState): Promise<DispatchState>;
+  previewManual?(incidentId: string, request: ManualSolution, state: BackendState): Promise<ReturnType<typeof adaptPlan>>;
+  selectManual?(incidentId: string, request: ManualSolution): Promise<DispatchState>;
+  moveAssignment?(request: ManualMove): Promise<DispatchState>;
   reset(): Promise<DispatchState>;
   getTracking?(planId?:string): Promise<TrackingFrame>;
   getRoads?(): Promise<RoadMap>;
@@ -41,7 +46,8 @@ export class HttpDispatchGateway implements DispatchGateway {
     if (!response.ok) {
       if (response.status === 409) {
         const conflict = await response.json().catch(() => null);
-        if (conflict?.detail?.code === 'VEHICLE_IN_USE') throw new Error(conflict.detail.message);
+        if (['VEHICLE_IN_USE','MANUAL_MOVE_INVALID','STALE_STATE'].includes(conflict?.detail?.code) &&
+            typeof conflict.detail.message === 'string') throw new Error(conflict.detail.message);
         throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
       }
       let detail = '';
@@ -106,6 +112,13 @@ export class HttpDispatchGateway implements DispatchGateway {
   }
   accept(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/accept`, {}); }
   reject(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/reject`, { reason:'Predlog zavrnjen v dispečerskem vmesniku.' }); }
+  async previewManual(id: string, request: ManualSolution, state: BackendState) {
+    return adaptPlan(await this.request<components['schemas']['PlanView']>(`/incidents/${encodeURIComponent(id)}/manual-preview`, request), state);
+  }
+  selectManual(id: string, request: ManualSolution) {
+    return this.mutate(`/incidents/${encodeURIComponent(id)}/manual-solution`, request);
+  }
+  moveAssignment(request: ManualMove) { return this.mutate('/plans/manual-move', request); }
   reset() { return this.mutate('/demo/reset', {}); }
 }
 

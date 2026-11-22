@@ -157,6 +157,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plans/manual-move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Move */
+        post: operations["manual_move_api_plans_manual_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Preview */
+        post: operations["manual_preview_api_incidents__incident_id__manual_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-solution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Solution */
+        post: operations["manual_solution_api_incidents__incident_id__manual_solution_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vehicles/{vehicle_id}/restore": {
         parameters: {
             query?: never;
@@ -523,6 +574,15 @@ export interface components {
             /** Planned Arrival */
             readonly planned_arrival: number;
         };
+        /** AssignmentMove */
+        AssignmentMove: {
+            /** Task Id */
+            task_id: string;
+            /** Vehicle Id */
+            vehicle_id: string;
+            /** Planned Pickup */
+            planned_pickup: number;
+        };
         /** Baseline */
         Baseline: {
             metrics: components["schemas"]["Metrics"];
@@ -753,6 +813,28 @@ export interface components {
             /** Vehicle Id */
             vehicle_id?: string | null;
         };
+        /** ManualMove */
+        ManualMove: {
+            /** Task Id */
+            task_id: string;
+            /** Vehicle Id */
+            vehicle_id: string;
+            /** Planned Pickup */
+            planned_pickup: number;
+            /** Base Plan Id */
+            base_plan_id: string;
+            /** Expected State Revision */
+            expected_state_revision: number;
+        };
+        /** ManualSolution */
+        ManualSolution: {
+            /** Base Plan Id */
+            base_plan_id: string;
+            /** Expected State Revision */
+            expected_state_revision: number;
+            /** Moves */
+            moves: components["schemas"]["AssignmentMove"][];
+        };
         /** Metrics */
         Metrics: {
             /**
@@ -862,11 +944,8 @@ export interface components {
         };
         /** PlanView */
         PlanView: {
-            /**
-             * Strategy
-             * @enum {string}
-             */
-            strategy: "MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER";
+            /** Strategy */
+            strategy: ("MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER") | "MANUAL";
             /** Assignments */
             assignments: components["schemas"]["Assignment"][];
             /** Unassigned */
@@ -1496,6 +1575,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["State"];
+                };
+            };
+        };
+    };
+    manual_move_api_plans_manual_move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualMove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_preview_api_incidents__incident_id__manual_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSolution"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_solution_api_incidents__incident_id__manual_solution_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSolution"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

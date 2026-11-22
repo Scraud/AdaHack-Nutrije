@@ -14,7 +14,7 @@
  </div>
  <div class="operations-action"><button class="button primary" (click)="simulate.emit()" [disabled]="store.busy()"><app-icon name="alert" [size]="17"/>Simuliraj dogodek</button></div>
 }@else{
- <div class="operations-heading solution-heading"><div><app-icon name="sparkles" [size]="18"/><h2>Predlagane rešitve</h2></div><span class="count-badge">{{available().length}} / 3</span></div>
+ <div class="operations-heading solution-heading"><div><app-icon name="sparkles" [size]="18"/><h2>Predlagane rešitve</h2></div><span class="count-badge">{{available().length + (manualOption() ? 1 : 0)}}</span></div>
  <div class="operations-scroll solutions-scroll">
   @if(activeRoadIncident();as event){<div class="road-incident-action"><b>{{event.type==='ROAD_CLOSURE'?'Zapora ceste':'Prometni zastoj'}} je še aktiven.</b><p>Odstranitev motnje sprosti cestni odsek in posodobi obvoze.</p><button class="button secondary" (click)="store.resolveIncident(''+event.id)" [disabled]="store.busy()">{{event.type==='ROAD_CLOSURE'?'Odstrani zaporo':'Odstrani zastoj'}}</button></div>}
   @if(store.selectedIncident();as change){@if(change.incident_type==='FLEET_CHANGE'&&change.status!=='RESOLVED'){<div class="road-incident-action"><b>{{change.description}}</b><p>Izračunajte predloge, da naloge prerazporedite na novo floto, ali spremembo zaključite brez spremembe razporeda.</p><button class="button secondary" (click)="store.resolveIncident(change.id)" [disabled]="store.busy()">Zaključi brez spremembe razporeda</button></div>}}
@@ -23,6 +23,7 @@
   @else{
    <div class="recommendation-list" (mouseleave)="store.hover(null)">
     @for(rec of available();track rec.id){
+     <article class="recommendation-option">
      <button class="recommendation-card" [class.previewed]="store.previewRecommendation()?.id===rec.id" [class.pinned]="store.selectedRecommendationId()===rec.id" (mouseenter)="store.hover(rec.id)" (focus)="store.hover(rec.id)" (blur)="store.hover(null)" (click)="store.pin(rec.id)" [attr.aria-pressed]="store.selectedRecommendationId()===rec.id">
       <span class="recommendation-title"><app-icon [name]="rec.strategy==='MIN_DELAY'?'clock':rec.strategy==='MIN_CHANGES'?'layers':'shield'" [size]="18"/><b>{{rec.title}}</b><app-icon [name]="store.selectedRecommendationId()===rec.id?'pinned':'eye'" [size]="16"/></span>
       <span class="recommendation-summary">Vozila: {{vehicles(rec)}} · {{diff(rec).added.size}} novih, {{diff(rec).changed.size}} sprememb</span>
@@ -39,12 +40,40 @@
        </span>}
       }
      </button>
+     </article>
     }@empty{<div class="empty-small"><app-icon [name]="store.selectedIncident()?.status==='RESOLVED'?'check':'help'" [size]="28"/><b>{{store.selectedIncident()?.status==='RESOLVED'?'Dogodek je obravnavan':'Veljavnih predlogov še ni'}}</b><p>{{store.generationInfo()||'Izračun prikaže največ tri različne izvedljive rešitve, če obstajajo.'}}</p></div>}
+    @if(manualOption()){
+     <button type="button" class="recommendation-card" [class.pinned]="store.manualEditing()"
+       [attr.aria-pressed]="store.manualEditing()" (click)="store.startManual()">
+      <span class="recommendation-title"><app-icon name="calendar" [size]="18"/><b>Izberi lastno rešitev</b><app-icon name="right" [size]="16"/></span>
+      <span class="recommendation-summary">Uredite prevoze na časovnici in preverite njihov vpliv.</span>
+     </button>
+    }
    </div>
   }
   @for(block of blocked();track block.id){<div class="blocking-card"><app-icon name="alert" [size]="17"/><div><b>{{block.title}} · potreben poseg</b><p>{{problem(block)}}</p></div></div>}
   @if(store.selectedIncident();as incident){@if(incident.status!=='RESOLVED'){<button class="button secondary generate-button" (click)="store.generate(incident.id)" [disabled]="store.busy()||!store.activePlan()"><app-icon name="refresh" [size]="16"/>{{available().length?'Ponovno izračunaj':'Izračunaj predloge'}}</button>}}
   <div class="decision-history"><h3>Zgodovina odločitev</h3>@for(decision of decisions();track decision.id){<div class="decision-entry"><app-icon [name]="decision.action==='ACCEPTED'?'check':'close'" [size]="16"/><div><b>{{decision.action==='ACCEPTED'?'Potrjeno':'Zavrnjeno'}} · {{recTitle(decision.recommendation_id)}}</b><p>{{decision.reason}}</p><small>{{time(decision.decided_at)}} · {{decision.actor}}</small></div></div>}@empty{<p>Odločitve še ni.</p>}</div>
  </div>
- @if(pinned();as rec){<div class="assistant-confirm"><span><app-icon name="pinned" [size]="15"/>Predogled — še ni potrjeno</span><div><button class="button primary" (click)="confirm.emit(rec)" [disabled]="store.busy()"><app-icon name="done" [size]="17"/>Potrdi predlog</button><button class="button secondary" (click)="store.reject(rec.id)" [disabled]="store.busy()">Zavrni</button></div></div>}
+ <div class="manual-review-actions">
+ @if(store.error()){<p class="dialog-error" role="alert">{{store.error()}}</p>}
+ @if(store.manualEditing()){
+  <p>Povlecite prevoz na časovnici in preverite vpliv.</p>
+  @if(store.manualPreview();as plan){
+   <dl class="manual-review-metrics">
+    <div><dt>Čakanje na prevzem</dt><dd>{{plan.metrics?.delay_minutes}} min (prej {{store.activePlan()?.metrics?.delay_minutes}} min)</dd></div>
+    <div><dt>Nerazporejene naloge</dt><dd>{{plan.unassigned_task_ids.length}}</dd></div>
+    <div><dt>Časovna rezerva</dt><dd>{{plan.metrics?.remaining_buffer_minutes}} min</dd></div>
+   </dl>
+   <ul class="manual-review-changes">
+    @for(id of store.diff().changed;track id){<li><b>{{id}}</b> · {{manualChange(id)}}</li>}
+    @for(id of store.diff().added;track id){<li><b>{{id}}</b> · {{manualChange(id)}}</li>}
+   </ul>
+   @for(issue of plan.blocking_issues;track $index){<p class="dialog-error">{{issue}}</p>}
+  }
+  <button class="button secondary" (click)="store.cancelManual()" [disabled]="store.busy()">Opusti urejanje</button>
+  <button class="button primary" (click)="store.selectManual()" [disabled]="store.busy()||!store.manualPreview()||!!store.manualPreview()?.blocking_issues?.length||(!store.diff().changed.size&&!store.diff().added.size)">Potrdi lastno rešitev</button>
+ }
+ </div>
+ @if(pinned();as rec){<div class="assistant-confirm"><span><app-icon name="pinned" [size]="15"/>Predogled — še ni potrjeno</span><div><button class="button primary" (click)="confirm.emit(rec)" [disabled]="store.busy()"><app-icon name="done" [size]="17"/>Potrdi predlog</button></div></div>}
 }

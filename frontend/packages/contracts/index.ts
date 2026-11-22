@@ -8,6 +8,7 @@ export const PRIORITY_LABELS: Record<Priority, string> = { P1: 'Visoka', P2: 'Sr
 export type SourceStatus = components['schemas']['SourceStatus'];
 export type RecommendationInsight = components['schemas']['Explanation'];
 export type BackendState = components['schemas']['State'];
+export type ManualMove = components['schemas']['ManualMove'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
 export type VehicleTaskType = 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
 export interface VehicleSettings { capacity: number; equipment: Equipment[]; task_types: VehicleTaskType[] }

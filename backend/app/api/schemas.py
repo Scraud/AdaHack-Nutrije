@@ -4,8 +4,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.planning.contracts import (
-    Assignment, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics, Point, Priority, Strategy, Task,
-    TaskType, Vehicle, Candidate,
+    Assignment, DEMO_DAY_END, DEMO_DAY_START, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics,
+    Point, Priority, Strategy, Task, TaskType, Vehicle, Candidate,
 )
 
 
@@ -39,12 +39,26 @@ class Advance(BaseModel):
 
 class DemoClock(BaseModel):
     # The seeded operating shift begins at 08:00; the demo clock covers the calendar day.
-    to: int = Field(ge=-8 * 3600, le=16 * 3600 - 1)
+    to: int = Field(ge=DEMO_DAY_START, le=DEMO_DAY_END)
 
 
 class Replan(BaseModel):
     base_plan_id: str
     expected_state_revision: int = Field(ge=0)
+
+
+class AssignmentMove(BaseModel):
+    task_id: str
+    vehicle_id: str
+    planned_pickup: int = Field(ge=0, le=HORIZON)
+
+
+class ManualMove(Replan, AssignmentMove):
+    pass
+
+
+class ManualSolution(Replan):
+    moves: list[AssignmentMove] = Field(min_length=1, max_length=200)
 
 
 class Rejection(BaseModel):

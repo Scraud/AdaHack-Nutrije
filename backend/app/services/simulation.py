@@ -1,5 +1,4 @@
 from math import ceil
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -54,6 +53,8 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         earliest = request.task.earliest_pickup if request.task.earliest_pickup is not None else scope.now
         if scope.now > earliest:
             raise problem(400, "PICKUP_IN_PAST", "Prevzema ni mogoče naročiti v preteklosti.")
+        if not 0 <= earliest <= HORIZON:
+            raise problem(400, "INVALID_TASK_TIME", "Prevzem mora biti znotraj delovnega časa.")
         facilities = entities(db, scope, FacilityRecord, Facility)
         incidents = entities(db, scope, IncidentRecord, Incident)
         nodes = (Node("pickup", "PICKUP", request.task.pickup),
@@ -65,11 +66,8 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
             raise problem(400, "NO_REACHABLE_FACILITY", "Od izbranega prevzema ni cestne poti do ustanove.")
         _, _, facility_id = min(reachable)
         task_id = f"N{scope.revision + 1:03}"
-        try:
-            task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,
-                        **request.task.model_dump(exclude={"earliest_pickup"}))
-        except ValidationError as exc:
-            raise problem(400, "INVALID_TASK_TIME", exc.errors()[0]["msg"]) from exc
+        task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,
+                    **request.task.model_dump(exclude={"earliest_pickup"}))
         db.add(TaskRecord(id=task.id, scenario_id=scope.id, payload=task.model_dump(mode="json")))
         event.task_id = task.id
         event.priority = task.priority

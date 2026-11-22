@@ -3,7 +3,9 @@ import type { DispatchPlan, DispatchState, Incident, Recommendation } from '@res
 import { incidentType } from '@rescueflow/contracts/plan-utils';
 type Schema=components['schemas'];
 export type BackendState=Omit<Schema['State'],'incidents'> & {incidents:(Schema['Incident'] & {description?:string;priority?:'P1'|'P2'|'P3';status?:'OPEN'|'RESOLVED';selected_recommendation_id?:string|null})[]};
-export type BackendRecommendation=Schema['RecommendationView'] & {incident_ids?:number[]};
+export type BackendRecommendation=Omit<Schema['RecommendationView'],'plan'> & {
+  plan:Schema['PlanView'] & {strategy:Recommendation['strategy']};incident_ids?:number[];
+};
 const labels:Record<string,string>={MANUAL_COORDINATION:'Začeti prevoz zahteva ročno koordinacijo.',LOCKED_EXECUTION_BLOCKED:'Zaščitena dodelitev je blokirana.',HARD_TIME_WINDOW:'Kršeno obvezno časovno okno.',NO_COMPATIBLE_VEHICLE:'Ni vozila z ustrezno opremo in kapaciteto.',VEHICLE_UNAVAILABLE:'Vozilo ni operativno.',UNREACHABLE_ROUTE:'Pot ni dosegljiva.',INVALID_TRAVEL_TIME:'Motnja je podaljšala vožnjo.',FACILITY_CAPACITY:'Simulirana kvota ustanove je porabljena.',FACILITY_NOT_ACCEPTING:'Ustanova ne sprejema.',NOT_SCHEDULED_WITHIN_BUDGET:'Naloga v časovnem proračunu ni bila razporejena.'};
 const strategies={MIN_DELAY:{title:'Najmanj zamud',trade:'Prednost imajo želeni prevzemi; možnih je več sprememb razporeda.'},MIN_CHANGES:{title:'Najmanj sprememb',trade:'Ohranja obstoječe dodelitve; lahko pomeni daljše zamude.'},MAX_BUFFER:{title:'Največ časovne rezerve',trade:'Ohranja prostor za naslednje motnje; lahko spremeni več dodelitev.'}};
 export const at=(start:string,seconds:number)=>new Date(Date.parse(start)+seconds*1000).toISOString();

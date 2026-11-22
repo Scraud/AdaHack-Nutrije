@@ -9,6 +9,7 @@ export interface DispatchViewProps {
   isPreview: boolean;
   onSelectVehicle: (id: string) => void;
   onSelectTask: (id: string) => void;
+  onMoveTask?: (id: string, vehicle: string, pickup: string) => void;
   tracking?: TrackingFrame | null;
   roads?: RoadMap | null;
   pickingRoad?: boolean;

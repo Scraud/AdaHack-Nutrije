@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.api.schemas import (
     Advance, DemoClock, CreateScheduledTask, Baseline, CreateIncident, Explanation, PickupAddress, PlanSummary, PlanView, RecommendationView,
-    ManualMove, ManualSolution, NewVehicle, Recommendations, Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State, VehicleSettings,
+    NewVehicle, Recommendations, Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State, VehicleSettings,
 )
 from app.db import Database
 from app.models import IncidentRecord, Plan, Scenario
@@ -22,7 +22,6 @@ from app.providers.roads import road_network
 from app.services.advisor import Advisor, recommendation_facts
 from app.services.decisions import decide
 from app.services.fleet import add_vehicle, remove_vehicle, update_vehicle
-from app.services.manual_planning import evaluate_manual, save_manual
 from app.services.planning import PlanningService, recommendation_history
 from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident, set_demo_clock
 from app.services.scheduling import create_scheduled_task
@@ -139,45 +138,6 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
     def initial_plan() -> State:
         tracking.pause()
         return planner.generate()
-
-    @app.post("/api/plans/manual-move")
-    def manual_move(request: ManualMove) -> State:
-        tracking.pause()
-        with database.session(write=True) as db:
-            scope = scenario(db)
-            save_manual(db, scope, evaluate_manual(db, scope, request, [request], road_matrix))
-            return view_state(db, scope, road_matrix)
-
-    def review_incident(db, scope, incident_id):
-        incident = db.get(IncidentRecord, incident_id)
-        if incident is None or incident.scenario_id != scope.id:
-            raise problem(404, "INCIDENT_NOT_FOUND", "Dogodek ne obstaja.")
-        return incident
-
-    @app.post("/api/incidents/{incident_id}/manual-preview")
-    def manual_preview(incident_id: int, request: ManualSolution) -> PlanView:
-        with database.session() as db:
-            scope = scenario(db)
-            review_incident(db, scope, incident_id)
-            active, candidate, snapshot_id, _, _ = evaluate_manual(
-                db, scope, request, request.moves, road_matrix, cascade=True,
-            )
-            return PlanView(id=f"manual:{active.id}", version=None, status="DRAFT",
-                            created_at=timestamp(), snapshot_id=snapshot_id, **candidate.model_dump())
-
-    @app.post("/api/incidents/{incident_id}/manual-solution")
-    def manual_solution(incident_id: int, request: ManualSolution) -> State:
-        tracking.pause()
-        with database.session(write=True) as db:
-            scope = scenario(db)
-            incident = review_incident(db, scope, incident_id)
-            if incident.payload.get("status") == "RESOLVED":
-                raise problem(409, "STALE_STATE", "Dogodek je že zaključen.")
-            evaluation = evaluate_manual(db, scope, request, request.moves, road_matrix, cascade=True)
-            if any(item.task_id == incident.payload.get("task_id") for item in evaluation[1].unassigned):
-                raise problem(409, "MANUAL_MOVE_INVALID", "Naloga dogodka še nima dodeljenega vozila.")
-            save_manual(db, scope, evaluation, incident)
-            return view_state(db, scope, road_matrix)
 
     @app.post("/api/vehicles/{vehicle_id}/restore")
     def vehicle_restore(vehicle_id: str) -> State:

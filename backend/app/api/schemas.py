@@ -65,20 +65,6 @@ class Replan(BaseModel):
     expected_state_revision: int = Field(ge=0)
 
 
-class AssignmentMove(BaseModel):
-    task_id: str
-    vehicle_id: str
-    planned_pickup: int = Field(ge=0, le=HORIZON)
-
-
-class ManualMove(Replan, AssignmentMove):
-    pass
-
-
-class ManualSolution(Replan):
-    moves: list[AssignmentMove] = Field(min_length=1, max_length=200)
-
-
 class Rejection(BaseModel):
     reason: str = Field(default="", max_length=500)
 

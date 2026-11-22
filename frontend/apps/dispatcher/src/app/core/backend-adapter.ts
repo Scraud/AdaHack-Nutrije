@@ -6,7 +6,7 @@ export type BackendState=Omit<Schema['State'],'incidents'> & {incidents:(Schema[
 export type BackendRecommendation=Omit<Schema['RecommendationView'],'plan'> & {
   plan:Schema['PlanView'] & {strategy:Recommendation['strategy']};incident_ids?:number[];
 };
-const labels:Record<string,string>={MANUAL_COORDINATION:'Začeti prevoz zahteva ročno koordinacijo.',LOCKED_EXECUTION_BLOCKED:'Zaščitena dodelitev je blokirana.',HARD_TIME_WINDOW:'Kršeno obvezno časovno okno.',NO_COMPATIBLE_VEHICLE:'Ni vozila z ustrezno opremo in kapaciteto.',VEHICLE_UNAVAILABLE:'Vozilo ni operativno.',UNREACHABLE_ROUTE:'Pot ni dosegljiva.',INVALID_TRAVEL_TIME:'Motnja je podaljšala vožnjo.',FACILITY_CAPACITY:'Simulirana kvota ustanove je porabljena.',FACILITY_NOT_ACCEPTING:'Ustanova ne sprejema.',NOT_SCHEDULED_WITHIN_BUDGET:'Naloga v časovnem proračunu ni bila razporejena.'};
+const labels:Record<string,string>={MANUAL_COORDINATION:'Začeti prevoz zahteva ročno koordinacijo.',LOCKED_EXECUTION_BLOCKED:'Zaščitena dodelitev je blokirana.',HARD_TIME_WINDOW:'Naloge ni mogoče opraviti do konca delovnega časa.',NO_COMPATIBLE_VEHICLE:'Nobeno vozilo nima potrebne opreme, vrste naloge ali kapacitete.',VEHICLE_UNAVAILABLE:'Dodeljeno vozilo ni operativno.',UNREACHABLE_ROUTE:'Do prevzema ali ustanove ni cestne poti.',INVALID_TRAVEL_TIME:'Motnja je podaljšala vožnjo.',FACILITY_CAPACITY:'Ciljna ustanova je polna – dnevna kvota prihodov je porabljena.',FACILITY_NOT_ACCEPTING:'Ciljna ustanova ne sprejema prihodov.',NOT_SCHEDULED_WITHIN_BUDGET:'Izračun naloge ni umestil v časovnem proračunu – izračunajte znova.'};
 const strategies={MIN_DELAY:{title:'Najmanj zamud',trade:'Prednost imajo želeni prevzemi; možnih je več sprememb razporeda.'},MIN_CHANGES:{title:'Najmanj sprememb',trade:'Ohranja obstoječe dodelitve; lahko pomeni daljše zamude.'},MAX_BUFFER:{title:'Največ časovne rezerve',trade:'Ohranja prostor za naslednje motnje; lahko spremeni več dodelitev.'}};
 export const at=(start:string,seconds:number)=>new Date(Date.parse(start)+seconds*1000).toISOString();
 const coordinate=(p:Schema['Point'])=>`${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`;
@@ -27,9 +27,14 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
   const active=raw.active_plan?adaptPlan(raw.active_plan,raw):null;
   if(active){
     active.metrics={...active.metrics,delay_minutes:Math.ceil(raw.baseline.metrics.delay_seconds/60),at_risk_tasks:new Set(raw.baseline.affected.map(i=>i.task_id)).size};
+    // Planned work of a removed vehicle has no vehicle any more: show it as unassigned with the reason, not hidden.
+    const fleet=new Set(raw.vehicles.map(v=>v.id));
+    const orphaned=active.assignments.filter(a=>a.status==='PLANNED'&&!fleet.has(a.vehicle_id));
+    active.assignments=active.assignments.filter(a=>!orphaned.includes(a));
     const assigned=new Set(active.assignments.map(a=>a.task_id));
     active.unassigned_task_ids=raw.tasks.filter(t=>!assigned.has(t.id)).map(t=>t.id);
-    active.unassigned_reasons={...active.unassigned_reasons,...Object.fromEntries(raw.baseline.affected.filter(i=>active.unassigned_task_ids.includes(i.task_id)).map(i=>[i.task_id,issueText(i)]))};
+    active.unassigned_reasons={...active.unassigned_reasons,...Object.fromEntries(raw.baseline.affected.filter(i=>active.unassigned_task_ids.includes(i.task_id)).map(i=>[i.task_id,issueText(i)])),
+      ...Object.fromEntries(orphaned.map(a=>[a.task_id,`${a.task_id}: Vozilo ${a.vehicle_id} je odstranjeno iz flote. Nalogo prerazporedite s predlogom.`]))};
   }
   const recommendations:Recommendation[]=items.map(rec=>{
     const changes=rec.plan.changes??[],info=strategies[rec.plan.strategy];

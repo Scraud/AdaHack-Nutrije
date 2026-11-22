@@ -9,7 +9,6 @@ export type SourceStatus = components['schemas']['SourceStatus'];
 export type RecommendationInsight = components['schemas']['Explanation'];
 export type BackendState = components['schemas']['State'];
 export type ScheduledTaskInput = components['schemas']['CreateScheduledTask'];
-export type ManualMove = components['schemas']['ManualMove'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
 export type VehicleTaskType = 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
 export interface VehicleSettings { capacity: number; equipment: Equipment[]; task_types: VehicleTaskType[] }

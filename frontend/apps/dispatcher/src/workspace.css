@@ -125,39 +125,14 @@ body{font-size:1rem}
 .recommendation-option { display: grid; gap: 5px; min-width: 0; }
 .recommendation-option .reject-proposal { justify-self: end; }
 .reject-proposal { color: #9d443a; padding: 6px 9px; }
-.timeline-task[draggable="true"], .unassigned-strip button[draggable="true"] { cursor: grab; }
-.timeline-task[draggable="true"]:active, .unassigned-strip button[draggable="true"]:active { cursor: grabbing; }
-.timeline-track.timeline-drop-target { background-color: #e7f7ee; }
-.timeline-drop-marker {
-  position: absolute;
-  top: 2px;
-  z-index: 10;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: #156248;
-  color: white;
-  font-size: .7rem;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
-.timeline-footer > small { color: #476f61; text-align: right; }
-.manual-move-dialog form { display: grid; gap: 14px; }
-.manual-move-dialog label { display: grid; gap: 5px; font-size: .85rem; text-align: left; }
-.manual-move-dialog select, .manual-move-dialog input {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #c9ddd3;
-  border-radius: 6px;
-  color: #294b3f;
-  background: white;
-  font: inherit;
-}
 
-.manual-review-actions { padding: 12px 15px; border-top: 1px solid #e2ece6; display: flex; flex-wrap: wrap; gap: 8px; }
-.manual-review-actions > p, .manual-review-metrics, .manual-review-changes { flex: 0 0 100%; font-size: .8rem; }
-.manual-review-metrics { margin: 0; display: grid; gap: 5px; }
-.manual-review-metrics > div { display: flex; justify-content: space-between; gap: 8px; }
-.manual-review-metrics dd { margin: 0; font-weight: 650; }
-.manual-review-changes { margin: 0; padding-left: 1.25rem; max-height: 100px; overflow: auto; }
+.panel-error { padding: 12px 15px; border-top: 1px solid #e2ece6; flex-shrink: 0; }
 
-.manual-review-actions { flex-shrink: 0; max-height: 45%; overflow-y: auto; }
+/* New-event alerts stay pinned to the bottom of the viewport while scrolling. */
+.event-notifications{position:fixed;top:auto;bottom:16px;left:50%;transform:translateX(-50%);width:min(960px,calc(100vw - 32px));z-index:1500;margin:0;padding:0;background:transparent;max-height:45dvh;overflow-y:auto}
+.urgent-notification{border:1px solid #b42318;background:#e5281c;color:#fff;box-shadow:0 12px 32px rgba(180,35,24,.38)}
+.urgent-notification:hover{background:#cc2016}
+.urgent-notification small{color:#ffe2de}
+.urgent-notification .notice-action{color:#fff;font-weight:650}
+.road-notification{box-shadow:0 8px 24px rgba(54,92,112,.18)}
+.dispatch-workspace:has(.event-notifications:not(:empty)){padding-bottom:140px}

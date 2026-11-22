@@ -23,20 +23,15 @@ export class AppComponent implements OnInit,OnDestroy {
   readonly pickupAsap = pickupAsap;
   readonly latestPickup = latestPickupLabel;
  readonly store=inject(DispatchStore);readonly page=signal<Page>('home');readonly taskId=signal<string|null>(null);readonly confirmation=signal<Recommendation|null>(null);readonly configurationError=signal('');
- readonly manualMove = signal<{taskId:string;planId:string;revision:number;pickup:string}|null>(null);
- readonly manualError = signal('');
- manualVehicle = '';
- manualTime = '';
  @ViewChild('confirmationDialog')dialog?:ElementRef<HTMLDialogElement>;@ViewChild('detailDialog')details?:ElementRef<HTMLDialogElement>;@ViewChild('simulationDialog')simulation?:ElementRef<HTMLDialogElement>;@ViewChild(EventFormComponent)eventForm?:EventFormComponent;
  @ViewChild('incidentDialog')incidentDialog?:ElementRef<HTMLDialogElement>;
  @ViewChild('summaryDialog')summaryDialog?:ElementRef<HTMLDialogElement>;
  openSummary(){this.summaryDialog?.nativeElement.showModal();}
- @ViewChild('manualDialog')manualDialog?:ElementRef<HTMLDialogElement>;
  time=formatTime;color=colorFor;equipment=equipmentLabel;status=statusLabel;eventStatus=incidentStatus;clock='11:20';
  readonly pages:{id:Page;label:string;icon:string}[]=[{id:'home',label:'Domov',icon:'dashboard'},{id:'tasks',label:'Naloge',icon:'list'},{id:'vehicles',label:'Vozila',icon:'ambulance'},{id:'incidents',label:'Dogodki',icon:'bell'},{id:'analysis',label:'Analiza',icon:'activity'}];
  readonly pageTitle=computed(()=>({home:'Operativni pregled',tasks:'Prevozne naloge',vehicles:'Vozila in razpoložljivost',incidents:'Dogodki in odločitve',analysis:'Analiza in napovedi'}[this.page()]));
  readonly date=computed(()=>new Intl.DateTimeFormat('sl-SI',{day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Ljubljana'}).format(new Date(this.store.state()?.simulated_time??'2026-11-21')));
- readonly viewProps=computed<DispatchViewProps|null>(()=>{const state=this.store.state();return state?{state,tracking:this.store.displayedTracking(),roads:this.store.roads(),pickingRoad:this.store.pickingRoad(),roadPreview:this.store.roadTarget(),onPickRoad:location=>void this.store.pickRoad(location),plan:this.store.displayedPlan(),basePlan:this.store.activePlan(),diff:this.store.diff(),selectedVehicleId:this.store.selectedVehicleId(),selectedTaskId:this.store.selectedTaskId(),isPreview:!!this.store.previewPlan(),onSelectVehicle:id=>this.store.selectVehicle(id),onSelectTask:id=>this.inspectTask(id),onMoveTask:this.store.canEditSchedule()?(id,vehicle,pickup)=>this.openManualMove(id,vehicle,pickup):undefined}:null;});
+ readonly viewProps=computed<DispatchViewProps|null>(()=>{const state=this.store.state();return state?{state,tracking:this.store.displayedTracking(),roads:this.store.roads(),pickingRoad:this.store.pickingRoad(),roadPreview:this.store.roadTarget(),onPickRoad:location=>void this.store.pickRoad(location),plan:this.store.displayedPlan(),basePlan:this.store.activePlan(),diff:this.store.diff(),selectedVehicleId:this.store.selectedVehicleId(),selectedTaskId:this.store.selectedTaskId(),isPreview:!!this.store.previewPlan(),onSelectVehicle:id=>this.store.selectVehicle(id),onSelectTask:id=>this.inspectTask(id)}:null;});
  readonly timelineRange=computed(()=>{const state=this.store.state();if(!state)return '';const {start,end}=timelineBounds(state);const label=(value:number)=>new Intl.DateTimeFormat('sl-SI',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Ljubljana'}).format(value);return end-start>24*3600_000?label(start)+'–'+label(end):formatTime(new Date(start).toISOString())+'–'+formatTime(new Date(end).toISOString());});
  readonly selectedTask=computed(()=>[...this.store.state()?.tasks??[],...this.store.state()?.future_tasks??[]].find(t=>t.id===this.taskId()));readonly selectedAssignment=computed(()=>this.store.displayedPlan()?.assignments.find(a=>a.task_id===this.taskId()));readonly affectedVehicles=computed(()=>[...this.store.diff().vehicle_ids].join(', ')||'—');
  private readonly hashChange=()=>this.readHash();
@@ -51,60 +46,6 @@ export class AppComponent implements OnInit,OnDestroy {
  }
  closeIncidentReview(){this.incidentDialog?.nativeElement.close();this.store.closeIncident();}
  inspectTask(id:string){this.taskId.set(id);this.store.selectTask(id);this.details?.nativeElement.showModal();}
- canEditTask(id: string) {
-   if (!this.store.canEditSchedule()) return false;
-   const task = this.store.state()?.tasks.find(item => item.id === id);
-   const assignment = this.store.activePlan()?.assignments.find(item => item.task_id === id);
-   return !!task && !task.actual_pickup && !task.actual_arrival &&
-     (!assignment || (assignment.status === 'PLANNED' && !assignment.is_locked));
- }
- openManualMove(id: string, vehicleId?: string, pickup?: string) {
-   const state = this.store.state(), plan = this.store.activePlan();
-   if (!state || !plan || !this.canEditTask(id)) return;
-   if (this.incidentDialog?.nativeElement.open && !this.store.manualEditing()) {
-     this.store.startManual();
-     if (!this.store.manualEditing()) return;
-   }
-   const task = state.tasks.find(item => item.id === id)!;
-   const assignment = this.store.displayedPlan()?.assignments.find(item => item.task_id === id);
-   const selected = vehicleId ?? assignment?.vehicle_id;
-   this.manualVehicle = state.vehicles.find(vehicle => vehicle.id === selected && vehicle.status !== 'BROKEN')?.id ?? '';
-   const planned = pickup ?? assignment?.planned_pickup ?? new Date(Math.max(
-     Date.parse(task.earliest_pickup), Math.ceil(Date.parse(state.simulated_time) / 60_000) * 60_000,
-   )).toISOString();
-   this.manualTime = formatTime(planned);
-   this.manualMove.set({taskId:id,planId:plan.id,revision:state.state_revision,pickup:planned});
-   this.manualError.set('');
-   this.details?.nativeElement.close();
-   afterNextRender(() => this.manualDialog?.nativeElement.showModal(), {injector:this.injector});
- }
- async saveManualMove() {
-   const draft = this.manualMove(), state = this.store.state();
-   if (!draft || !state || !this.manualVehicle || this.store.busy()) return;
-   if (draft.planId !== state.active_plan?.id || draft.revision !== state.state_revision) {
-     this.manualError.set('Aktivni razpored se je spremenil. Odprite premik znova.');
-     return;
-   }
-   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(this.manualTime)) {
-     this.manualError.set('Vnesite veljavno uro prevzema.');
-     return;
-   }
-   const at = (value: string) => { const [hours, minutes] = value.split(':').map(Number); return hours * 3600 + minutes * 60; };
-   const plannedPickup = this.manualTime === formatTime(draft.pickup)
-     ? Math.round((Date.parse(draft.pickup) - Date.parse(state.horizon_start)) / 1000)
-     : at(this.manualTime) - at(formatTime(state.horizon_start));
-   const horizon = (Date.parse(state.horizon_end) - Date.parse(state.horizon_start)) / 1000;
-   if (plannedPickup < 0 || plannedPickup > horizon) {
-     this.manualError.set('Izberite uro znotraj delovnega časa.');
-     return;
-   }
-   this.manualError.set('');
-   const move = {task_id:draft.taskId,vehicle_id:this.manualVehicle,
-     planned_pickup:plannedPickup,base_plan_id:draft.planId,expected_state_revision:draft.revision};
-   const saved = this.store.manualEditing() ? await this.store.previewManual(move) : await this.store.moveAssignment(move);
-   if (saved) this.manualDialog?.nativeElement.close();
-   else this.manualError.set(this.store.error());
- }
  showTaskTimeline(){
    this.details?.nativeElement.close();this.closeIncidentReview();this.navigate('tasks');
    afterNextRender(()=>{

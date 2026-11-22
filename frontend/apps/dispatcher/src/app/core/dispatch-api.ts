@@ -1,8 +1,12 @@
 import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight, NewVehicleInput, VehicleSettings } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
-import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
+import { adaptBackendState, adaptPlan, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
 import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
+
+export type ManualDraft = components['schemas']['ManualDraft'];
+type ManualSlotsRequest = components['schemas']['ManualSlotsRequest'];
+type ManualSlot = components['schemas']['ManualSlot'];
 
 export interface DispatchGateway {
   readonly isDemo: boolean;
@@ -14,6 +18,9 @@ export interface DispatchGateway {
   createIncident(input: IncidentInput): Promise<DispatchState>;
   restoreVehicle(id:string): Promise<DispatchState>;
   generateRecommendations(incidentId: string, state: DispatchState): Promise<DispatchState>;
+  manualSlots?(incidentId: string, request: ManualSlotsRequest): Promise<ManualSlot[]>;
+  previewManual?(incidentId: string, request: ManualDraft, state: BackendState): Promise<ReturnType<typeof adaptPlan>>;
+  selectManual?(incidentId: string, request: ManualDraft): Promise<DispatchState>;
   accept(id: string, state: DispatchState, reason?: string): Promise<DispatchState>;
   reject(id: string, state: DispatchState): Promise<DispatchState>;
   reset(): Promise<DispatchState>;
@@ -59,6 +66,16 @@ export class HttpDispatchGateway implements DispatchGateway {
     return adaptBackendState(state,recommendations,history);
   }
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
+  manualSlots(id: string, request: ManualSlotsRequest) {
+    return this.request<ManualSlot[]>(`/incidents/${encodeURIComponent(id)}/manual-slots`, request);
+  }
+  async previewManual(id: string, request: ManualDraft, state: BackendState) {
+    const plan = await this.request<components['schemas']['PlanView']>(`/incidents/${encodeURIComponent(id)}/manual-preview`, request);
+    return adaptPlan(plan, state);
+  }
+  selectManual(id: string, request: ManualDraft) {
+    return this.mutate(`/incidents/${encodeURIComponent(id)}/manual-solution`, request);
+  }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
   prepareOxygenDemo() { return this.mutate('/demo/oxygen', {}); }
   createTask(input:import('@rescueflow/contracts').ScheduledTaskInput){return this.mutate('/tasks',input);}

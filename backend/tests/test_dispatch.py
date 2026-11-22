@@ -117,6 +117,55 @@ def signature(plan):
     return tuple((row["vehicle_id"], row["task_id"]) for row in plan["assignments"])
 
 
+def test_manual_incident_slots_preview_and_confirmation(demo):
+    post(demo, "plans/generate")
+    post(demo, "demo/advance-time", {"to": 1200})
+    state = post(demo, "vehicles", {"capacity": 8, "equipment": ["OXYGEN", "STRETCHER", "WHEELCHAIR"],
+                                    "task_types": ["PLANNED_TRANSPORT"], "location": {"lat": 46.051, "lon": 14.566}})
+    incident = state["incidents"][-1]
+    active = state["active_plan"]
+    proposals = replan(demo, state)
+    movable = [row for row in active["assignments"] if row["status"] == "PLANNED" and not row["is_locked"]]
+    row = max((row for row in movable if any(other["vehicle_id"] == row["vehicle_id"]
+               and other["planned_pickup"] > row["planned_pickup"] for other in movable)),
+              key=lambda row: row["planned_pickup"])
+    following = min((other for other in movable if other["vehicle_id"] == row["vehicle_id"]
+                     and other["planned_pickup"] > row["planned_pickup"]), key=lambda other: other["planned_pickup"])
+    request = {"base_plan_id": active["id"], "expected_state_revision": state["revision"], "moves": []}
+    path = f"incidents/{incident['id']}"
+    slots = post(demo, f"{path}/manual-slots", {**request, "task_id": row["task_id"]})
+    assert slots
+    assert all(slot["first_pickup"] >= incident["occurred_at"] for slot in slots)
+    locked = next(item for item in active["assignments"] if item["status"] != "PLANNED")
+    assert not post(demo, f"{path}/manual-slots", {**request, "task_id": locked["task_id"]})
+    invalid = demo.post(f"/api/{path}/manual-preview", json={**request, "moves": [
+        {"task_id": row["task_id"], "vehicle_id": row["vehicle_id"],
+         "planned_pickup": incident["occurred_at"] - 60},
+    ]})
+    assert invalid.status_code == 409 and "po času dogodka" in invalid.json()["detail"]["message"]
+
+    cascade_pickup = (following["planned_pickup"] - 1) // 60 * 60
+    assert any(slot["vehicle_id"] == row["vehicle_id"] and slot["first_pickup"] <= cascade_pickup <= slot["last_pickup"]
+               for slot in slots)
+    move = {"task_id": row["task_id"], "vehicle_id": row["vehicle_id"], "planned_pickup": cascade_pickup}
+    draft = {**request, "moves": [move]}
+    preview = post(demo, f"{path}/manual-preview", draft)
+    changed_following = next(item for item in preview["assignments"] if item["task_id"] == following["task_id"])
+    assert changed_following["planned_pickup"] > following["planned_pickup"]
+    assert not preview["blocking"] and preview["status"] == "DRAFT"
+    assert demo.get("/api/state").json()["active_plan"] == active
+    assert {item["id"] for item in demo.get("/api/recommendations").json() if item["status"] == "PROPOSED"} == {
+        item["id"] for item in proposals
+    }
+
+    saved = post(demo, f"{path}/manual-solution", draft)
+    assert saved["active_plan"]["assignments"] == preview["assignments"]
+    assert saved["active_plan"]["strategy"] == "MANUAL"
+    assert saved["incidents"][-1]["status"] == "RESOLVED"
+    assert demo.get("/api/plans").is_success and demo.get("/api/tracking").is_success
+    assert demo.post(f"/api/{path}/manual-solution", json=draft).status_code == 409
+
+
 
 
 

@@ -32,6 +32,19 @@ export class AppComponent implements OnInit,OnDestroy {
  readonly pageTitle=computed(()=>({home:'Operativni pregled',tasks:'Prevozne naloge',vehicles:'Vozila in razpoložljivost',incidents:'Dogodki in odločitve',analysis:'Analiza in napovedi'}[this.page()]));
  readonly date=computed(()=>new Intl.DateTimeFormat('sl-SI',{day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Ljubljana'}).format(new Date(this.store.state()?.simulated_time??'2026-11-21')));
  readonly viewProps=computed<DispatchViewProps|null>(()=>{const state=this.store.state();return state?{state,tracking:this.store.displayedTracking(),roads:this.store.roads(),pickingRoad:this.store.pickingRoad(),roadPreview:this.store.roadTarget(),onPickRoad:location=>void this.store.pickRoad(location),plan:this.store.displayedPlan(),basePlan:this.store.activePlan(),diff:this.store.diff(),selectedVehicleId:this.store.selectedVehicleId(),selectedTaskId:this.store.selectedTaskId(),isPreview:!!this.store.previewPlan(),onSelectVehicle:id=>this.store.selectVehicle(id),onSelectTask:id=>this.inspectTask(id)}:null;});
+ readonly reviewTimelineProps = computed<DispatchViewProps | null>(() => {
+   const props = this.viewProps(), incident = this.store.selectedIncident();
+   if (!props || !incident || !this.store.manualEditing() || this.store.busy()) return props;
+   return {...props, manualTimeline: {
+     earliest: Math.max(Date.parse(incident.occurred_at), Date.parse(props.state.simulated_time)),
+     availableSlots: taskId => this.store.manualSlots(taskId),
+     move: (taskId, vehicleId, pickup) => void this.store.moveManual(taskId, vehicleId, pickup),
+   }};
+ });
+ async startManualReview() {
+   await this.store.startManual();
+   if (this.store.manualEditing()) document.getElementById('incident-timeline')?.scrollIntoView({block: 'nearest'});
+ }
  readonly timelineRange=computed(()=>{const state=this.store.state();if(!state)return '';const {start,end}=timelineBounds(state);const label=(value:number)=>new Intl.DateTimeFormat('sl-SI',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Ljubljana'}).format(value);return end-start>24*3600_000?label(start)+'–'+label(end):formatTime(new Date(start).toISOString())+'–'+formatTime(new Date(end).toISOString());});
  readonly selectedTask=computed(()=>[...this.store.state()?.tasks??[],...this.store.state()?.future_tasks??[]].find(t=>t.id===this.taskId()));readonly selectedAssignment=computed(()=>this.store.displayedPlan()?.assignments.find(a=>a.task_id===this.taskId()));readonly affectedVehicles=computed(()=>[...this.store.diff().vehicle_ids].join(', ')||'—');
  private readonly hashChange=()=>this.readHash();

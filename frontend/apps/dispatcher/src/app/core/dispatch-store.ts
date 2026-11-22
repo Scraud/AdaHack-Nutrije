@@ -1,7 +1,7 @@
 import { computed, Injectable, signal } from '@angular/core';
-import type { DispatchState, Incident, IncidentInput, NewVehicleInput, Recommendation, RecommendationInsight, VehicleSettings, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
+import type { DispatchPlan, DispatchState, Incident, IncidentInput, NewVehicleInput, Recommendation, RecommendationInsight, VehicleSettings, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
 import { calculatePlanMetrics, candidateProblem, comparePlans, currentAssignment, passengerOnBoard, STRATEGY_ORDER } from '@rescueflow/contracts/plan-utils';
-import type { DispatchGateway } from './dispatch-api';
+import type { DispatchGateway, ManualDraft } from './dispatch-api';
 
 @Injectable({ providedIn:'root' })
 export class DispatchStore {
@@ -47,7 +47,20 @@ export class DispatchStore {
     return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s)).sort((a,b)=>(STRATEGY_ORDER[a.strategy]??3)-(STRATEGY_ORDER[b.strategy]??3)).slice(0,3) ?? [];
   });
   readonly previewRecommendation = computed(() => this.recommendations().find(r => r.id === (this.hoveredRecommendationId() ?? this.selectedRecommendationId())) ?? null);
-  readonly previewPlan = computed(() => this.previewRecommendation()?.proposed_plan ?? null);
+  private manualDraft: ManualDraft | null = null;
+  readonly manualEditing = signal(false);
+  readonly manualPreview = signal<DispatchPlan | null>(null);
+  readonly manualAvailable = computed(() => !!this.state()?.backend && !!this.activePlan()
+    && !!this.gateway?.manualSlots && !!this.gateway.previewManual && !!this.gateway.selectManual
+    && !!this.selectedIncident() && this.selectedIncident()?.status !== 'RESOLVED');
+  readonly manualProblem = computed(() => {
+    const plan = this.manualPreview(), state = this.state();
+    if (!plan || !state) return null;
+    const eventTask = state.backend?.incidents.find(incident => String(incident.id) === this.selectedIncidentId())?.task_id;
+    if (eventTask && plan.unassigned_task_ids.includes(eventTask)) return 'Naloga dogodka še nima dodeljenega vozila.';
+    return candidateProblem(this.activePlan(), plan, state);
+  });
+  readonly previewPlan = computed(() => this.manualPreview() ?? this.previewRecommendation()?.proposed_plan ?? null);
   readonly displayedPlan = computed(() => this.previewPlan() ?? this.activePlan());
   readonly diff = computed(() => comparePlans(this.activePlan(),this.previewPlan()));
   readonly metrics = computed(() => calculatePlanMetrics(this.displayedPlan(),this.state()?.tasks ?? [],this.state()?.simulated_time ?? new Date().toISOString()));
@@ -255,8 +268,8 @@ export class DispatchStore {
     const s=this.state()!;const at=new Date(Date.parse(s.horizon_start)+200*60_000).toISOString();
     if(Date.parse(s.simulated_time)<Date.parse(at))await this.advanceTime(at);
   }
-  hover(id: string | null) { this.hoveredRecommendationId.set(id); }
-  pin(id: string) { this.selectedRecommendationId.set(id); this.hoveredRecommendationId.set(null); void this.loadInsight(id); }
+  hover(id: string | null) { if (!this.manualEditing()) this.hoveredRecommendationId.set(id); }
+  pin(id: string) { this.cancelManual(); this.selectedRecommendationId.set(id); this.hoveredRecommendationId.set(null); void this.loadInsight(id); }
   async loadInsight(id:string){
     if(!this.gateway.explain||this.insights()[id]||this.insightLoading()===id)return;
     this.insightLoading.set(id);
@@ -264,7 +277,60 @@ export class DispatchStore {
     catch{this.insights.update(all=>({...all,[id]:null}));}
     finally{if(this.insightLoading()===id)this.insightLoading.set(null);}
   }
-  clearPreview() { this.selectedRecommendationId.set(null); this.hoveredRecommendationId.set(null); }
+  async startManual() {
+    const id = this.selectedIncidentId();
+    if (!this.manualAvailable() || this.busy() || this.manualEditing()) return;
+    const playback = this.tracking()?.playback;
+    if (playback?.playing && !await this.setPlayback(false, playback.speed)) return;
+    const plan = this.activePlan(), state = this.state();
+    if (!plan || !state || !this.manualAvailable() || this.selectedIncidentId() !== id) return;
+    this.clearPreview();
+    this.error.set('');
+    this.manualDraft = {base_plan_id: plan.id, expected_state_revision: state.state_revision, moves: []};
+    this.manualEditing.set(true);
+  }
+  cancelManual() {
+    this.manualDraft = null;
+    this.manualEditing.set(false);
+    this.manualPreview.set(null);
+  }
+  async manualSlots(taskId: string) {
+    const incident = this.selectedIncidentId(), draft = this.manualDraft, state = this.state();
+    if (!incident || !draft || !state || !this.gateway.manualSlots || this.busy()) return [];
+    const slots = await this.gateway.manualSlots(incident, {...draft, task_id: taskId});
+    if (this.manualDraft !== draft || this.selectedIncidentId() !== incident) return [];
+    const start = Date.parse(state.horizon_start);
+    return slots.map(slot => ({
+      vehicleId: slot.vehicle_id, first: start + slot.first_pickup * 1000, last: start + slot.last_pickup * 1000,
+    }));
+  }
+  async moveManual(taskId: string, vehicleId: string, pickup: number) {
+    const incident = this.selectedIncidentId(), draft = this.manualDraft, state = this.state()?.backend;
+    if (!incident || !draft || !state || !this.gateway.previewManual || this.busy()) return;
+    const planned_pickup = Math.round((pickup - Date.parse(state.start_at)) / 1000);
+    const request = {...draft, moves: [...draft.moves, {task_id: taskId, vehicle_id: vehicleId, planned_pickup}]};
+    this.busy.set(true);
+    this.error.set('');
+    try {
+      const plan = await this.gateway.previewManual(incident, request, state);
+      if (this.manualDraft !== draft) return;
+      this.manualDraft = request;
+      this.manualPreview.set(plan);
+    } catch (error) {
+      if (this.manualDraft === draft) this.error.set(this.message(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+  async selectManual() {
+    const incident = this.selectedIncidentId(), draft = this.manualDraft;
+    if (!incident || !draft || !this.manualPreview() || this.manualProblem() || !this.gateway.selectManual) return;
+    if (await this.run(() => this.gateway.selectManual!(incident, draft))) {
+      this.clearPreview();
+      this.toast('Lastna rešitev je potrjena. Aktivni plan je posodobljen.');
+    }
+  }
+  clearPreview() { this.cancelManual(); this.selectedRecommendationId.set(null); this.hoveredRecommendationId.set(null); }
   selectVehicle(id: string) { this.selectedVehicleId.update(old=>old===id ? null : id); }
   selectTask(id:string){this.selectedTaskId.set(id);const a=this.displayedPlan()?.assignments.find(a=>a.task_id===id);if(a)this.selectedVehicleId.set(a.vehicle_id);}
   inspectIncident(id:string){this.selectedIncidentId.set(id);this.alertsOverride.set(true);this.clearPreview();this.generationInfo.set('');}

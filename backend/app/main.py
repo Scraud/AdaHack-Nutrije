@@ -11,7 +11,8 @@ from sqlalchemy import select
 
 from app.api.schemas import (
     Advance, DemoClock, CreateScheduledTask, Baseline, CreateIncident, Explanation, PickupAddress, PlanSummary, PlanView, RecommendationView,
-    NewVehicle, Recommendations, Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State, VehicleSettings,
+    ManualDraft, ManualSlot, ManualSlotsRequest, NewVehicle, Recommendations, Rejection, Replan, RoadMap,
+    RoadSegment, SourceStatus, State, VehicleSettings,
 )
 from app.db import Database
 from app.models import IncidentRecord, Plan, Scenario
@@ -22,6 +23,7 @@ from app.providers.roads import road_network
 from app.services.advisor import Advisor, recommendation_facts
 from app.services.decisions import decide
 from app.services.fleet import add_vehicle, remove_vehicle, update_vehicle
+from app.services.manual_planning import available_slots, manual_plan
 from app.services.planning import PlanningService, recommendation_history
 from app.services.simulation import add_incident, advance, prepare_oxygen_demo, restore_vehicle, resolve_incident, set_demo_clock
 from app.services.scheduling import create_scheduled_task
@@ -126,6 +128,24 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
         with database.session(write=True) as db:
             scope = scenario(db)
             add_incident(db, scope, request, road_matrix)
+            return view_state(db, scope, road_matrix)
+
+    @app.post("/api/incidents/{incident_id}/manual-slots")
+    def manual_slots(incident_id: int, request: ManualSlotsRequest) -> list[ManualSlot]:
+        with database.session() as db:
+            return available_slots(db, scenario(db), incident_id, request, road_matrix)
+
+    @app.post("/api/incidents/{incident_id}/manual-preview")
+    def manual_preview(incident_id: int, request: ManualDraft) -> PlanView:
+        with database.session() as db:
+            return manual_plan(db, scenario(db), incident_id, request, road_matrix)
+
+    @app.post("/api/incidents/{incident_id}/manual-solution")
+    def manual_solution(incident_id: int, request: ManualDraft) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            manual_plan(db, scope, incident_id, request, road_matrix, save=True)
             return view_state(db, scope, road_matrix)
 
     @app.post("/api/incidents/{incident_id}/resolve")

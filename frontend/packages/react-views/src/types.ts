@@ -1,4 +1,11 @@
 import type { DispatchPlan, DispatchState, Location, PlanDiff, TrackingFrame, RoadMap, RoadSegment } from '../../contracts';
+
+export interface ManualTimeline {
+  earliest: number;
+  availableSlots: (taskId: string) => Promise<{vehicleId: string; first: number; last: number}[]>;
+  move: (taskId: string, vehicleId: string, pickup: number) => void;
+}
+
 export interface DispatchViewProps {
   state: DispatchState;
   plan: DispatchPlan | null;
@@ -12,6 +19,7 @@ export interface DispatchViewProps {
   tracking?: TrackingFrame | null;
   roads?: RoadMap | null;
   isHomeMap?: boolean;
+  manualTimeline?: ManualTimeline;
   pickingRoad?: boolean;
   roadPreview?: RoadSegment | null;
   pickingLocation?: boolean;

@@ -46,8 +46,34 @@
   }
   @for(block of blocked();track block.id){<div class="blocking-card"><app-icon name="alert" [size]="17"/><div><b>{{block.title}} · potreben poseg</b><p>{{problem(block)}}</p></div></div>}
   @if(store.selectedIncident();as incident){@if(incident.status!=='RESOLVED'){<button class="button secondary generate-button" (click)="store.generate(incident.id)" [disabled]="store.busy()||!store.activePlan()"><app-icon name="refresh" [size]="16"/>{{available().length?'Ponovno izračunaj':'Izračunaj predloge'}}</button>}}
+  @if(store.manualAvailable()){
+   <div class="manual-option">
+    @if(store.manualEditing()){
+     <b>Lastna rešitev</b>
+     <p>Povlecite nalogo na označen termin in vozilo na časovnici.</p>
+     @if(store.manualPreview();as plan){
+      <div class="recommendation-metrics"><span><b>{{plan.metrics?.delay_minutes??0}} <small>min</small></b>Čakanje</span><span><b>{{store.diff().changed.size+store.diff().added.size}}</b>Spremembe</span><span><b>{{plan.unassigned_task_ids.length}}</b>Nerazporejeno</span></div>
+      <div class="rec-change-list">
+       @for(row of plan.assignments;track row.task_id){
+        @if(store.diff().changed.has(row.task_id)||store.diff().added.has(row.task_id)){
+         <span><b>{{row.task_id}}</b>{{row.vehicle_id}} · {{time(row.planned_pickup)}}@if(manualDelay(row.task_id);as delay){ · {{delay>0?'+':''}}{{delay}} min}</span>
+        }
+       }
+      </div>
+      @if(store.manualProblem();as problem){<p class="dialog-error" role="status">{{problem}}</p>}
+     }
+    }@else{
+     <button class="recommendation-card" (click)="editManual.emit()" [disabled]="store.busy()">
+      <span class="recommendation-title"><app-icon name="calendar" [size]="18"/><b>Lastna rešitev</b><app-icon name="right" [size]="16"/></span>
+      <span class="recommendation-summary">Ročno prerazporedite naloge na časovnici.</span>
+     </button>
+    }
+   </div>
+  }
   <div class="decision-history"><h3>Zgodovina odločitev</h3>@for(decision of decisions();track decision.id){<div class="decision-entry"><app-icon [name]="decision.action==='ACCEPTED'?'check':'close'" [size]="16"/><div><b>{{decision.action==='ACCEPTED'?'Potrjeno':'Zavrnjeno'}} · {{recTitle(decision.recommendation_id)}}</b><p>{{decision.reason}}</p><small>{{time(decision.decided_at)}} · {{decision.actor}}</small></div></div>}@empty{<p>Odločitve še ni.</p>}</div>
  </div>
  @if(store.error()){<div class="panel-error"><p class="dialog-error" role="alert">{{store.error()}}</p></div>}
- @if(pinned();as rec){<div class="assistant-confirm"><span><app-icon name="pinned" [size]="15"/>Predogled — še ni potrjeno</span><div><button class="button primary" (click)="confirm.emit(rec)" [disabled]="store.busy()"><app-icon name="done" [size]="17"/>Potrdi predlog</button></div></div>}
+ @if(store.manualEditing()){
+  <div class="assistant-confirm manual-confirm"><div><button class="button secondary" (click)="store.cancelManual()" [disabled]="store.busy()">Prekliči urejanje</button><button class="button primary" (click)="store.selectManual()" [disabled]="store.busy()||!store.manualPreview()||!!store.manualProblem()">Izberi lastno rešitev</button></div></div>
+ }@else if(pinned();as rec){<div class="assistant-confirm"><span><app-icon name="pinned" [size]="15"/>Predogled — še ni potrjeno</span><div><button class="button primary" (click)="confirm.emit(rec)" [disabled]="store.busy()"><app-icon name="done" [size]="17"/>Potrdi predlog</button></div></div>}
 }

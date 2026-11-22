@@ -158,7 +158,7 @@ class Change(BaseModel):
 
 
 class Candidate(BaseModel):
-    strategy: Strategy
+    strategy: Strategy | Literal["MANUAL"]
     assignments: list[Assignment]
     unassigned: list[Issue]
     blocking: list[Issue]

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { DemoDispatchGateway } from '../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../apps/dispatcher/src/app/core/dispatch-store';
 import type { TrackingFrame } from '../packages/contracts';
-import { calculatePlanMetrics, candidateProblem, comparePlans, formatTime, passengerOnBoard, preferredArrivalLabel, timelineStatus, timelineBounds, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
+import { calculatePlanMetrics, candidateProblem, comparePlans, facilityCapacity, formatTime, passengerOnBoard, preferredArrivalLabel, timelineStatus, timelineBounds, trackingEtaLabel, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
 
 async function scenario() {
   const gateway=new DemoDispatchGateway();
@@ -12,6 +12,112 @@ async function scenario() {
   await store.init(gateway);await store.simulateIncident();
   return {gateway,store};
 }
+
+test('facility capacity counts arrivals once, reserves only displayed assignments and updates with previews',()=>{
+  const facility={id:'F1',quota:3,accepting:true};
+  const tasks=[{id:'T1',facility_id:'F1',actual_arrival:120},{id:'T2',facility_id:'F1',actual_arrival:null},
+    {id:'T3',facility_id:'F1',actual_arrival:null},{id:'T4',facility_id:'F2',actual_arrival:120}];
+  assert.deepEqual(facilityCapacity(facility,tasks,['T1','T2','T2']),{used:2,arrived:1,reserved:1,capacity:3,free:1,full:false});
+  assert.equal(facilityCapacity(facility,tasks,['T1','T2','T3']).full,true);
+  assert.equal(facilityCapacity(facility,tasks,['T2','T3']).used,3,'Arrivals keep their slot even when omitted from the displayed route.');
+  assert.equal(facilityCapacity(facility,tasks,[]).free,2,'Unassigned tasks must not reserve capacity.');
+});
+
+test('zero capacity and reduced quotas stay full without reporting negative free slots',()=>{
+  const tasks=[{id:'T1',facility_id:'F1',actual_arrival:0},{id:'T2',facility_id:'F1',actual_arrival:null}];
+  const lower=facilityCapacity({id:'F1',quota:1,accepting:true},tasks,['T2']);
+  assert.equal(lower.used,2);assert.equal(lower.free,0);assert.equal(lower.full,true);
+  assert.equal(facilityCapacity({id:'F1',quota:0,accepting:true},[],[]).full,true);
+});
+
+test('opening and resetting prepare a missing plan, while refreshing preserves an existing plan',async()=>{
+  const gateway=new DemoDispatchGateway();
+  const initial=await gateway.getState();
+  let state={...initial,active_plan:null} as typeof initial;
+  let generations=0;
+  Object.assign(gateway,{
+    getState:async()=>structuredClone(state),
+    generateInitialPlan:async()=>{generations++;state={...state,active_plan:structuredClone(initial.active_plan)};return structuredClone(state);},
+    reset:async()=>{state={...structuredClone(initial),active_plan:null};return structuredClone(state);},
+  });
+  const store=new DispatchStore();await store.init(gateway);
+  assert.ok(store.activePlan());assert.equal(generations,1);
+  const id=store.activePlan()!.id;
+  await store.refresh();assert.equal(generations,1);assert.equal(store.activePlan()!.id,id);
+  await store.reset();assert.equal(generations,2);assert.ok(store.activePlan());
+  store.dispose();
+});
+
+test('failed automatic planning can be retried without resetting the scenario',async()=>{
+  const gateway=new DemoDispatchGateway(),initial=await gateway.getState();
+  let fail=true;
+  Object.assign(gateway,{
+    getState:async()=>({...structuredClone(initial),active_plan:null}),
+    generateInitialPlan:async()=>{if(fail)throw new Error('Planning unavailable');return structuredClone(initial);},
+  });
+  const store=new DispatchStore();await store.init(gateway);
+  assert.equal(store.error(),'Planning unavailable');assert.equal(store.busy(),false);
+  assert.equal(store.state()!.scenario_id,initial.scenario_id);
+  fail=false;await store.refresh();assert.equal(store.error(),'');assert.ok(store.activePlan());
+  store.dispose();
+});
+
+test('regenerating activates the new plan without changing the clock or adding tasks or events',async()=>{
+  const store=new DispatchStore();await store.init(new DemoDispatchGateway());
+  const before=structuredClone(store.state()!);
+  assert.equal(await store.regeneratePlan(),true);
+  assert.notEqual(store.activePlan()!.id,before.active_plan!.id);
+  assert.equal(store.state()!.simulated_time,before.simulated_time);
+  assert.deepEqual(store.state()!.incidents,before.incidents);
+  assert.deepEqual(store.state()!.tasks,before.tasks);
+  assert.equal(store.recommendations().length,0);
+  assert.equal(store.state()!.decisions.at(-1)!.action,'ACCEPTED');
+  store.dispose();
+});
+
+test('urgent incident notices survive closing and refresh, then disappear only when resolved',async()=>{
+  const {store}=await scenario();const event=store.urgentNotices()[0];
+  assert.ok(event);store.inspectIncident(event.id);store.closeIncident();
+  assert.equal(store.urgentNotices()[0].id,event.id);
+  await store.refresh();assert.equal(store.urgentNotices()[0].id,event.id);
+  await store.accept(store.recommendations()[0]);assert.equal(store.urgentNotices().length,0);
+  store.dispose();
+});
+
+test('road notices can be dismissed without resolving the disruption and never open manual replanning',async()=>{
+  const gateway=new DemoDispatchGateway();let state=await gateway.getState();
+  Object.assign(gateway,{getState:async()=>structuredClone(state)});
+  const store=new DispatchStore();await store.init(gateway);
+  const event={id:'road-1',incident_type:'TRAFFIC_DELAY' as const,title:'Zastoj',description:'Celovška cesta',priority:'P2' as const,status:'OPEN' as const,occurred_at:state.simulated_time,location:{lat:46,lon:14,name:'Celovška cesta'},affected_vehicle_ids:[],affected_task_ids:[]};
+  state.incidents.push(event);await store.refresh();
+  assert.equal(store.roadNotices().length,1);assert.equal(store.urgentNotices().length,0);
+  assert.equal(store.alertsVisible(),false,'Road disruptions must not automatically open a manual decision panel.');
+  assert.equal(await store.generate(event.id),false);
+  store.dismissRoadNotice(store.roadNotices()[0].id);await store.refresh();
+  assert.equal(store.roadNotices().length,0);assert.equal(state.incidents[0].status,'OPEN');
+  state.incidents.push({...event,id:'road-2'});await store.refresh();
+  assert.equal(store.roadNotices().length,1);store.dispose();
+});
+
+test('waiting vehicles show their status rather than a countdown until departure',()=>{
+  const vehicle={id:'V1',status:'WAITING',location:[46,14],to_pickup:[],to_hospital:[],eta:{destination:'PICKUP',seconds:1800}} as TrackingFrame['vehicles'][number];
+  assert.equal(trackingEtaLabel(vehicle),'V čakanju');
+  assert.equal(trackingEtaLabel({...vehicle,status:'TO_PICKUP'}),'Do pacienta · 30 min');
+  assert.equal(trackingEtaLabel({...vehicle,status:'AT_PICKUP'}),'Prevzem pacienta');
+});
+
+test('only manual demo refresh clears road disruptions, while preserving the current plan',async()=>{
+  const gateway=new DemoDispatchGateway();let state=await gateway.getState();
+  state.incidents=['TRAFFIC_DELAY','ROAD_CLOSURE'].map((type,i)=>({id:`road-${i}`,incident_type:type as 'TRAFFIC_DELAY'|'ROAD_CLOSURE',title:type,description:'Motnja',priority:'P2',status:'OPEN',occurred_at:state.simulated_time,affected_vehicle_ids:[],affected_task_ids:[],location:{lat:46,lon:14,name:'Ulica'}}));
+  const resolved:string[]=[];
+  Object.assign(gateway,{getState:async()=>structuredClone(state),resolveIncident:async(id:string)=>{
+    resolved.push(id);state.incidents=state.incidents.map(event=>event.id===id?{...event,status:'RESOLVED'}:event);return structuredClone(state);
+  }});
+  const store=new DispatchStore();await store.init(gateway);const plan=store.activePlan()!.id;
+  await store.refresh();assert.equal(resolved.length,0);
+  await store.refreshDemo();assert.deepEqual(resolved,['road-0','road-1']);
+  assert.equal(store.activePlan()!.id,plan);assert.equal(store.roadNotices().length,0);store.dispose();
+});
 
 test('timeline expands to include the selected clock outside the operating shift',async()=>{
   const state=await new DemoDispatchGateway().getState();
@@ -75,6 +181,26 @@ test('reject leaves the active schedule untouched and removes the candidate',asy
   const {store}=await scenario();const original=structuredClone(store.activePlan());const rec=store.recommendations()[0];
   await store.reject(rec.id);assert.deepEqual(store.activePlan(),original);
   assert.ok(!store.recommendations().some(r=>r.id===rec.id));assert.equal(store.state()?.decisions[0].action,'REJECTED');
+});
+
+test('rejecting a proposal retains the remaining route previews and falls back to the active plan only when none remain',async()=>{
+  const gateway=new DemoDispatchGateway();
+  const connected=Object.assign(gateway,{getTracking:async()=>{
+    const state=await gateway.getState();
+    return {scenario_id:state.scenario_id,revision:state.state_revision,now:0,mode:'DEMO',playback:{playing:false,speed:60},incidents:[],vehicles:[]} as TrackingFrame;
+  }});
+  const store=new DispatchStore();await store.init(connected);await store.simulateIncident();
+  const [first,second,third]=store.recommendations(),active=structuredClone(store.activePlan());
+  store.inspectIncident(store.openIncidents()[0].id);store.pin(first.id);
+  assert.ok(store.displayedTracking());
+  assert.equal(await store.reject(first.id),true);
+  assert.equal(store.previewPlan()!.id,second.proposed_plan.id);assert.ok(store.displayedTracking());
+  assert.deepEqual(store.activePlan(),active);
+  await store.reject(third.id);
+  assert.equal(store.previewPlan()!.id,second.proposed_plan.id);assert.ok(store.displayedTracking());
+  await store.reject(second.id);
+  assert.equal(store.previewPlan(),null);assert.deepEqual(store.displayedPlan(),active);assert.ok(store.displayedTracking());
+  store.dispose();
 });
 test('stale revisions cannot be previewed or accepted',async()=>{
   const {store,gateway}=await scenario();const rec=store.recommendations()[0];

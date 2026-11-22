@@ -1,7 +1,18 @@
-import type { Assignment, DispatchPlan, DispatchState, PlanDiff, TransportTask } from './index';
+import type { Assignment, DispatchPlan, DispatchState, PlanDiff, TransportTask, TrackingFrame } from './index';
 
 export const VEHICLE_COLORS: Record<string, string> = { V1: '#1e5ec1', V2: '#00846e', V3: '#7d42bc', V4: '#a76a05', V5: '#ac397d' };
 export const colorFor = (id: string) => VEHICLE_COLORS[id] ?? '#64818a';
+export function facilityCapacity(
+  facility:{id:string;quota:number;accepting:boolean},
+  tasks:readonly {id:string;facility_id:string;actual_arrival?:number|null}[],
+  assignmentTaskIds:readonly string[],
+){
+  const assigned=new Set(assignmentTaskIds);
+  const delivered=tasks.filter(task=>task.facility_id===facility.id&&task.actual_arrival!=null);
+  const reserved=tasks.filter(task=>task.facility_id===facility.id&&task.actual_arrival==null&&assigned.has(task.id));
+  const used=delivered.length+reserved.length,capacity=Math.max(0,facility.quota);
+  return {used,arrived:delivered.length,reserved:reserved.length,capacity,free:Math.max(0,capacity-used),full:used>=capacity};
+}
 export function timelineBounds(state:DispatchState){
   const hour=3_600_000,now=Date.parse(state.simulated_time);
   return {start:Math.min(Date.parse(state.horizon_start),Math.floor(now/hour)*hour),
@@ -70,14 +81,27 @@ export function timelineStatus(state:DispatchState,assignment:Assignment,isPrevi
   return assignment.status==='IN_PROGRESS'?'active':'future';
 }
 
-export function vehicleEta(state:DispatchState,vehicleId:string) {
+export function trackingEtaLabel(vehicle:TrackingFrame['vehicles'][number]){
+  if(vehicle.status==='WAITING')return 'V čakanju';
+  if(vehicle.status==='STOPPED')return 'Ustavljeno';
+  if(vehicle.status==='AT_PICKUP')return 'Prevzem pacienta';
+  if(vehicle.status==='AT_HOSPITAL')return 'Pri ustanovi';
+  if(!vehicle.eta||!['TO_PICKUP','TO_HOSPITAL'].includes(vehicle.status))return '';
+  return `${vehicle.eta.destination==='PICKUP'?'Do pacienta':'Do ustanove'} · ${Math.ceil(vehicle.eta.seconds/60)} min`;
+}
+
+export function vehicleEta(state:DispatchState,vehicleId:string,frame?:TrackingFrame|null) {
   const vehicle=state.vehicles.find(v=>v.id===vehicleId);
   const empty={pickup:'—',hospital:'—',destination:'Trenutno ni aktivne poti.',task_id:null as string|null};
+  if(!vehicle)return empty;
   if(vehicle?.status==='BROKEN')return {...empty,pickup:'Pot prekinjena',hospital:'Pot prekinjena',destination:'Okvara — potreben je pregled razporeda.'};
   if(vehicle?.status==='UNAVAILABLE')return {...empty,pickup:'Nedosegljivo',hospital:'Nedosegljivo'};
+  const tracked=frame?.vehicles.find(v=>v.id===vehicleId);
+  if(tracked?.status==='WAITING')return {...empty,pickup:'V čakanju',hospital:'V čakanju',destination:'Vozilo še ni odpeljalo.'};
   const assignment=state.active_plan?.assignments.find(a=>a.vehicle_id===vehicleId&&a.status==='IN_PROGRESS');
   const task=state.tasks.find(t=>t.id===assignment?.task_id);
-  if(!assignment||!task)return empty;
+  if(!assignment||!task)return {...empty,pickup:'V čakanju',hospital:'V čakanju',destination:'Vozilo še ni odpeljalo.'};
+  if(Date.parse(assignment.planned_departure)>Date.parse(state.simulated_time))return {...empty,pickup:'V čakanju',hospital:'V čakanju',destination:task.destination.name,task_id:task.id};
   if(timelineStatus(state,assignment)==='failed')return {...empty,pickup:'Pot blokirana',hospital:'Pot blokirana',destination:'Prevoz zahteva pregled razporeda.',task_id:task.id};
   const remaining=(time:string)=>Math.ceil((Date.parse(time)-Date.parse(state.simulated_time))/60_000);
   const minutes=(value:number)=>value>0?`${value} min`:value===0?'Zdaj':'Načrtovani čas presežen';

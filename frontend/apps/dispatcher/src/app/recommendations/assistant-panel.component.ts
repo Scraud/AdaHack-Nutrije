@@ -31,7 +31,7 @@ import { IconComponent } from '../shared/icon.component';
   }
   </div>
   @if(store.previewRecommendation();as rec){<div class="assistant-confirm"><span><app-icon name="eye" [size]="14"/> Predogled {{store.selectedRecommendationId()?'je pripet':'v teku'}}</span><div><button class="button primary" (click)="confirm.emit(rec)" [disabled]="store.busy()"><app-icon name="done" [size]="16"/>Potrdi predlog</button><button class="button icon-button" title="Zavrni predlog" aria-label="Zavrni predlog" (click)="store.reject(rec.id)" [disabled]="store.busy()"><app-icon name="close"/></button></div></div>}
-  @else {<div class="simulation-action"><button class="button primary" (click)="store.simulateIncident()" [disabled]="store.busy()||(store.gateway.isDemo&&!!store.state()?.incidents?.length)"><app-icon name="alert" [size]="16"/>Simuliraj prometno nesrečo</button><small>{{store.gateway.isDemo?'Vzorčni scenarij · nova naloga ob 11:20':'Simulacija · novo nalogo pripravi zaledje'}}</small></div>}
+  @else {<div class="simulation-action"><button class="button primary" (click)="store.simulateIncident()" [disabled]="store.busy()||(store.gateway.isDemo&&!!store.state()?.incidents?.length)"><app-icon name="alert" [size]="16"/>Simuliraj nesrečo</button><small>{{store.gateway.isDemo?'Vzorčni scenarij · nova naloga ob 11:20':'Simulacija · novo nalogo pripravi zaledje'}}</small></div>}
 `})
 export class AssistantPanelComponent {
   readonly store=inject(DispatchStore);time=formatTime;

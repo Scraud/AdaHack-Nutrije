@@ -50,6 +50,14 @@ export function createDemoState(): DispatchState {
 
 export function createFixtureRecommendations(state: DispatchState, incidentId: string): Recommendation[] {
   if (!state.active_plan) return [];
+  if(!state.tasks.some(task=>task.id==='N021')){
+    const plan=structuredClone(state.active_plan);
+    plan.id=`fixture-plan-${state.state_revision}`;plan.version=(plan.version??0)+1;plan.status='DRAFT';
+    return [{id:`fixture-rec-${state.state_revision}`,incident_id:incidentId,base_plan_id:state.active_plan.id,
+      base_state_revision:state.state_revision,strategy:'MIN_CHANGES',title:'Ohrani obstoječe dodelitve',status:'PROPOSED',
+      is_fixture:true,proposed_plan:plan,explanation:'Vzorčni predogled obstoječih nalog brez spremembe dodelitev.',
+      trade_off:'Vzorčni prikaz ne izvaja optimizacije.',feasibility_reasons:['Za dejanski preračun uporabite povezavo z backendom.']}];
+  }
   return ([['MIN_DELAY','Najmanj zamud','V1','11:50','12:25'], ['MIN_CHANGES','Najmanj sprememb','V5','11:55','12:35'], ['MAX_BUFFER','Več časovne rezerve','V3','12:15','12:55']] as const).map(([strategy,title,vehicle,start,end], i) => {
     const plan = structuredClone(state.active_plan!);
     plan.id = `fixture-plan-${i+2}`; plan.version = (plan.version ?? 0)+i+1; plan.status = 'DRAFT'; plan.unassigned_task_ids = [];

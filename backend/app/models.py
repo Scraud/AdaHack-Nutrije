@@ -45,6 +45,10 @@ class TaskRecord(Entity, Base):
     __tablename__ = "tasks"
 
 
+class ScheduledTaskRecord(Entity, Base):
+    __tablename__ = "scheduled_tasks"
+
+
 class IncidentRecord(Scoped, Base):
     __tablename__ = "incidents"
     id: Mapped[int] = mapped_column(primary_key=True)

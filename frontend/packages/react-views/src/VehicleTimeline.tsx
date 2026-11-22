@@ -50,7 +50,7 @@ export function VehicleTimeline(props: DispatchViewProps) {
   }
 
   return <>
-    <div className="timeline-scroll" onScroll={() => setTooltip(null)}><div className="timeline-inner">
+    <div className="timeline-scroll" onScroll={() => setTooltip(null)}><div className="timeline-inner" style={{minWidth:Math.max(810,hours.length*60)}}>
       <div className="timeline-axis">
         <span>VOZILO</span>
         <div>

@@ -20,7 +20,7 @@ npm.cmd ci
 npm.cmd start
 ```
 
-Odprite **http://127.0.0.1:4200**. Za razvoj uporabite Node 22.12+ v veji 22 ali združljiv Node 24. Ob prvem zagonu kliknite **Pripravi demo 11:20**: backend izračuna začetni plan in premakne simulacijo. Nato izberite **Simuliraj dogodek**, preglejte podatke in dodajte dogodek. Predloge primerjajte s kazalcem oziroma tipkovnico, enega pripnite in izrecno potrdite.
+Odprite **http://127.0.0.1:4200**. Za razvoj uporabite Node 22.12+ v veji 22 ali združljiv Node 24. Ob prvem nalaganju se za obstoječe naloge samodejno pripravi začetni plan. Enako velja po ponastavitvi; ponovno odpiranje strani obstoječi plan ohrani. Gumb **Regeneriraj plan** neposredno aktivira veljavni predlog z najmanjšo zamudo (ali prvi veljavni predlog, če ta strategija ni na voljo), brez modala. Pri nesreči ali okvari rešitev še vedno izbere in potrdi dispečer. Rdeče opozorilo ostane do razrešitve dogodka. Zastoji in zapore sprožijo samodejni obvoz ter obvestilo, ki ga lahko zaprete in sicer izgine po osmih sekundah. Uro lahko prestavite na časovnici. Nato izberite **Simuliraj dogodek**, preglejte podatke in dodajte dogodek. Predloge primerjajte s kazalcem oziroma tipkovnico, enega pripnite in izrecno potrdite.
 
 Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1:8080. Dockerfile, nginx in Compose konfiguracija so ohranjeni iz `main`. Preverjeni so Compose konfiguracija, gradnja frontend Docker slike, nginx ter HTTP dostop do strani, JavaScript paketa in `config.json`. Celoten Compose deployment z backendom v tem preverjanju ni bil zagnan.
 
@@ -92,7 +92,7 @@ Cestni predogledi največ treh rešitev se vnaprej preberejo prek `/api/tracking
 
 Operativni zemljevid se odpre pri povečavi 13 (prej 12); kolešček miške povečuje in pomanjšuje prikaz. Velja tudi za zemljevid v dialogu dogodka.
 
-Ročni gumb **Osveži demo in odpravi okvare** ponovno prebere stanje ter odpravi okvare vseh pokvarjenih vozil v simulaciji. Uporabi backend endpoint za popravilo, poveča revizijo in razveljavi zastarele predloge; aktivni plan ostane isti. Samodejno sledenje, navadno branje stanja in ponoven zagon strani okvar ne odpravljajo. V načinu GPS gumb samo prebere podatke.
+Ročni gumb **Osveži demo in odpravi okvare** ponovno prebere stanje, odpravi okvare vseh pokvarjenih vozil in odstrani aktivne zastoje ter zapore v simulaciji. Uporabi backend endpoint za popravilo, poveča revizijo in razveljavi zastarele predloge; aktivni plan ostane isti. Samodejno sledenje, navadno branje stanja in ponoven zagon strani okvar ne odpravljajo. V načinu GPS gumb samo prebere podatke.
 
 Na časovnici je mogoče izbrati katerokoli uro demo dneva med 00:00 in 23:59, tudi pred začetkom izmene 08:00 ali po njenem koncu 18:00. Prikaz časovnice se samodejno razširi do izbrane ure; delovni razpon nalog ostane 08:00–18:00. Premik nazaj ustavi predvajanje, začne nov demo scenarij, izračuna začetni plan in ga premakne do izbrane ure. Dodani dogodki, naloge in odločitve prejšnjega scenarija se ne prenesejo v novi demo. To je ponovitev začetnega dneva, ne zgodovinski replay. Če izračun novega plana ne uspe, UI prikaže napako in omogoči ponovno generiranje.
 
@@ -119,3 +119,19 @@ Slovenija že razvija povezane rešitve za dispečersko službo in ekipe NMP. Re
 Predlagani potek: najprej zgodovinski anonimizirani podatki enega izvajalca za primerjavo rezultatov; nato vzporedni način brez pošiljanja ekip; zatem omejen pilot z dispečerjevo potrditvijo. Ob izpadu vira uporabimo zadnje veljavno stanje z vidno starostjo podatkov in možnostjo ročne koordinacije. Integracije potrebujejo nadzor dostopa, revizijsko sled, zaščito povezav, dogovor o obsegu podatkov in spremljanje napak.
 
 Merila pilota: pokritost nalog po prioriteti, čas do prevzema P1, zamude glede na dogovorjeni rok, prazni kilometri, čas predaje, število sprememb in čas dispečerjeve odločitve. Korist izmerimo na istih vhodih proti obstoječemu postopku; vnaprej ne obljubljamo odstotka izboljšave.
+
+## Povzetek, opozorila in predogledi
+
+Gumb **AI povzetek** odpre ločeno okno s samodejnim povzetkom podatkov aktivnega plana: opravljeno, trenutno stanje in naslednja tveganja. Rdeča opozorila ostanejo pripeta na vrh med pomikanjem. V modalu dogodka je levi stolpec samostojno pomičen: najprej velik zemljevid, pod njim časovnica. Kolesce povečuje zemljevid tudi v modalu. Do časovnice se pomaknete ob robu levega stolpca ali z njegovim drsnikom. Zavrnjeni predlog se odstrani, predogled preklopi na naslednjega veljavnega; če jih ni več, prikaže aktivni plan. Uspešna potrditev zapre obe okni.
+
+Vseh 20 začetnih nalog in nove naloge uporabljajo privzete servisne čase backenda: **prevzem 4 min**, **predaja 4 min**, **čiščenje 2 min**. Pot do prevzema in vožnja do ustanove sta dodatna. Po prihodu v ustanovo je vozilo zasedeno še 6 minut; omejitve preveri planer.
+
+## Nove in prihodnje naloge
+
+Na strani **Naloge** izberite **Novo**. Vnesite datum in čas prevzema, lokacijo, ciljno ustanovo, potnike in opremo. Privzeta prioriteta je nizka (P3). Čas se primerja s simulirano uro, ne z uro računalnika.
+
+Naloga s prevzemom najpozneje v naslednjih **24 urah, vključno z mejo**, vstopi v planer in odpre modal za pregled predlogov. Aktivni plan ostane nespremenjen do potrditve. Poznejše naloge so trajno shranjene v SQLite in prikazane pod **Prihodnje**; ne vplivajo na matriko, KPI, revizijo plana ali predloge. Ob napredovanju simuliranega časa se takšna naloga samodejno enkrat prenese v razporejanje in sproži opozorilo. Razpon planerja se razširi tudi čez polnoč, servisni časi in ostale omejitve ostanejo preverjeni. Ponastavitev demota ustvari nov scenarij, zato se dodane naloge starega scenarija ne prenesejo.
+
+Backend API: `POST /api/tasks` zahteva datum z časovnim odmikom; naivni datumi brez časovnega pasu se zavrnejo. Migracija `0002` doda tabelo prihodnjih nalog brez brisanja obstoječe baze.
+
+Nad ustanovo je pri zapolnjeni kvoti rdeča oznaka **Polno**. Ob prehodu z miško so prikazani zasedeni oziroma rezervirani in prosti sprejemi. Števci sledijo prikazanemu planu, zato se spreminjajo tudi pri predogledu rešitev. Demo uporablja sprejemne kvote na nalogo, ne dejanske zasedenosti bolnišničnih postelj.

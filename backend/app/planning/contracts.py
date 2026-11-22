@@ -48,14 +48,15 @@ class Task(BaseModel):
     facility_id: str
     passenger_count: int = Field(ge=0, le=8)
     equipment: list[Equipment] = Field(default_factory=list)
-    earliest_pickup: int = Field(ge=0, le=HORIZON)
-    latest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
+    earliest_pickup: int = Field(ge=0)
+    latest_pickup: int | None = Field(default=None, ge=0)
     arrival_policy: Literal["ASAP", "PRIORITY_WINDOW"] | None = None
-    preferred_arrival: int = Field(ge=0, le=HORIZON)
-    latest_arrival: int = Field(ge=0, le=HORIZON)
+    preferred_arrival: int = Field(ge=0)
+    latest_arrival: int = Field(ge=0)
     pickup_service: int = Field(default=240, ge=0, le=3600)
     dropoff_service: int = Field(default=240, ge=0, le=3600)
     cleaning: int = Field(default=120, ge=0, le=3600)
+    planning_horizon: int | None = Field(default=None, ge=0)
     actual_pickup: int | None = None
     actual_arrival: int | None = None
 
@@ -65,7 +66,7 @@ class Task(BaseModel):
 
     @property
     def arrival_deadline(self) -> int:
-        return HORIZON if self.arrival_asap else self.latest_arrival
+        return max(HORIZON, self.latest_arrival) if self.arrival_asap else self.latest_arrival
 
     @model_validator(mode="after")
     def check_windows(self):
@@ -77,8 +78,8 @@ class Task(BaseModel):
 
 
 class Reroute(BaseModel):
-    at: int = Field(ge=0, le=HORIZON)
-    start: int = Field(ge=0, le=HORIZON)
+    at: int = Field(ge=0)
+    start: int = Field(ge=0)
     origin: Point | None = None
     leg: Literal["PICKUP", "HOSPITAL"] | None = None
 
@@ -106,7 +107,7 @@ class Incident(BaseModel):
     id: int = 0
     type: IncidentType
     occurred_at: int = 0
-    ended_at: int | None = Field(default=None, ge=0, le=HORIZON)
+    ended_at: int | None = Field(default=None, ge=0)
     duration: int | None = Field(default=None, gt=0, le=HORIZON)
     vehicle_id: str | None = None
     facility_id: str | None = None
@@ -229,6 +230,10 @@ class PlanningSnapshot:
     anchors: dict[str, Anchor]
     travel: TravelSnapshot
     blocking: tuple[Issue, ...]
+
+    @property
+    def horizon(self) -> int:
+        return max([HORIZON, *(task.planning_horizon or HORIZON for task in self.tasks.values())])
 
 
 @dataclass(frozen=True)

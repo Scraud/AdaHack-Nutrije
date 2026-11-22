@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from app.planning.contracts import (
     Assignment, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics, Point, Priority, Strategy, Task,
@@ -36,6 +36,24 @@ class CreateIncident(BaseModel):
 
 class Advance(BaseModel):
     to: int = Field(gt=0, le=HORIZON)
+
+
+class CreateScheduledTask(BaseModel):
+    scheduled_at: AwareDatetime
+    pickup: Point
+    pickup_name: str = Field(min_length=1, max_length=200)
+    facility_id: str
+    priority: Priority = "P3"
+    passenger_count: int = Field(default=1, ge=1, le=8)
+    equipment: list[Equipment] = Field(default_factory=list)
+    description: str = Field(default="", max_length=1000)
+
+
+class ScheduledTaskView(BaseModel):
+    id: str
+    scheduled_at: AwareDatetime
+    task: Task
+    description: str = ""
 
 
 class DemoClock(BaseModel):
@@ -143,6 +161,7 @@ class State(BaseModel):
     vehicles: list[VehicleView]
     facilities: list[Facility]
     tasks: list[Task]
+    scheduled_tasks: list[ScheduledTaskView] = Field(default_factory=list)
     incidents: list[Incident]
     active_plan: PlanView | None
     baseline: Baseline

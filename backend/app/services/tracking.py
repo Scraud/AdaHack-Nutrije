@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.db import Database
 from app.models import Plan, Recommendation, SnapshotRecord, VehicleRecord
 from sqlalchemy import select
-from app.planning.contracts import HORIZON, Incident, Point
+from app.planning.contracts import Incident, Point
 from app.planning.snapshot_builder import after_repositioning, routes
 from app.planning.validator import validate_plan
 from app.providers.osrm import RoadMatrix
@@ -101,7 +101,10 @@ class Tracking:
         if self.gps_key:
             raise problem(409, "GPS_ENABLED", "Spremljanje GPS je vključeno.")
         with self.lock, self.database.session() as db:
-            if playback.playing and (not active_plan(db, scenario(db)) or scenario(db).now >= HORIZON):
+            scope = scenario(db)
+            plan = active_plan(db, scope)
+            horizon = inputs(db, scope, plan, self.road_matrix, preserve_active_timing=True)[0].horizon
+            if playback.playing and (not plan or scope.now >= horizon):
                 raise problem(409, "PLAYBACK_UNAVAILABLE", "Za predvajanje ustvarite plan znotraj simuliranega dne.")
             self.playback = playback
             self.last_tick = monotonic()
@@ -118,10 +121,11 @@ class Tracking:
             self.last_tick += increment / self.playback.speed
             with self.database.session(write=True) as db:
                 scope = scenario(db)
-                until = min(HORIZON, scope.now + increment)
+                horizon = inputs(db, scope, active_plan(db, scope), self.road_matrix, preserve_active_timing=True)[0].horizon
+                until = min(horizon, scope.now + increment)
                 if scope.now < until:
                     advance(db, scope, until, self.road_matrix, record_audit=False)
-                if until >= HORIZON:
+                if until >= horizon:
                     self.playback = self.playback.model_copy(update={"playing": False})
 
     def record_gps(self, fix: GPSFix, authorization: str | None):

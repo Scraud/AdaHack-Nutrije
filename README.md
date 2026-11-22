@@ -2,7 +2,7 @@
 
 RescueFlow je interaktivna simulacija dispečiranja naročenih in medustanovnih zdravstvenih prevozov v Ljubljani. Začetni plan in predloge izračuna OR-Tools CP-SAT. Dispečer primerja posledice motnje in izrecno potrdi novo verzijo. Vse naloge, vozila in sprejemne kvote v demu so sintetični.
 
-Aktivni uporabniški vmesnik je v `frontend/`: Domov, Naloge, Vozila, Dogodki in Analiza. Prejšnji vmesnik iz `main` je ohranjen v `frontend-1/`. [Navodila novega frontenda](frontend/README.md) vključujejo opis strani, povezave z API in integracijskega preverjanja. Analiza uporablja izrecno označene vzorčne podatke za 24-urni forecast in heatmape celotne Slovenije; operativne strani uporabljajo backend.
+Aktivni uporabniški vmesnik je v `frontend/`: Domov, Naloge, Vozila, Dogodki in Analiza. [Navodila novega frontenda](frontend/README.md) vključujejo opis strani, povezave z API in integracijskega preverjanja. Analiza uporablja izrecno označene vzorčne podatke za 24-urni forecast in heatmape celotne Slovenije; operativne strani uporabljajo backend.
 
 ## Zagon z Dockerjem
 
@@ -32,7 +32,9 @@ npm.cmd start
 
 Odprite [lokalni UI](http://127.0.0.1:4200) ali [dokumentacijo API](http://127.0.0.1:8000/docs).
 
-Kliknite **Pripravi demo 11:20**, nato **Simuliraj dogodek**. Po dodajanju dogodka v stranskem panelu primerjajte razpoložljive predloge, enega pripnite in potrdite. Aktivni plan se spremeni šele ob potrditvi.
+Začetni plan se pripravi samodejno. **Regeneriraj plan** neposredno posodobi razpored obstoječih nalog. Pri nesreči ali okvari kliknite trajno rdeče opozorilo, v modalu primerjajte rešitve in izbrano potrdite. Zastoji in zapore samodejno posodobijo obvoze in prikažejo začasno obvestilo.
+
+Na strani **Naloge → Novo** shranite prevoz z datumom prevzema. Naloge v naslednjih 24 urah simulirane ure odprejo modal s predlogi; poznejše so shranjene pod **Prihodnje** in ne vplivajo na trenutni routing. Ob vstopu v 24-urno okno se samodejno ponudijo za razporejanje. Ročni **Osveži demo** odpravi tudi aktivne zastoje in zapore.
 
 ## Demo in preverjanje
 
@@ -48,7 +50,7 @@ npm.cmd test
 npm.cmd run build
 ```
 
-Integracijski preizkus novega UI uporablja pravi HTTP gateway in ločeno SQLite bazo; natančni ukazi so v [frontend/README.md](frontend/README.md#preverjanje). Prejšnji Playwright testi ostajajo skupaj s prejšnjim vmesnikom v `frontend-1/`. Če spremenite API, iz korena zaženite `.venv\Scripts\python.exe backend\export_openapi.py`, nato v `frontend` zaženite `npm.cmd run contracts`.
+Integracijski preizkus novega UI uporablja pravi HTTP gateway in ločeno SQLite bazo; natančni ukazi so v [frontend/README.md](frontend/README.md#preverjanje). Če spremenite API, iz korena zaženite `.venv\Scripts\python.exe backend\export_openapi.py`, nato v `frontend` zaženite `npm.cmd run contracts`.
 
 ## Zemljevid in sledenje
 

@@ -6,6 +6,7 @@ import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
 
 export interface DispatchGateway {
   readonly isDemo: boolean;
+  createTask?(input:import('@rescueflow/contracts').ScheduledTaskInput):Promise<DispatchState>;
   getState(): Promise<DispatchState>;
   generateInitialPlan(): Promise<DispatchState>;
   advanceTime(to: string): Promise<DispatchState>;
@@ -50,6 +51,7 @@ export class HttpDispatchGateway implements DispatchGateway {
   }
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
+  createTask(input:import('@rescueflow/contracts').ScheduledTaskInput){return this.mutate('/tasks',input);}
   restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}
   getTracking(planId?:string){return this.request<TrackingFrame>(`/tracking${planId?'?plan_id='+encodeURIComponent(planId):''}`);}
   getRoads(){return this.request<RoadMap>('/map/roads');}
@@ -116,7 +118,7 @@ export class DemoDispatchGateway implements DispatchGateway {
     if (input.incident_type !== 'NEW_TASK') throw new Error('Vzorčni scenarij podpira novo prednostno nalogo. Ostale dogodke pripravi backend.');
     if (this.state.tasks.some(t => t.id === 'N021')) return this.copy();
     this.state.tasks.push({ id:'N021', task_type:'PRIORITY_TRANSPORT', priority:'P1', status:'PENDING', origin:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, destination:{lat:46.0545,lon:14.5257,name:'UKC Ljubljana'}, passenger_count:1, required_equipment:['STRETCHER','OXYGEN'], earliest_pickup:demoTime('11:20'), preferred_arrival:demoTime('12:20'), latest_arrival:demoTime('13:15') });
-    this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana prometna nesreča na Celovški cesti z visoko prioriteto.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
+    this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana nesreča na Celovški cesti z visoko prioriteto.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
     this.state.active_plan!.unassigned_task_ids = ['N021'];
     this.state.state_revision++;
     return this.copy();

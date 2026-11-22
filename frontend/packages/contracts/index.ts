@@ -8,6 +8,7 @@ export const PRIORITY_LABELS: Record<Priority, string> = { P1: 'Visoka', P2: 'Sr
 export type SourceStatus = components['schemas']['SourceStatus'];
 export type RecommendationInsight = components['schemas']['Explanation'];
 export type BackendState = components['schemas']['State'];
+export type ScheduledTaskInput = components['schemas']['CreateScheduledTask'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
 export type VehicleStatus = 'AVAILABLE' | 'EN_ROUTE' | 'TRANSPORTING' | 'SERVICE' | 'UNAVAILABLE' | 'BROKEN';
 export interface Location { lat: number; lon: number; name: string }
@@ -25,6 +26,7 @@ export interface TransportTask {
   arrival_policy?: components['schemas']['Task']['arrival_policy'];
   latest_pickup?: string | null; actual_pickup?: string | null; actual_arrival?: string | null;
   cleaning_minutes?: number;
+  planning_status?: 'FUTURE';
 }
 export interface Assignment {
   id: string; task_id: string; vehicle_id: string; sequence_order: number;
@@ -70,6 +72,7 @@ export interface DispatchState {
   scenario_id: string; state_revision: number; simulated_time: string;
   horizon_start: string; horizon_end: string; mode: 'DEMO' | 'LIVE';
   vehicles: Vehicle[]; facilities: Facility[]; tasks: TransportTask[];
+  future_tasks?: TransportTask[];
   active_plan: DispatchPlan | null; incidents: Incident[];
   recommendations: Recommendation[]; decisions: Decision[];
   affected_task_ids?: string[]; issues?: {task_id:string;vehicle_id?:string|null;code:string;message:string}[];

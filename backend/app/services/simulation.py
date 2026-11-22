@@ -16,6 +16,8 @@ ARRIVAL_MINUTES = {"P1": (0, None), "P2": (30, 60), "P3": (90, 120)}
 
 
 def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None):
+    horizon = max([HORIZON, *(task.planning_horizon or HORIZON
+                              for task in entities(db, scope, TaskRecord, Task))])
     event = Incident(occurred_at=scope.now, **request.model_dump(
         exclude={"task"}, exclude_none=True,
     ))
@@ -29,7 +31,7 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
                 raise problem(409, "VEHICLE_ALREADY_BROKEN", "Okvara vozila je že zabeležena.")
             vehicle.broken = True
         else:
-            vehicle.unavailable.append((scope.now, min(HORIZON, scope.now + (event.duration or 1800))))
+            vehicle.unavailable.append((scope.now, min(horizon, scope.now + (event.duration or 1800))))
         record.payload = vehicle.model_dump(mode="json")
     elif event.type in ("TRAFFIC_DELAY", "ROAD_CLOSURE"):
         roads = road_network()
@@ -71,8 +73,9 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         try:
             task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id,
                         arrival_policy="ASAP" if deadline is None else "PRIORITY_WINDOW",
-                        earliest_pickup=earliest, preferred_arrival=min(HORIZON, earliest + preferred * 60),
-                        latest_arrival=HORIZON if deadline is None else min(HORIZON, earliest + deadline * 60),
+                        earliest_pickup=earliest, preferred_arrival=min(horizon, earliest + preferred * 60),
+                        latest_arrival=horizon if deadline is None else min(horizon, earliest + deadline * 60),
+                        planning_horizon=horizon if horizon > HORIZON else None,
                         **request.task.model_dump(exclude={"earliest_pickup"}))
         except ValidationError as exc:
             raise problem(400, "INVALID_TASK_TIME", exc.errors()[0]["msg"]) from exc
@@ -276,5 +279,7 @@ def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvide
             db.get(AssignmentRecord, (plan.id, row.task_id)).payload = row.model_dump(mode="json")
     scope.now = until
     scope.revision += 1
+    from app.services.scheduling import activate_due
+    activate_due(db, scope)
     if record_audit:
         audit(db, scope, "ADVANCE_TIME", simulated_time=until, blocked_tasks=sorted(blocked))

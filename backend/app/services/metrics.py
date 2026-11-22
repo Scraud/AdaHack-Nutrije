@@ -1,7 +1,7 @@
 from collections import Counter
 from statistics import median
 
-from app.planning.contracts import Assignment, Change, HORIZON, Issue, Metrics, PlanningSnapshot
+from app.planning.contracts import Assignment, Change, Issue, Metrics, PlanningSnapshot
 from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, routes, transport_distance
 
 
@@ -21,9 +21,9 @@ def explain(snapshot: PlanningSnapshot, task_id: str) -> Issue:
     elif loaded is None:
         code = "UNREACHABLE_ROUTE"
     elif max(snapshot.now, task.earliest_pickup) > min(
-        task.latest_pickup if task.latest_pickup is not None else HORIZON,
+        task.latest_pickup if task.latest_pickup is not None else snapshot.horizon,
         task.arrival_deadline - loaded - task.pickup_service,
-        HORIZON - loaded - task.pickup_service - task.dropoff_service - task.cleaning,
+        snapshot.horizon - loaded - task.pickup_service - task.dropoff_service - task.cleaning,
     ):
         code = "HARD_TIME_WINDOW"
     else:
@@ -81,8 +81,8 @@ def metrics(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> tuple[
             if row.status != "PLANNED":
                 continue
             latest = min(task.arrival_deadline - (row.planned_dropoff - row.planned_pickup),
-                         task.latest_pickup if task.latest_pickup is not None else HORIZON,
-                         HORIZON - (row.planned_end - row.planned_pickup))
+                         task.latest_pickup if task.latest_pickup is not None else snapshot.horizon,
+                         snapshot.horizon - (row.planned_end - row.planned_pickup))
             if later:
                 next_row, next_pickup = later
                 leg = snapshot.travel.seconds(delivery(task.id), pickup(next_row.task_id))
@@ -150,7 +150,7 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
                 continue
             if (
                 (task.latest_pickup is not None and take > task.latest_pickup)
-                or arrive > task.arrival_deadline or end > HORIZON
+                or arrive > task.arrival_deadline or end > snapshot.horizon
                 or (row.is_locked and (depart, take, arrive, end) !=
                     (row.planned_departure, row.planned_pickup, row.planned_dropoff, row.planned_end))
             ):

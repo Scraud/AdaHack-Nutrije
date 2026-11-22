@@ -74,6 +74,6 @@
  </div>
  @if(store.error()){<div class="panel-error"><p class="dialog-error" role="alert">{{store.error()}}</p></div>}
  @if(store.manualEditing()){
-  <div class="assistant-confirm manual-confirm"><div><button class="button secondary" (click)="store.cancelManual()" [disabled]="store.busy()">Prekliči urejanje</button><button class="button primary" (click)="store.selectManual()" [disabled]="store.busy()||!store.manualPreview()||!!store.manualProblem()">Izberi lastno rešitev</button></div></div>
+  <div class="assistant-confirm manual-confirm"><div><button class="button secondary" (click)="store.cancelManual()" [disabled]="store.busy()">Prekliči urejanje</button><button class="button primary" (click)="confirmManual.emit()" [disabled]="store.busy()||!store.manualPreview()||!!store.manualProblem()">Izberi lastno rešitev</button></div></div>
  }@else if(pinned();as rec){<div class="assistant-confirm"><span><app-icon name="pinned" [size]="15"/>Predogled — še ni potrjeno</span><div><button class="button primary" (click)="confirm.emit(rec)" [disabled]="store.busy()"><app-icon name="done" [size]="17"/>Potrdi predlog</button></div></div>}
 }

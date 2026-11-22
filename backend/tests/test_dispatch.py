@@ -450,6 +450,65 @@ def test_presentation_demo_recommends_ventilator_vehicle_then_detours(demo):
     assert after["status"] == "TO_PICKUP" and after["task_id"] == high and after["to_pickup"]
 
 
+def test_breakdown_demo_transfers_both_transports_and_recovers_equipment(demo):
+    start = post(demo, "demo/breakdown")
+    initial = start["active_plan"]
+    assert start["incidents"] == []
+    assert {vehicle["id"] for vehicle in start["vehicles"]} == {"V1", "V2", "V3"}
+    assert {row["task_id"] for row in initial["assignments"] if row["vehicle_id"] == "V1"} == {
+        "DEMO2-OXYGEN", "DEMO2-WHEELCHAIR",
+    }
+    frame = demo.get("/api/tracking").json()
+    assert len(frame["vehicles"]) == 3 and frame["playback"] == {"playing": True, "speed": 10}
+
+    interrupted = post(demo, "demo/advance-time", {"to": 600})
+    [breakdown] = interrupted["incidents"]
+    assert breakdown["type"] == "VEHICLE_BREAKDOWN" and breakdown["vehicle_id"] == "V1"
+    assert interrupted["now"] == breakdown["occurred_at"] == 150
+    assert interrupted["active_plan"]["id"] == initial["id"]
+    frame = demo.get("/api/tracking").json()
+    stopped = next(vehicle for vehicle in frame["vehicles"] if vehicle["id"] == "V1")
+    assert not frame["playback"]["playing"] and stopped["status"] == "STOPPED"
+    assert stopped["location"] == [breakdown["location"]["lat"], breakdown["location"]["lon"]]
+    cargo = next(task for task in interrupted["tasks"] if task["id"] == breakdown["task_id"])
+    assert cargo["source_incident_id"] == breakdown["id"] and cargo["pickup"] == breakdown["location"]
+    assert cargo["type"] == "EQUIPMENT_DELIVERY" and cargo["cargo_equipment"] == ["OXYGEN"]
+    assert post(demo, "demo/advance-time", {"to": 601}) == interrupted
+
+    proposal = replan(demo, interrupted)[0]
+    assert proposal["incident_ids"] == [breakdown["id"]]
+    assert not proposal["plan"]["blocking"] and not proposal["plan"]["unassigned"]
+    assignments = {row["task_id"]: row for row in proposal["plan"]["assignments"]}
+    assert assignments[cargo["id"]]["vehicle_id"] == assignments["DEMO2-OXYGEN"]["vehicle_id"] == "V2"
+    assert assignments["DEMO2-WHEELCHAIR"]["vehicle_id"] == "V3"
+    post(demo, f"recommendations/{proposal['id']}/accept")
+    completed = post(demo, "demo/advance-time", {"to": max(row["planned_end"] for row in assignments.values())})
+    assert completed["active_plan"]["id"] == proposal["plan"]["id"]
+    assert completed["incidents"][0]["status"] == "RESOLVED"
+    assert all(task["actual_pickup"] is not None and task["actual_arrival"] is not None for task in completed["tasks"])
+
+
+def test_breakdown_demo_allows_moving_the_first_stranded_transport_first(demo):
+    post(demo, "demo/breakdown")
+    state = post(demo, "demo/advance-time", {"to": 600})
+    [incident] = state["incidents"]
+    path = f"incidents/{incident['id']}"
+    draft = {"base_plan_id": state["active_plan"]["id"], "expected_state_revision": state["revision"], "moves": []}
+    changes = [(incident["task_id"], "V2"), ("DEMO2-OXYGEN", "V2"), ("DEMO2-WHEELCHAIR", "V3")]
+    for task, vehicle in changes:
+        slots = post(demo, f"{path}/manual-slots", {**draft, "task_id": task})
+        slot = next(slot for slot in slots if slot["vehicle_id"] == vehicle)
+        draft["moves"].append({"task_id": task, "vehicle_id": vehicle, "planned_pickup": slot["first_pickup"]})
+        if task == "DEMO2-OXYGEN":
+            preview = post(demo, f"{path}/manual-preview", draft)
+            assert any(issue["task_id"] == "DEMO2-WHEELCHAIR" for issue in preview["blocking"])
+            assert demo.post(f"/api/{path}/manual-solution", json=draft).status_code == 409
+    saved = post(demo, f"{path}/manual-solution", draft)
+    assert saved["active_plan"]["strategy"] == "MANUAL"
+    assert all(row["vehicle_id"] != "V1" for row in saved["active_plan"]["assignments"])
+    assert saved["incidents"][0]["status"] == "RESOLVED"
+
+
 @pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])
 def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger(demo, tmp_path, urgency):
     database = Database(tmp_path / "dispatch.sqlite")

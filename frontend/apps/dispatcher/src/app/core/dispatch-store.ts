@@ -242,11 +242,14 @@ export class DispatchStore {
     return success;
   }
   async generateInitialPlan() { return this.run(()=>this.gateway.generateInitialPlan()); }
-  async prepareOxygenDemo() {
-    const prepare = this.gateway.prepareOxygenDemo?.bind(this.gateway);
-    if (!prepare || !await this.run(prepare)) return false;
+  async preparePresentationDemo(kind: 'oxygen' | 'breakdown') {
+    const prepare = kind === 'oxygen' ? this.gateway.prepareOxygenDemo : this.gateway.prepareBreakdownDemo;
+    if (!prepare || !await this.run(() => prepare.call(this.gateway))) return false;
     this.closeIncident();
-    this.selectedVehicleId.set(this.state()?.vehicles.find(vehicle => vehicle.equipment.includes('VENTILATOR'))?.id ?? null);
+    const vehicles = this.state()?.vehicles;
+    this.selectedVehicleId.set((kind === 'oxygen'
+      ? vehicles?.find(vehicle => vehicle.equipment.includes('VENTILATOR'))?.id
+      : vehicles?.find(vehicle => vehicle.id === 'V1')?.id) ?? null);
     this.selectedTaskId.set(null);
     this.lastCreatedIncidentId.set(null);
     this.alertsOverride.set(null);
@@ -335,11 +338,13 @@ export class DispatchStore {
   }
   async selectManual() {
     const incident = this.selectedIncidentId(), draft = this.manualDraft;
-    if (!incident || !draft || !this.manualPreview() || this.manualProblem() || !this.gateway.selectManual) return;
-    if (await this.run(() => this.gateway.selectManual!(incident, draft))) {
+    if (!incident || !draft || !this.manualPreview() || this.manualProblem() || !this.gateway.selectManual) return false;
+    const saved = await this.run(() => this.gateway.selectManual!(incident, draft));
+    if (saved) {
       this.clearPreview();
       this.toast('Lastna rešitev je potrjena. Aktivni plan je posodobljen.');
     }
+    return saved;
   }
   clearPreview() { this.cancelManual(); this.selectedRecommendationId.set(null); this.hoveredRecommendationId.set(null); }
   selectVehicle(id: string) { this.selectedVehicleId.update(old=>old===id ? null : id); }

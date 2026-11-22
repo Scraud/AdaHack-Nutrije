@@ -53,7 +53,7 @@ export class AppComponent implements OnInit,OnDestroy {
  ngOnDestroy(){window.removeEventListener('hashchange',this.hashChange);this.store.dispose();}
  private readHash(){const hash=window.location.hash.slice(1),value=hash==='overview'?'home':hash==='fleet'?'vehicles':hash;this.page.set(this.pages.some(p=>p.id===value)?value as Page:'home');}
  navigate(page:Page){this.page.set(page);window.location.hash=page;}
- inspectIncident(id:string){const incident=this.store.state()?.incidents.find(i=>i.id===id);if(incident&&this.store.isRoadIncident(incident)){this.store.showRoadNotice(incident);return;}this.store.inspectIncident(id);if(this.presentationEmergencyId()===id)void this.store.generate(id);afterNextRender(()=>{const dialog=this.incidentDialog?.nativeElement;if(dialog&&!dialog.open)dialog.showModal();},{injector:this.injector});}
+ inspectIncident(id:string){const incident=this.store.state()?.incidents.find(i=>i.id===id);if(incident&&this.store.isRoadIncident(incident)){this.store.showRoadNotice(incident);return;}this.store.inspectIncident(id);if(this.presentationDecisionId()===id)void this.store.generate(id);afterNextRender(()=>{const dialog=this.incidentDialog?.nativeElement;if(dialog&&!dialog.open)dialog.showModal();},{injector:this.injector});}
  async regeneratePlan(){
    await this.store.regeneratePlan();
  }
@@ -69,7 +69,21 @@ export class AppComponent implements OnInit,OnDestroy {
  }
  showConfirmation(rec:Recommendation){this.store.pin(rec.id);this.confirmation.set(rec);this.dialog?.nativeElement.showModal();}
  closeConfirmation(){this.dialog?.nativeElement.close();this.confirmation.set(null);}
- async accept(){const rec=this.confirmation();if(!rec)return;const emergencyId=this.presentationEmergencyId();const resumeDemo=emergencyId!=null&&rec.incident_ids?.includes(emergencyId);if(await this.store.accept(rec)){this.closeConfirmation();this.closeIncidentReview();if(resumeDemo)await this.store.setPlayback(true,10);}}
+ async accept(){
+   const rec=this.confirmation(), eventId=this.presentationDecisionId();
+   if(!rec||!await this.store.accept(rec))return;
+   this.closeConfirmation();
+   this.closeIncidentReview();
+   if(eventId&&rec.incident_ids?.includes(eventId))await this.store.setPlayback(true,10);
+ }
+ async confirmManualSolution(){
+   const eventId=this.presentationDecisionId();
+   const resumeDemo=eventId!==null&&eventId===this.store.selectedIncidentId();
+   if(await this.store.selectManual()&&resumeDemo){
+     this.closeIncidentReview();
+     await this.store.setPlayback(true,10);
+   }
+ }
  canRecoverEquipment(id:string){const vehicle=this.store.state()?.vehicles.find(v=>v.id===id);return !!this.store.gateway.recoverEquipment&&vehicle?.status==='BROKEN'&&!!vehicle.equipment.length;}
  openEquipmentRecovery(id:string){this.closeIncidentReview();this.eventForm?.openEquipment(id);}
  openSimulation(){this.simulation?.nativeElement.showModal();}
@@ -79,15 +93,37 @@ export class AppComponent implements OnInit,OnDestroy {
      && !state.backend?.incidents.some(event => event.source === 'PRESENTATION_EMERGENCY');
  });
  readonly oxygenDemoVehicle = computed(() => this.store.state()?.vehicles.find(vehicle => vehicle.equipment.includes('VENTILATOR'))?.code);
- private readonly presentationEmergencyId = computed(() => {
+ private readonly presentationDecisionId = computed(() => {
    const incident = this.store.state()?.backend?.incidents.find(
-     event => event.source === 'PRESENTATION_EMERGENCY' && event.status === 'OPEN');
+     event => (event.source === 'PRESENTATION_EMERGENCY' || event.source === 'PRESENTATION_BREAKDOWN')
+       && event.status === 'OPEN');
    return incident ? String(incident.id) : null;
  });
- readonly oxygenDemoAwaitingDecision = computed(() => this.presentationEmergencyId() !== null);
- async startOxygenDemo(){
-   if (!window.confirm('Zaženem predstavitveni demo? Zamenjal bo trenutno simulacijo.')) return;
-   if (await this.store.prepareOxygenDemo()) this.navigate('home');
+ readonly presentationAwaitingDecision = computed(() => this.presentationDecisionId() !== null);
+ readonly breakdownDemoSummary = computed(() => {
+   const state = this.store.state();
+   if (!state?.tasks.some(task => task.id === 'DEMO2-OXYGEN')) return null;
+   const incident = state.backend?.incidents.find(event => event.source === 'PRESENTATION_BREAKDOWN');
+   if (!incident) return {title: 'Demo 2 · tri vozila na zemljevidu',
+     detail: 'V1 ima načrtovana dva prevoza. V2 in V3 opravljata svoje naloge.'};
+   const recovery = state.tasks.find(task => task.id === incident.task_id);
+   const assignments = state.active_plan?.assignments ?? [];
+   const collector = assignments.find(row => row.task_id === recovery?.id)?.vehicle_id;
+   if (!collector) return {title: 'V1 se je pokvaril',
+     detail: 'Odprite opozorilo in razporedite oba prevoza ter prevzem kisikove opreme.'};
+   const reassignments = assignments.filter(row => ['DEMO2-OXYGEN', 'DEMO2-WHEELCHAIR'].includes(row.task_id)
+     && row.vehicle_id !== String(incident.vehicle_id));
+   const drivers = [...new Set(reassignments.map(row => row.vehicle_id))].sort();
+   const title = recovery?.actual_arrival ? `${collector} je dostavil kisikovo opremo`
+     : recovery?.actual_pickup ? `${collector} prevaža kisikovo opremo` : `${collector} prevzema kisikovo opremo`;
+   const detail = reassignments.length === 2 ? `Prevoza vozila V1 sta prevzela ${drivers.join(' in ')}.`
+     : `Prerazporejenih prevozov vozila V1: ${reassignments.length} od 2.`;
+   return {title, detail};
+ });
+ async startPresentationDemo(kind: 'oxygen' | 'breakdown'){
+   const title = kind === 'oxygen' ? 'Demo 1' : 'Demo 2';
+   if (!window.confirm(`Zaženem ${title}? Zamenjal bo trenutno simulacijo.`)) return;
+   if (await this.store.preparePresentationDemo(kind)) this.navigate('home');
  }
  openEvent(type:IncidentType='NEW_TASK',vehicle?:string){this.simulation?.nativeElement.close();this.eventForm?.open(type,vehicle);}
  async taskCreated(result:{taskId:string;incidentId:string|null}){

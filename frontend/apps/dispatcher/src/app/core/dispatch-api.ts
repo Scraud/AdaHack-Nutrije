@@ -15,6 +15,7 @@ export interface DispatchGateway {
   getState(): Promise<DispatchState>;
   generateInitialPlan(): Promise<DispatchState>;
   prepareOxygenDemo?(): Promise<DispatchState>;
+  prepareBreakdownDemo?(): Promise<DispatchState>;
   advanceTime(to: string): Promise<DispatchState>;
   createIncident(input: IncidentInput): Promise<DispatchState>;
   restoreVehicle(id:string): Promise<DispatchState>;
@@ -79,6 +80,7 @@ export class HttpDispatchGateway implements DispatchGateway {
   }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
   prepareOxygenDemo() { return this.mutate('/demo/oxygen', {}); }
+  prepareBreakdownDemo() { return this.mutate('/demo/breakdown', {}); }
   createTask(input:import('@rescueflow/contracts').ScheduledTaskInput){return this.mutate('/tasks',input);}
   recoverEquipment(vehicleId:string,input:import('@rescueflow/contracts').EquipmentRecoveryInput){return this.mutate(`/vehicles/${encodeURIComponent(vehicleId)}/equipment-recovery`,input);}
   restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}

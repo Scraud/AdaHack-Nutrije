@@ -94,7 +94,13 @@ def checked_move(snapshot, rows, move, earliest, prior_issues):
     if moved.planned_departure < earliest:
         return rows, Issue(code="BEFORE_EVENT", task_id=move.task_id)
     for issue in validate_plan(snapshot, updated):
-        if issue.task_id == move.task_id or (issue.code, issue.task_id, issue.vehicle_id) not in prior_issues:
+        # Removing a predecessor can change the route of a task that still needs a working vehicle.
+        pending_transfer = (
+            ("VEHICLE_UNAVAILABLE", issue.task_id, issue.vehicle_id) in prior_issues
+            and issue.code in ("INVALID_TRAVEL_TIME", "HARD_TIME_WINDOW", "UNREACHABLE_ROUTE")
+        )
+        if issue.task_id == move.task_id or (
+                (issue.code, issue.task_id, issue.vehicle_id) not in prior_issues and not pending_transfer):
             return rows, issue
     return updated, None
 

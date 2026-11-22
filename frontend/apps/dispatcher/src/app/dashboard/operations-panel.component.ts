@@ -10,6 +10,7 @@ export class OperationsPanelComponent {
   readonly priorityLabels = PRIORITY_LABELS;
  @Input()mode:'alerts'|'solutions'='alerts';@Output()inspect=new EventEmitter<string>();
  @Output()editManual=new EventEmitter<void>();
+ @Output()confirmManual=new EventEmitter<void>();
  readonly store=inject(DispatchStore);@Output()confirm=new EventEmitter<Recommendation>();@Output()simulate=new EventEmitter<void>();time=formatTime;status=incidentStatus;readonly sort=signal('priority');readonly showResolved=signal(false);
  readonly alerts=computed(()=>[...new Map((this.store.state()?.incidents??[]).map(i=>[i.id,i])).values()].filter(i=>!this.store.isRoadIncident(i)).filter(i=>this.showResolved()||i.status!=='RESOLVED'||i.id===this.store.selectedIncidentId()).sort((a,b)=>this.sort()==='priority'?a.priority.localeCompare(b.priority)||Date.parse(b.occurred_at)-Date.parse(a.occurred_at):this.sort()==='oldest'?Date.parse(a.occurred_at)-Date.parse(b.occurred_at):Date.parse(b.occurred_at)-Date.parse(a.occurred_at)));
  matches(rec:Recommendation){const id=this.store.selectedIncidentId();return !id||rec.incident_id===id||!!rec.incident_ids?.includes(id);}

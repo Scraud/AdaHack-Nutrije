@@ -32,7 +32,7 @@ Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1
 - **Dogodki:** seznam, filtri in dodajanje; podrobnosti odprejo stranski pregled na domači strani, skupaj z zgodovino odločitev.
 - **Analiza:** jasno označeni **vzorčni podatki** za teden/mesec/leto, 24-urna napoved povpraševanja, časovna heatmapa 00–23 in zemljevid obremenitve celotne Slovenije ter primerjava vozil. Ti podatki ne vplivajo na planer in niso zgodovina baze.
 
-Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid ohranja približne, jasno označene povezave med dodelitvami; GPS predvajanje starega vmesnika ni del novega UI.
+Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid uporablja cestno geometrijo, sledenje in gladko premikanje iz `main`, ob tem pa ohranja prilagojeni videz, barve vozil in upravljalne gumbe. Predvajanje podpira hitrosti 30×, 60× in 300× ter premor. GPS način uporablja iste backend endpointe.
 
 Časovnica uporablja polno barvo vozila za aktivne prevoze, prosojno za prihodnje, sivo za opravljene in rdečo za neuspešne oziroma blokirane. Pokvarjeno vozilo ostane v vrstici z oznako časa okvare. Spremembe med predogledom imajo zelen/oranžen obris, prejšnje dodelitve pa črtkan obris. Hover ne pošilja HTTP zahtev in ne spremeni plana v bazi. Gumb v podrobnostih naloge zapre dialog, odpre stran nalog in se pomakne do označene časovnice.
 
@@ -44,7 +44,7 @@ Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jez
 { "dataSource": "api", "apiBaseUrl": "/api" }
 ```
 
-Razvojni proxy preusmeri `/api` na `127.0.0.1:8000`; nginx v Dockerju na storitev backend. Ob napaki povezave aplikacija pokaže napako. Podatke prebere ob zagonu, ročni osvežitvi in po spremembah. Ločeni `dataSource: "demo"` je namenjen starim UI fixtures in testom, ne celotnemu integriranemu demu.
+Razvojni proxy preusmeri `/api` na `127.0.0.1:8000`; nginx v Dockerju na storitev backend. Ob napaki povezave aplikacija pokaže napako. Sledenje osvežuje vsako sekundo; sprememba revizije osveži tudi stanje in razveljavi stare predoglede. Ločeni `dataSource: "demo"` je namenjen starim UI fixtures in testom, ne celotnemu integriranemu demu.
 
 Backend vrne do tri različne kandidate. UI pokaže samo aktualne potrdivne možnosti, blokade pa posebej. Ne ustvarja nadomestnih predlogov. Revizije, izvedljivost in atomaren sprejem preveri backend.
 
@@ -82,4 +82,8 @@ Za ločen razvojni predogled tega testnega backenda lahko uporabite `npm.cmd sta
 
 ## Zemljevid
 
-Podlaga uporablja OpenStreetMap ploščice; umirjen videz je CSS filter. Povezave na zemljevidu so približne, ne cestno usmerjanje. Ob nedosegljivih ploščicah je na voljo lokalna shema. Položaji prihajajo iz stanja simulacije. Dejanski cestni planer in dodatni tracking endpointi backenda ostajajo na voljo, vendar nova različica UI ne predstavlja približnih povezav kot njihovih geometrij.
+Podlaga uporablja OpenStreetMap ploščice; umirjen videz je CSS filter. Lokalno cestno omrežje iz backenda ostane na voljo tudi brez ploščic. Polna pot vodi do pacienta, pikčasta do ustanove; položaji in ETA prihajajo iz `/api/tracking`. Že prevoženi del poti se sproti umika.
+
+V meniju **Simuliraj dogodek** izberite **Prometni zastoj** ali **Zapora ceste**. Ulico poiščite po imenu ali vključite **Izberi na zemljevidu** in kliknite cestni odsek. Izbor je označen oranžno; aktivne motnje se prikažejo rdeče. Backend iz `main` izračuna obvoz in posodobi čase ob ohranjeni dodelitvi vozila. V pregledu dogodka gumb **Odstrani zastoj/zaporo** ponovno sprosti odsek. Obravnavana odločitev in fizično odstranjena motnja sta ločeni stanji.
+
+Cestni predogledi največ treh rešitev se vnaprej preberejo prek `/api/tracking?plan_id=...`; uporabljajo iste cestne funkcije iz `main` in ne spreminjajo baze ali aktivnega plana. Prehod s kazalcem nato samo izbere že naloženo geometrijo in pripadajočo časovnico. Plan aktivira šele izrecna potrditev.

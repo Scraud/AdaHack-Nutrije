@@ -10,6 +10,10 @@ export class OperationsPanelComponent {
  readonly store=inject(DispatchStore);@Output()confirm=new EventEmitter<Recommendation>();@Output()simulate=new EventEmitter<void>();time=formatTime;status=incidentStatus;readonly sort=signal('priority');readonly showResolved=signal(false);
  readonly alerts=computed(()=>[...new Map((this.store.state()?.incidents??[]).map(i=>[i.id,i])).values()].filter(i=>this.showResolved()||i.status!=='RESOLVED'||i.id===this.store.selectedIncidentId()).sort((a,b)=>this.sort()==='priority'?a.priority.localeCompare(b.priority)||Date.parse(b.occurred_at)-Date.parse(a.occurred_at):this.sort()==='oldest'?Date.parse(a.occurred_at)-Date.parse(b.occurred_at):Date.parse(b.occurred_at)-Date.parse(a.occurred_at)));
  matches(rec:Recommendation){const id=this.store.selectedIncidentId();return rec.incident_id===id||!!id&&!!rec.incident_ids?.includes(id);}
+ readonly activeRoadIncident=computed(()=>{
+   const state=this.store.state()?.backend,id=this.store.selectedIncidentId();
+   return state?.incidents.find(i=>String(i.id)===id&&(i.type==='TRAFFIC_DELAY'||i.type==='ROAD_CLOSURE')&&i.ended_at==null&&(i.duration==null||state.now<i.occurred_at+i.duration));
+ });
  readonly available=computed(()=>this.store.recommendations().filter(r=>this.matches(r)));
  readonly pinned=computed(()=>this.available().find(r=>r.id===this.store.selectedRecommendationId())??null);
  readonly blocked=computed(()=>this.store.state()?.recommendations.filter(r=>this.matches(r)&&r.status==='PROPOSED'&&r.base_state_revision===this.store.state()?.state_revision&&!!this.problem(r))??[]);

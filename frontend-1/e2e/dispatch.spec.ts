@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { State } from '../packages/contracts';
 
 test('offline road map, live positions, restrictions, and the dispatcher approval flow', async ({ page, request }) => {
   await page.route('https://**/*', route => route.abort());
@@ -13,6 +14,25 @@ test('offline road map, live positions, restrictions, and the dispatcher approva
   await page.getByRole('button', { name: 'Generiraj začetni plan' }).click();
   await expect(page.getByText('Aktivni plan v1')).toBeVisible();
   await expect(page.locator('.route-to-pickup').first()).toBeVisible();
+  await expect(page.locator('.pickup-pin').first()).toHaveCSS('width', '32px');
+  await expect(page.locator('.facility-pin').first()).toHaveCSS('width', '48px');
+  await expect(page.locator('.map-eta').filter({ hasText: /Do pacienta · \d+ min/ }).first()).toBeVisible();
+
+  const planned: State = await (await request.get('/api/state')).json();
+  const assignment = planned.active_plan!.assignments[0];
+  const task = planned.tasks.find(item => item.id === assignment.task_id)!;
+  const bar = page.locator(`[data-task-id="${assignment.task_id}"]`);
+  const lengths = await bar.evaluate(element => {
+    const width = element.getBoundingClientRect().width;
+    const laneWidth = element.parentElement!.getBoundingClientRect().width;
+    const driving = Array.from(element.querySelectorAll('.driving'), phase => phase.getBoundingClientRect().width)
+      .reduce((sum, value) => sum + value, 0);
+    return { width, laneWidth, driving };
+  });
+  const pixelsPerSecond = lengths.laneWidth / planned.horizon;
+  expect(lengths.width).toBeCloseTo((assignment.planned_end - assignment.planned_departure) * pixelsPerSecond, 1);
+  expect(lengths.driving).toBeCloseTo((assignment.deadhead + assignment.planned_dropoff
+    - assignment.planned_pickup - task.pickup_service) * pixelsPerSecond, 1);
   const toHospital = page.locator('.route-to-hospital').first();
   await expect(toHospital).toHaveAttribute('stroke-dasharray', '2 8');
   await page.getByRole('button', { name: 'Predvajaj 300-krat hitreje' }).click();
@@ -24,6 +44,7 @@ test('offline road map, live positions, restrictions, and the dispatcher approva
   await expect(page.getByLabel('Simulirani čas 11:20')).toBeVisible();
   await page.getByRole('button', { name: /Simuliraj okvaro V3/ }).click();
   await expect(page.getByText('Vpliv na aktivni plan')).toBeVisible();
+  await expect(page.locator('.ambulance-pin[title="Reševalno vozilo V3"] .map-eta')).toBeHidden();
   await page.getByRole('button', { name: 'Generiraj predloge' }).click();
   const recommendations = page.locator('.recommendation');
   await expect(recommendations.nth(1)).toBeVisible();
@@ -35,11 +56,44 @@ test('offline road map, live positions, restrictions, and the dispatcher approva
   await expect(page.getByText('Aktivni plan v2')).toBeVisible();
   await page.getByRole('button', { name: /Verzija 1/ }).click();
   await expect(page.getByText('Pregled verzije 1')).toBeVisible();
-  await page.getByLabel('Odsek ceste').selectOption('dunajska');
+  await page.getByLabel('Ulica ali cesta').fill('Dunajska cesta');
+  await page.getByRole('button', { name: 'Poišči ulico' }).click();
+  await expect(page.getByText('Izbrano:')).toContainText('Dunajska cesta');
   await page.getByRole('button', { name: /Simuliraj zastoj/ }).click();
-  await expect(page.locator('.road-traffic')).toHaveAttribute('stroke', '#eb2432');
-  await page.getByLabel('Odsek ceste').selectOption('smartinska');
+  await expect(page.locator('.road-traffic').first()).toHaveAttribute('stroke', '#eb2432');
+  await expect(page.locator('.active-road-events')).toContainText('Dunajska cesta');
+  await page.locator('.active-road-events').getByRole('button', { name: 'Odstrani' }).click();
+  await expect(page.locator('.road-traffic')).toHaveCount(0);
+});
+
+test('pickup location disappears from the map after pickup', async ({ page, request }) => {
+  await page.route('https://**/*', route => route.abort());
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ponastavi demo' }).click();
+  await page.getByRole('button', { name: 'Potrdi ponastavitev' }).click();
+  await page.getByRole('button', { name: 'Generiraj začetni plan' }).click();
+  await expect(page.getByText('Aktivni plan v1')).toBeVisible();
+  const state: State = await (await request.get('/api/state')).json();
+  const assignment = state.active_plan!.assignments.reduce((earliest, row) =>
+    row.planned_pickup < earliest.planned_pickup ? row : earliest);
+  const task = state.tasks.find(item => item.id === assignment.task_id)!;
+  await expect(page.locator(`.pickup-pin[title="Prevzem ${task.id}"]`)).toBeVisible();
+  await request.post('/api/demo/advance-time', { data: { to: assignment.planned_pickup + task.pickup_service } });
+  await expect(page.locator(`.pickup-pin[title="Prevzem ${task.id}"]`)).toHaveCount(0, { timeout: 8_000 });
+});
+
+test('road closure can be selected on the map and removed manually', async ({ page }) => {
+  await page.route('https://**/*', route => route.abort());
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ponastavi demo' }).click();
+  await page.getByRole('button', { name: 'Potrdi ponastavitev' }).click();
+  await page.getByRole('button', { name: 'Izberi cesto na zemljevidu' }).click();
+  await page.locator('.dispatch-map').click({ position: { x: 350, y: 180 } });
+  await expect(page.getByText('Izbrano:')).toContainText(/.+/);
   await page.getByRole('button', { name: /Simuliraj zaporo/ }).click();
   await expect(page.locator('.closure-pin')).toBeVisible();
-  await expect(page.locator('.road-closure')).toHaveCount(1);
+  await expect(page.locator('.road-closure').first()).toBeVisible();
+  await page.locator('.active-road-events').getByRole('button', { name: 'Odstrani' }).click();
+  await expect(page.locator('.closure-pin')).toHaveCount(0);
+  await expect(page.locator('.road-closure')).toHaveCount(0);
 });

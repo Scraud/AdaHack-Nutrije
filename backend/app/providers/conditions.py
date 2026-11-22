@@ -70,7 +70,7 @@ class Conditions:
             if stamp > now + timedelta(minutes=5):
                 raise ValueError("Source timestamp is ahead of local time")
             return SourceStatus(id=key, name=name, status="LIVE", observed_at=stamp, message=message)
-        except (httpx.HTTPError, ValueError, ParseError, OverflowError):
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError, ParseError, OverflowError):
             if previous.observed_at:
                 return previous.model_copy(update={"status": "STALE",
                                                    "message": "Osvežitev ni uspela. " + previous.message.removeprefix("Osvežitev ni uspela. ")})
@@ -91,4 +91,4 @@ class Conditions:
         snapshot = road_snapshot(client, self.osrm_url, nodes)
         if snapshot.seconds("a", "b") is None:
             raise ValueError("Configured OSRM does not cover Ljubljana")
-        return now, "Preverjena testna relacija v Ljubljani · zunaj demo scenarija."
+        return now, "Preverjena cestna matrika v Ljubljani. OSRM je nastavljen za izračun po cestah."

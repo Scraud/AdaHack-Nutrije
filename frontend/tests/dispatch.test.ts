@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DemoDispatchGateway } from '../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../apps/dispatcher/src/app/core/dispatch-store';
+import type { TrackingFrame } from '../packages/contracts';
 import { calculatePlanMetrics, candidateProblem, comparePlans, passengerOnBoard, timelineStatus, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
 
 async function scenario() {
@@ -16,6 +17,24 @@ test('initial UI fixture has five vehicles, twenty tasks and four facilities',as
   const state=await new DemoDispatchGateway().getState();
   assert.equal(state.vehicles.length,5);assert.equal(state.tasks.length,20);assert.equal(state.facilities.length,4);
   assert.equal(calculatePlanMetrics(state.active_plan,state.tasks,state.simulated_time).unassigned,0);
+});
+
+test('a delayed tracking response cannot overwrite state after a mutation',async()=>{
+  const gateway=new DemoDispatchGateway();
+  const initial=await gateway.getState();
+  const frame:TrackingFrame={scenario_id:initial.scenario_id,revision:initial.state_revision,now:0,mode:'DEMO',playback:{playing:false,speed:60},incidents:[],vehicles:[{id:'V1',location:[46.07,14.51],status:'WAITING',to_pickup:[],to_hospital:[]}]};
+  let release!:(frame:TrackingFrame)=>void;
+  let pending:Promise<TrackingFrame>|null=null;
+  const connected=Object.assign(gateway,{getTracking:async()=>pending??frame});
+  const store=new DispatchStore();await store.init(connected);
+  pending=new Promise(resolve=>{release=resolve;});
+  const oldPoll=store.refreshTracking();
+  await store.reset();
+  release({...frame,vehicles:[{...frame.vehicles[0],location:[47,15]}]});
+  await oldPoll;
+  assert.notEqual(store.state()!.vehicles.find(v=>v.id==='V1')!.current_lat,47);
+  assert.notEqual(store.tracking()!.vehicles[0].location[0],47);
+  store.dispose();
 });
 test('previewing multiple cards updates the displayed plan without modifying the active plan',async()=>{
   const {gateway,store}=await scenario();

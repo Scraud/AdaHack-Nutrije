@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import L from 'leaflet';
 import type { DispatchViewProps } from './types';
 import { colorFor, formatTime, statusLabel } from '../../contracts/plan-utils';
+import { RoadTrackingLayer } from './RoadTrackingLayer';
 
 type MapStyle = 'calm' | 'streets';
 type MapIconName = 'plus' | 'minus' | 'locate' | 'layers' | 'expand' | 'close' | 'pin' | 'clock' | 'eye';
@@ -25,6 +26,9 @@ const unavailable = (status: string) => status==='BROKEN' || status==='UNAVAILAB
 function vehiclePoints(props: DispatchViewProps, vehicleId: string): L.LatLngTuple[] {
   const vehicle=props.state.vehicles.find(v=>v.id===vehicleId);
   if(!vehicle) return [];
+  const tracked=props.tracking?.vehicles.find(v=>v.id===vehicleId);
+  if(tracked)return [tracked.location,...(tracked.to_pickup??[]),...(tracked.to_hospital??[])];
+  if(props.state.backend)return [[vehicle.current_lat,vehicle.current_lon]];
   const route=props.plan?.routes?.find(r=>r.vehicle_id===vehicleId);
   if(route && route.coordinates.length>1) return [[vehicle.current_lat,vehicle.current_lon],...route.coordinates.map(([lon,lat]):L.LatLngTuple=>[lat,lon])];
   const points:L.LatLngTuple[]=[[vehicle.current_lat,vehicle.current_lon]];
@@ -50,23 +54,24 @@ export function DispatchMap(props: DispatchViewProps) {
   const [layersOpen,setLayersOpen]=useState(false);
   const [fullScreen,setFullScreen]=useState(false);
   const selectedVehicle=props.state.vehicles.find(v=>v.id===props.selectedVehicleId);
+  const nativeMap=!!props.state.backend;
   const isRoadRoute=(vehicleId:string)=>props.plan?.routes?.some(r=>r.vehicle_id===vehicleId && r.source==='OSRM' && r.coordinates.length>1) ?? false;
-  const hasRoadRoutes=props.state.vehicles.some(v=>isRoadRoute(v.id));
-  const hasApproximateRoutes=props.state.vehicles.some(v=>vehiclePoints(props,v.id).length>1 && !isRoadRoute(v.id));
+  const hasRoadRoutes=nativeMap?!!props.tracking?.vehicles.some(v=>(v.to_pickup?.length??0)>1||(v.to_hospital?.length??0)>1):props.state.vehicles.some(v=>isRoadRoute(v.id));
+  const hasApproximateRoutes=!nativeMap&&props.state.vehicles.some(v=>vehiclePoints(props,v.id).length>1 && !isRoadRoute(v.id));
   const animate=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   useEffect(()=>{
     if(!container.current) return;
     const instance=L.map(container.current,{zoomControl:false,scrollWheelZoom:false,attributionControl:true,zoomSnap:0.5,zoomDelta:0.5}).fitBounds(initialBounds,{padding:[45,45]});
     map.current=instance;
-    const fallback=L.imageOverlay('/map-fallback.svg',[[46.018,14.445],[46.105,14.59]],{interactive:false,opacity:0}).addTo(instance);
+    const fallback=nativeMap?null:L.imageOverlay('/map-fallback.svg',[[46.018,14.445],[46.105,14.59]],{interactive:false,opacity:0}).addTo(instance);
     for(const [name,zIndex] of [['dispatchRoutes',410],['dispatchFacilities',430],['dispatchVehicles',450],['dispatchIncidents',470]] as const) instance.createPane(name).style.zIndex=String(zIndex);
     const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>'});
     let loadedTiles=0,failedTiles=0;
     tiles.on('loading',()=>{loadedTiles=0;failedTiles=0;});
-    tiles.on('tileload',()=>{loadedTiles++;fallback.setOpacity(0);setTileState('ready');});
+    tiles.on('tileload',()=>{loadedTiles++;fallback?.setOpacity(0);setTileState('ready');});
     tiles.on('tileerror',()=>{failedTiles++;});
-    tiles.on('load',()=>{if(failedTiles && !loadedTiles){fallback.setOpacity(1);setTileState('offline');}});
+    tiles.on('load',()=>{if(failedTiles && !loadedTiles){fallback?.setOpacity(1);setTileState('offline');}});
     tiles.addTo(instance);
     features.current=L.layerGroup().addTo(instance);
     const observer=new ResizeObserver(()=>instance.invalidateSize());observer.observe(container.current);
@@ -79,7 +84,7 @@ export function DispatchMap(props: DispatchViewProps) {
     group.clearLayers();
     const {state,plan,selectedVehicleId,diff}=props;
     const orderedVehicles=[...state.vehicles].sort((a,b)=>Number(a.id===selectedVehicleId)-Number(b.id===selectedVehicleId));
-    if(showRoutes) for(const vehicle of orderedVehicles) {
+    if(showRoutes&&!nativeMap) for(const vehicle of orderedVehicles) {
       const suppliedRoute=plan?.routes?.find(r=>r.vehicle_id===vehicle.id);
       const hasGeometry=!!suppliedRoute && suppliedRoute.coordinates.length>1;
       const coords:L.LatLngTuple[]=hasGeometry ? suppliedRoute.coordinates.map(([lon,lat])=>[lat,lon]) : vehiclePoints(props,vehicle.id);
@@ -100,7 +105,7 @@ export function DispatchMap(props: DispatchViewProps) {
       L.marker([facility.lat,facility.lon],{pane:'dispatchFacilities',icon:L.divIcon({className:'rf-facility-marker',html:`<span class="rf-facility-symbol">+</span><span class="rf-facility-name">${escapeHtml(facility.short_name)}</span>`,iconSize:[28,28],iconAnchor:[14,14]}),title:facility.name})
         .addTo(group).bindTooltip(escapeHtml(facility.name),{className:'rf-map-tooltip',direction:'top',offset:[0,-15]});
     }
-    for(const vehicle of orderedVehicles) {
+    if(!nativeMap)for(const vehicle of orderedVehicles) {
       const selected=selectedVehicleId===vehicle.id;
       const status=unavailable(vehicle.status)?'unavailable':vehicle.status==='AVAILABLE'?'available':'moving';
       const marker=L.marker([vehicle.current_lat,vehicle.current_lon],{
@@ -146,6 +151,9 @@ export function DispatchMap(props: DispatchViewProps) {
 
   return <div className={`rescueflow-map rf-map-${mapStyle} ${fullScreen?'rf-map-expanded':''}`}>
     <div ref={container} className="rf-map-canvas" aria-label="Zemljevid vozil in ustanov v Ljubljani"/>
+    {mapReady&&map.current&&props.state.backend&&<RoadTrackingLayer leaf={map.current} state={props.state.backend} roads={props.roads??null} frame={props.tracking??null} onSelect={props.onSelectTask} onVehicle={props.onSelectVehicle} pickingRoad={!!props.pickingRoad} roadPreview={props.roadPreview??null} onPick={props.onPickRoad??(()=>undefined)} showRoutes={showRoutes} showFacilities={showFacilities} selectedVehicleId={props.selectedVehicleId}/>}
+    {props.pickingRoad&&<div className="rf-road-pick-note" role="status">Kliknite cesto za izbiro odseka.</div>}
+    {nativeMap&&props.isPreview&&!props.tracking&&<span className="rf-map-preview-loading" role="status">Cestni predogled še ni na voljo. Po potrebi ponovno izračunajte predloge.</span>}
     <div className="rf-map-topbar"><div className="rf-map-location"><span className="rf-location-icon"><MapIcon name="pin"/></span><div><b>Ljubljana</b><span>{props.state.vehicles.length} vozil na zemljevidu</span></div></div>{props.isPreview&&<span className="rf-map-preview"><MapIcon name="eye"/>Predogled</span>}</div>
     <div className="rf-map-controls" role="group" aria-label="Upravljanje zemljevida">
       <button type="button" aria-label="Povečaj zemljevid" title="Povečaj" onClick={()=>map.current?.zoomIn()}><MapIcon name="plus"/></button><button type="button" aria-label="Pomanjšaj zemljevid" title="Pomanjšaj" onClick={()=>map.current?.zoomOut()}><MapIcon name="minus"/></button><span/><button type="button" aria-label="Prikaži vso floto" title="Prikaži vso floto" onClick={fitFleet}><MapIcon name="locate"/></button>
@@ -160,7 +168,7 @@ export function DispatchMap(props: DispatchViewProps) {
       <div className="rf-map-style-picker" role="group" aria-label="Barvni slog podlage"><button type="button" aria-pressed={mapStyle==='calm'} className={mapStyle==='calm'?'is-active':''} onClick={()=>setMapStyle('calm')}><span className="rf-style-swatch calm"/>Umirjen</button><button type="button" aria-pressed={mapStyle==='streets'} className={mapStyle==='streets'?'is-active':''} onClick={()=>setMapStyle('streets')}><span className="rf-style-swatch streets"/>Ulični</button></div>
       <label><input type="checkbox" checked={showFacilities} onChange={e=>setShowFacilities(e.target.checked)}/>Zdravstvene ustanove</label><label><input type="checkbox" checked={showRoutes} onChange={e=>setShowRoutes(e.target.checked)}/>Poti vozil</label>
     </div>}
-    <div className="rf-map-legend"><div className="rf-legend-vehicles" aria-label="Izbor vozila na zemljevidu">{props.state.vehicles.map(v=><button key={v.id} type="button" className={props.selectedVehicleId===v.id?'is-selected':''} aria-pressed={props.selectedVehicleId===v.id} title={`Izberi vozilo ${v.code}`} onClick={()=>props.onSelectVehicle(v.id)}><i style={{background:colorFor(v.id)}}/>{v.code}</button>)}</div><div className="rf-legend-description">{showRoutes&&hasRoadRoutes&&<span><i className="rf-road-line"/>Cestne poti · OSRM</span>}{showRoutes&&hasApproximateRoutes&&<span><i className="rf-approximate-line"/>Približne povezave, ne cestne poti</span>}{showFacilities&&<span><b>+</b>Ustanove</span>}</div></div>
-    {tileState==='offline'&&<span className="rf-map-offline" role="status">Brez povezave · shematska podlaga</span>}
+    <div className="rf-map-legend"><div className="rf-legend-vehicles" aria-label="Izbor vozila na zemljevidu">{props.state.vehicles.map(v=><button key={v.id} type="button" className={props.selectedVehicleId===v.id?'is-selected':''} aria-pressed={props.selectedVehicleId===v.id} title={`Izberi vozilo ${v.code}`} onClick={()=>props.onSelectVehicle(v.id)}><i style={{background:colorFor(v.id)}}/>{v.code}</button>)}</div><div className="rf-legend-description">{showRoutes&&hasRoadRoutes&&<span><i className="rf-road-line"/>Cestne poti · do pacienta / ustanove</span>}{showRoutes&&hasApproximateRoutes&&<span><i className="rf-approximate-line"/>Približne povezave, ne cestne poti</span>}{showFacilities&&<span><b>+</b>Ustanove</span>}</div></div>
+    {tileState==='offline'&&<span className="rf-map-offline" role="status">{nativeMap?'Lokalno cestno omrežje · ploščice niso dosegljive':'Brez povezave · shematska podlaga'}</span>}
   </div>;
 }

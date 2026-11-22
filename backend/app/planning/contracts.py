@@ -65,6 +65,13 @@ class Task(BaseModel):
         return self
 
 
+class Reroute(BaseModel):
+    at: int = Field(ge=0, le=HORIZON)
+    start: int = Field(ge=0, le=HORIZON)
+    origin: Point | None = None
+    leg: Literal["PICKUP", "HOSPITAL"] | None = None
+
+
 class Assignment(BaseModel):
     task_id: str
     vehicle_id: str
@@ -75,6 +82,8 @@ class Assignment(BaseModel):
     deadhead: int
     status: Literal["PLANNED", "IN_PROGRESS", "COMPLETED"] = "PLANNED"
     is_locked: bool = False
+    distance_meters: int | None = Field(default=None, ge=0)
+    reroute: Reroute | None = None
 
     @computed_field
     @property
@@ -86,6 +95,7 @@ class Incident(BaseModel):
     id: int = 0
     type: IncidentType
     occurred_at: int = 0
+    ended_at: int | None = Field(default=None, ge=0, le=HORIZON)
     duration: int | None = Field(default=None, gt=0, le=HORIZON)
     vehicle_id: str | None = None
     facility_id: str | None = None
@@ -115,6 +125,7 @@ class Metrics(BaseModel):
     late_tasks: int = 0
     delay_seconds: int = 0
     travel_seconds: int = 0
+    distance_meters: int | None = Field(default=None, ge=0)
     vehicle_changes: int = 0
     sequence_changes: int = 0
     time_changes: int = 0
@@ -149,25 +160,43 @@ class Node:
     point: Point
 
 
+TravelMatrix = tuple[tuple[int | None, ...], ...]
+
+
 @dataclass(frozen=True)
 class TravelSnapshot:
     nodes: tuple[Node, ...]
     index: dict[str, int]
-    durations: tuple[tuple[int | None, ...], ...]
+    durations: TravelMatrix
     source: str
+    distances: TravelMatrix | None = None
 
     def __post_init__(self):
         size = len(self.nodes)
         if len(self.index) != size or self.index != {node.id: i for i, node in enumerate(self.nodes)}:
             raise ValueError("Invalid node indices")
-        if len(self.durations) != size or any(len(row) != size for row in self.durations):
-            raise ValueError("Invalid travel matrix dimensions")
-        if any(value is not None and (type(value) is not int or value < 0)
-               for row in self.durations for value in row):
-            raise ValueError("Invalid travel duration")
+        for matrix in (self.durations, self.distances):
+            if matrix is None:
+                continue
+            if len(matrix) != size or any(len(row) != size for row in matrix):
+                raise ValueError("Invalid travel matrix dimensions")
+            if any(value is not None and (type(value) is not int or value < 0)
+                   for row in matrix for value in row):
+                raise ValueError("Invalid travel matrix value")
+        if self.distances is not None and any(
+            (duration is None) != (distance is None)
+            for duration_row, distance_row in zip(self.durations, self.distances, strict=True)
+            for duration, distance in zip(duration_row, distance_row, strict=True)
+        ):
+            raise ValueError("Road distance and duration reachability differ")
 
     def seconds(self, origin: str, destination: str) -> int | None:
         return self.durations[self.index[origin]][self.index[destination]]
+
+    def meters(self, origin: str, destination: str) -> int | None:
+        if self.distances is None:
+            return None
+        return self.distances[self.index[origin]][self.index[destination]]
 
 
 @dataclass(frozen=True)

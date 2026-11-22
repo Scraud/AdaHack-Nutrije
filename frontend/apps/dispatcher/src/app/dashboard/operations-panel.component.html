@@ -16,6 +16,7 @@
 }@else{
  <div class="operations-heading solution-heading"><div><app-icon name="sparkles" [size]="18"/><h2>Predlagane rešitve</h2></div><span class="count-badge">{{available().length}} / 3</span></div>
  <div class="operations-scroll solutions-scroll">
+  @if(activeRoadIncident();as event){<div class="road-incident-action"><b>{{event.type==='ROAD_CLOSURE'?'Zapora ceste':'Prometni zastoj'}} je še aktiven.</b><p>Odstranitev motnje sprosti cestni odsek in posodobi obvoze.</p><button class="button secondary" (click)="store.resolveIncident(''+event.id)" [disabled]="store.busy()">{{event.type==='ROAD_CLOSURE'?'Odstrani zaporo':'Odstrani zastoj'}}</button></div>}
   <p class="preview-instruction">Prehod s kazalcem ali fokusom spremeni zemljevid in časovnico. Klik pripne predogled.</p>
   @if(store.busy()){<div class="recommendation-loading" role="status"><app-icon name="loader"/><b>Preverjam vozila in časovna okna …</b><span></span><span></span></div>}
   @else{

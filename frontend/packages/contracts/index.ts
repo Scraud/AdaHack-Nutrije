@@ -1,3 +1,10 @@
+import type { components } from './api';
+export type TrackingFrame = components['schemas']['TrackingFrame'];
+export type Playback = components['schemas']['Playback'];
+export type RoadMap = components['schemas']['RoadMap'];
+export type RoadSegment = components['schemas']['RoadSegment'];
+export type SourceStatus = components['schemas']['SourceStatus'];
+export type BackendState = components['schemas']['State'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
 export type VehicleStatus = 'AVAILABLE' | 'EN_ROUTE' | 'TRANSPORTING' | 'SERVICE' | 'UNAVAILABLE' | 'BROKEN';
 export interface Location { lat: number; lon: number; name: string }
@@ -60,11 +67,12 @@ export interface DispatchState {
   recommendations: Recommendation[]; decisions: Decision[];
   affected_task_ids?: string[]; issues?: {task_id:string;vehicle_id?:string|null;code:string;message:string}[];
   history?: {id:string;version:number|null;status:string;created_at:string;strategy:string}[];
+  backend?: BackendState;
 }
 export interface IncidentInput {
   incident_type: IncidentType; affected_vehicle_id?: string; priority: 'P1' | 'P2' | 'P3';
   scenario?: 'priority_transport_1120' | 'vehicle_breakdown' | 'traffic_delay';
-  description?: string; duration_minutes?: number; delay_multiplier?: number; location?: Location;
+  description?: string; duration_minutes?: number; delay_multiplier?: number; location?: Location; road_id?: string;
   task?: {facility_id:string;pickup:Location;passenger_count:number;equipment:Equipment[];earliest_pickup:string;preferred_arrival:string;latest_arrival:string};
 }
 export interface RuntimeConfig { dataSource: 'demo' | 'api'; apiBaseUrl: string }

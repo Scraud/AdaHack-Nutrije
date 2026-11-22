@@ -9,6 +9,7 @@ from app.db import Database
 from app.models import Recommendation
 from app.planning.contracts import SolveBudget
 from app.planning.cp_sat_planner import CpSatPlanner
+from app.planning.snapshot_builder import MatrixProvider
 from app.services.state import (
     active_plan, audit, inputs, persist_snapshot, problem, save_plan, scenario, snapshot_payload,
     view_recommendation, view_state,
@@ -16,11 +17,12 @@ from app.services.state import (
 
 
 class PlanningService:
-    def __init__(self, database: Database, budget: SolveBudget):
+    def __init__(self, database: Database, budget: SolveBudget, road_matrix: MatrixProvider | None = None):
         self.database = database
         self.planner = CpSatPlanner()
         self.capacity = BoundedSemaphore(1)
         self.budget = budget
+        self.road_matrix = road_matrix
 
     def generate(self, request: Replan | None = None):
         if not self.capacity.acquire(blocking=False):
@@ -48,7 +50,7 @@ class PlanningService:
                     items = [view_recommendation(db, original, rec) for rec in proposed]
                     return Recommendations(items=items, solver_statuses=[item.plan.solver_status for item in items],
                                            duration_ms=round((monotonic() - began) * 1000))
-            snapshot, incidents, _ = inputs(db, original, base)
+            snapshot, incidents, _ = inputs(db, original, base, self.road_matrix)
         snapshot_id, payload = snapshot_payload(snapshot, incidents)
         if request:
             candidates = self.planner.alternatives(snapshot, budget=self.budget)
@@ -69,7 +71,7 @@ class PlanningService:
                 plan = save_plan(db, scope, candidate, snapshot_id, initial=True)
                 scope.revision += 1
                 audit(db, scope, "INITIAL_PLAN", plan_id=plan.id)
-                return view_state(db, scope)
+                return view_state(db, scope, self.road_matrix)
             items = []
             for result in candidates:
                 if not result.plan:

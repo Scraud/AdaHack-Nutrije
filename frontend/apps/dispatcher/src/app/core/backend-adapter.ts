@@ -43,12 +43,12 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
     const affected=[...new Set([...(i.task_id?[i.task_id]:[]),...raw.baseline.affected.filter(issue=>i.vehicle_id&&issue.vehicle_id===i.vehicle_id).map(issue=>issue.task_id)])];
     return {id:String(i.id),incident_type:i.type,title:incidentType(i.type),priority:task?.priority??i.priority??'P2',
       description:i.description||`${incidentType(i.type)}${i.vehicle_id?` · ${i.vehicle_id}`:''}${i.task_id?` · ${i.task_id}`:''}.`,
-      status:i.status==='RESOLVED'?'RESOLVED':recommendations.some(r=>r.incident_ids?.includes(String(i.id))&&r.status==='PROPOSED'&&r.base_state_revision===raw.revision)?'AWAITING_DECISION':'OPEN',
+      status:i.ended_at!=null||(i.duration!=null&&raw.now>=i.occurred_at+i.duration)||i.status==='RESOLVED'?'RESOLVED':recommendations.some(r=>r.incident_ids?.includes(String(i.id))&&r.status==='PROPOSED'&&r.base_state_revision===raw.revision)?'AWAITING_DECISION':'OPEN',
       occurred_at:at(raw.start_at,i.occurred_at),location:{lat:point?.lat??0,lon:point?.lon??0,name:point?coordinate(point):'Lokacija ni podana'},has_location:!!point,
       affected_vehicle_ids:i.vehicle_id?[i.vehicle_id]:[],affected_task_ids:affected,selected_recommendation_id:i.selected_recommendation_id??undefined,
       duration_minutes:i.duration?i.duration/60:undefined,delay_multiplier:['WEATHER_DELAY','TRAFFIC_DELAY'].includes(i.type)?i.multiplier:undefined};
   });
-  return {scenario_id:raw.scenario_id,state_revision:raw.revision,mode:raw.mode,simulated_time:at(raw.start_at,raw.now),horizon_start:raw.start_at,horizon_end:at(raw.start_at,raw.horizon),
+  return {backend:raw,scenario_id:raw.scenario_id,state_revision:raw.revision,mode:raw.mode,simulated_time:at(raw.start_at,raw.now),horizon_start:raw.start_at,horizon_end:at(raw.start_at,raw.horizon),
     vehicles:raw.vehicles.map(v=>({id:v.id,code:v.id,vehicle_type:v.equipment.includes('STRETCHER')?'Sanitetno vozilo':'Prevoz z vozičkom',status:v.status,current_lat:v.location.lat,current_lon:v.location.lon,location_name:coordinate(v.location),capacity:v.capacity,equipment:v.equipment,available_at:v.next_available===null?null:at(raw.start_at,v.next_available),shift_end:null})),
     facilities:raw.facilities.map(f=>({id:f.id,name:f.name,short_name:f.name,...f.location,accepting:f.accepting})),
     tasks:raw.tasks.map(t=>{

@@ -12,6 +12,8 @@ const gateway=new HttpDispatchGateway(url);
 const store=new DispatchStore();
 await store.init(gateway);
 const healthy=()=>assert.equal(store.error(),'');
+assert.ok(store.roads()?.layers.length,'Road map must come from the backend.');
+assert.ok(store.roads()?.streets.length,'Street selection must use the backend street list.');
 await store.reset();healthy();
 await store.prepareDemo();healthy();
 assert.equal(formatTime(store.state()!.simulated_time),'11:20');
@@ -32,6 +34,8 @@ for(const rec of store.recommendations()){
   assert.ok(rec.incident_ids?.includes(incident.id));
   assert.equal(candidateProblem(store.activePlan(),rec.proposed_plan,store.state()!.tasks),null);
   store.hover(rec.id);
+  assert.ok(store.displayedTracking(),'Each proposal must have a real backend road preview.');
+  assert.ok(store.displayedTracking()!.vehicles.some(v=>(v.to_pickup?.length??0)>2||(v.to_hospital?.length??0)>2));
   assert.equal(store.displayedPlan()!.id,rec.proposed_plan.id);
   assert.equal((await gateway.getState()).active_plan!.id,active,'Preview must not mutate backend.');
 }
@@ -73,9 +77,26 @@ assert.ok(store.state()!.incidents.some(i=>i.incident_type==='VEHICLE_BREAKDOWN'
 assert.equal(store.recommendations().length,0,'Vehicle repair must invalidate previous candidates.');
 await store.createIncident({incident_type:'VEHICLE_UNAVAILABLE',affected_vehicle_id:'V2',priority:'P2',description:'Integration: servis',duration_minutes:35});healthy();
 assert.ok(store.state()!.incidents.some(i=>i.incident_type==='VEHICLE_UNAVAILABLE'&&i.duration_minutes===35));
+await store.reset();healthy();await store.prepareDemo();healthy();
+assert.ok(await store.findStreet('Celovška cesta'));healthy();
+const road=store.roadTarget()!;
+assert.ok(road.paths.length);
+await store.pickRoad(road.paths[0][0]);healthy();
+assert.ok(store.roadTarget()?.id.startsWith('way:'));
+const activeBeforeTraffic=store.activePlan()!.id;
+await store.createIncident({incident_type:'TRAFFIC_DELAY',priority:'P2',road_id:road.id,duration_minutes:30,delay_multiplier:2,description:'Integration: cestni zastoj'});healthy();
+assert.equal(store.activePlan()!.id,activeBeforeTraffic,'A detour must preserve the dispatcher plan.');
+assert.ok(store.tracking()!.incidents.some(i=>i.road_id===road.id&&i.paths.length));
+await store.resolveIncident(store.lastCreatedIncidentId()!);healthy();
+assert.equal(store.tracking()!.incidents.length,0);
+assert.equal(store.state()!.incidents.at(-1)!.status,'RESOLVED');
+await store.setPlayback(true,60);healthy();assert.equal(store.tracking()!.playback.playing,true);
+await store.setPlayback(false,60);healthy();assert.equal(store.tracking()!.playback.playing,false);
+console.log('PASS: main road geometry, street/map selection, traffic overlays, removal and playback.');
 await store.reset();healthy();
 assert.equal(store.state()!.incidents.length,0);
 assert.equal(store.activePlan(),null);
 console.log('PASS: breakdown retained, rejection, unavailability and reset.');
+store.dispose();
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

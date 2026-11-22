@@ -1,4 +1,4 @@
-import type { DispatchState, IncidentInput, RuntimeConfig } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
 import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
@@ -14,6 +14,13 @@ export interface DispatchGateway {
   accept(id: string, state: DispatchState, reason?: string): Promise<DispatchState>;
   reject(id: string, state: DispatchState): Promise<DispatchState>;
   reset(): Promise<DispatchState>;
+  getTracking?(planId?:string): Promise<TrackingFrame>;
+  getRoads?(): Promise<RoadMap>;
+  findStreet?(name:string): Promise<RoadSegment>;
+  pickRoad?(location:[number,number]): Promise<RoadSegment>;
+  setPlayback?(playing:boolean,speed:Playback['speed']): Promise<Playback>;
+  resolveIncident?(id:string): Promise<DispatchState>;
+  getSources?(refresh?:boolean): Promise<SourceStatus[]>;
 }
 
 export class HttpDispatchGateway implements DispatchGateway {
@@ -41,17 +48,28 @@ export class HttpDispatchGateway implements DispatchGateway {
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
   restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}
+  getTracking(planId?:string){return this.request<TrackingFrame>(`/tracking${planId?'?plan_id='+encodeURIComponent(planId):''}`);}
+  getRoads(){return this.request<RoadMap>('/map/roads');}
+  findStreet(name:string){return this.request<RoadSegment>(`/map/roads/street?name=${encodeURIComponent(name.trim())}`);}
+  pickRoad([lat,lon]:[number,number]){return this.request<RoadSegment>(`/map/roads/nearest?lat=${lat}&lon=${lon}`);}
+  setPlayback(playing:boolean,speed:Playback['speed']){return this.request<Playback>('/tracking/playback',{playing,speed});}
+  resolveIncident(id:string){return this.mutate(`/incidents/${encodeURIComponent(id)}/resolve`,{});}
+  getSources(refresh=false){return this.request<SourceStatus[]>(`/conditions${refresh?'/refresh':''}`,refresh?{}:undefined);}
   async advanceTime(to:string){const state=await this.request<BackendState>('/state');return this.mutate('/demo/advance-time',{to:Math.round((Date.parse(to)-Date.parse(state.start_at))/1000)});}
   async createIncident(input: IncidentInput) {
     const state=await this.request<BackendState>('/state');
     const offset=(time:string)=>Math.round((Date.parse(time)-Date.parse(state.start_at))/1000);
     const body:components['schemas']['CreateIncident']={type:input.incident_type,description:input.description??'',priority:input.priority,
-      vehicle_id:input.affected_vehicle_id,duration:input.duration_minutes?input.duration_minutes*60:undefined,multiplier:input.delay_multiplier,location:input.location?{lat:input.location.lat,lon:input.location.lon}:undefined};
+      vehicle_id:input.affected_vehicle_id,road_id:input.road_id,duration:input.duration_minutes?input.duration_minutes*60:undefined,multiplier:input.delay_multiplier,location:input.location?{lat:input.location.lat,lon:input.location.lon}:undefined};
     if(input.task)body.task={facility_id:input.task.facility_id,priority:input.priority,pickup:{lat:input.task.pickup.lat,lon:input.task.pickup.lon},passenger_count:input.task.passenger_count,equipment:input.task.equipment,earliest_pickup:offset(input.task.earliest_pickup),preferred_arrival:offset(input.task.preferred_arrival),latest_arrival:offset(input.task.latest_arrival)};
     else if(input.incident_type==='NEW_TASK')body.task={facility_id:'F3',priority:input.priority,pickup:{lat:46.068,lon:14.542},passenger_count:1,equipment:['OXYGEN'],earliest_pickup:state.now+15*60,preferred_arrival:state.now+45*60,latest_arrival:state.now+70*60};
     return this.mutate('/incidents',body);
   }
-  generateRecommendations(_incidentId: string, state: DispatchState) { return this.mutate('/recommendations/generate', { base_plan_id:state.active_plan?.id, expected_state_revision:state.state_revision }); }
+  async generateRecommendations(_incidentId: string, _state: DispatchState) {
+    await this.setPlayback(false,60);
+    const state=await this.getState();
+    return this.mutate('/recommendations/generate', { base_plan_id:state.active_plan?.id, expected_state_revision:state.state_revision });
+  }
   accept(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/accept`, {}); }
   reject(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/reject`, { reason:'Predlog zavrnjen v dispečerskem vmesniku.' }); }
   reset() { return this.mutate('/demo/reset', {}); }

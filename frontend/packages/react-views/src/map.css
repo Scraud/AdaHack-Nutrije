@@ -46,3 +46,11 @@
 @keyframes rf-card-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:760px){.rf-map-topbar{top:12px;left:12px;right:63px;gap:6px}.rf-map-location{padding:8px 9px;gap:7px}.rf-location-icon{display:none}.rf-map-location b{font-size:.8125rem}.rf-map-location>div>span{font-size:.75rem}.rf-map-preview{padding:6px;font-size:.75rem}.rf-map-preview>svg{display:none}.rf-map-controls{top:12px;right:12px}.rf-map-selection{left:12px;top:83px;width:213px;padding:12px;max-width:calc(100% - 73px)}.rf-map-bottom-controls{right:12px;bottom:40px;gap:6px}.rf-map-legend{left:12px;right:65px;bottom:27px;max-width:calc(100% - 77px);padding:4px 5px 7px}.rf-legend-vehicles{gap:0}.rf-legend-vehicles>button{gap:4px;padding:5px}.rf-legend-description{gap:5px 8px;font-size:.75rem}.rf-facility-name{font-size:.75rem}.rf-map-layers{right:62px;bottom:40px;padding:13px}.rf-map-expanded{inset:10px}.rf-map-offline{left:12px;right:12px}.rescueflow-map .leaflet-control-attribution{font-size:.5625rem!important}.rf-selection-heading>b{font-size:.8125rem}.rf-map-selection>p{font-size:.75rem}}
 @media(prefers-reduced-motion:reduce){.rescueflow-map *{animation:none!important;transition:none!important}}
+.rf-live-vehicle .rf-vehicle-pin{position:relative}
+.rf-tracking-eta{position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);padding:5px 8px;border:1px solid #dbe8e6;border-radius:6px;background:#fff;color:#45636c;box-shadow:0 3px 12px #193b4614;white-space:nowrap;font:600 11px/1.25 system-ui}
+.rf-tracking-eta[hidden]{display:none}
+.rf-road-marker{background:transparent;border:0}
+.rf-road-closure-pin{display:grid;place-items:center;width:28px;height:28px;background:#fff;border:2px solid #b44249;border-radius:50%;font-size:18px}
+.rf-pickup-pin{padding:5px 7px;background:#fff;border:1px solid #c6ddda;border-radius:6px;color:#168a80;box-shadow:0 2px 7px #28434c21;font-size:11px;font-weight:700;white-space:nowrap}
+.rf-road-pick-note,.rf-map-preview-loading{position:absolute;z-index:600;left:50%;top:18px;transform:translateX(-50%);max-width:70%;padding:10px 16px;border:1px solid #ebd1a7;border-radius:8px;background:#fff8eb;color:#886023;font:600 13px/1.4 system-ui;text-align:center;pointer-events:none}
+.rf-map-preview-loading{top:76px;background:white;border-color:#d9e5e4;color:#647e87}

@@ -1,9 +1,12 @@
 from concurrent.futures import ThreadPoolExecutor
+from json import dumps
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.providers import osrm
 
 
 @pytest.fixture
@@ -85,6 +88,26 @@ def test_concurrent_approval_only_activates_one_plan(demo):
     assert len(demo.get("/api/plans").json()) == 2
 
 
+def test_candidate_road_preview_is_read_only_and_rejects_stale_plans(demo):
+    state = disruption(demo)
+    items = replan(demo, state)
+    before = demo.get("/api/state").json()
+    history = demo.get("/api/plans").json()
+    for item in items:
+        response = demo.get("/api/tracking", params={"plan_id": item["plan"]["id"]})
+        assert response.is_success, response.text
+        frame = response.json()
+        assert frame["scenario_id"] == state["scenario_id"]
+        assert frame["revision"] == state["revision"]
+        assert len(frame["vehicles"]) == 5
+        assert any(len(v["to_pickup"]) > 2 or len(v["to_hospital"]) > 2 for v in frame["vehicles"])
+    assert demo.get("/api/state").json() == before
+    assert demo.get("/api/plans").json() == history
+    assert demo.get("/api/tracking", params={"plan_id": "missing"}).status_code == 409
+    post(demo, "vehicles/V3/restore")
+    assert demo.get("/api/tracking", params={"plan_id": items[0]["plan"]["id"]}).status_code == 409
+
+
 def test_repaired_vehicle_can_receive_assignments_and_invalidates_old_proposals(demo):
     state = disruption(demo)
     candidates = replan(demo, state)
@@ -132,6 +155,71 @@ def test_reset_is_reproducible_and_storage_survives_restart(tmp_path):
         }
         again = post(client, "plans/generate")["active_plan"]
         assert (active["assignments"], active["metrics"]) == (again["assignments"], again["metrics"])
+
+
+def test_self_hosted_road_matrix_drives_planning_and_records_distance(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESCUEFLOW_OSRM_URL", "http://osrm:5000")
+    requests = []
+    route_requests = []
+
+    def table(_, url, *, params):
+        if "/route/v1/driving/" in url:
+            route_requests.append(url)
+            assert params == {"geometries": "geojson", "overview": "full"}
+            points = [[float(value) for value in point.split(",")] for point in url.rsplit("/", 1)[1].split(";")]
+            return dumps({"code": "Ok", "routes": [{"geometry": {"coordinates": points}}]}).encode()
+        assert url.startswith("http://osrm:5000/table/v1/driving/")
+        assert params["annotations"] == "duration,distance"
+        requests.append(url)
+        size = url.count(";") + 1
+        return dumps({
+            "code": "Ok",
+            "durations": [[0 if i == j else 601 for j in range(size)] for i in range(size)],
+            "distances": [[0 if i == j else 2200 for j in range(size)] for i in range(size)],
+        }).encode()
+
+    monkeypatch.setattr(osrm, "fetch", table)
+    with TestClient(create_app(tmp_path / "roads.sqlite")) as client:
+        assert client.get("/api/state").json()["travel_source"] == "OSRM"
+        initial = post(client, "plans/generate")["active_plan"]
+        tasks = initial["assignments"]
+        assert len(tasks) == 20
+        assert all(row["deadhead"] == 601 and row["distance_meters"] == 4400 for row in tasks)
+        assert initial["metrics"]["distance_meters"] == len(tasks) * 4400
+        assert len(requests) == 1
+
+        tracked = client.get("/api/tracking").json()["vehicles"]
+        assert any(len(vehicle["to_pickup"]) == len(vehicle["to_hospital"]) == 2 for vehicle in tracked)
+        scheduled = {row["task_id"]: row for row in tasks}
+        for vehicle in tracked:
+            if vehicle["task_id"] is not None:
+                assert vehicle["eta"] == {
+                    "destination": "PICKUP", "seconds": scheduled[vehicle["task_id"]]["planned_pickup"],
+                }
+        assert route_requests
+        count = len(route_requests)
+        assert client.get("/api/tracking").is_success
+        assert len(route_requests) == count
+
+        state = post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V3"})
+        proposal = replan(client, state)[0]
+        accepted = post(client, f"recommendations/{proposal['id']}/accept")["plan"]
+        assert accepted["metrics"]["distance_meters"] == sum(row["distance_meters"] for row in accepted["assignments"])
+        assert len(requests) == 1
+
+
+def test_configured_osrm_unavailable_does_not_generate_an_estimated_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESCUEFLOW_OSRM_URL", "http://osrm:5000")
+
+    def unavailable(*args, **kwargs):
+        raise httpx.ConnectError("local OSRM offline")
+
+    monkeypatch.setattr(osrm, "fetch", unavailable)
+    with TestClient(create_app(tmp_path / "unavailable.sqlite")) as client:
+        response = client.post("/api/plans/generate")
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "ROAD_ROUTING_UNAVAILABLE"
+        assert client.get("/api/plans").json() == []
 
 
 def test_failure_during_transport_requires_manual_coordination(demo):

@@ -1,4 +1,4 @@
-# Lokalni OSRM
+# Lokalno cestno omrežje
 
 ## Cestni izsek za demo
 
@@ -15,6 +15,17 @@ python routing/build_ljubljana.py routing/data/slovenia.osm.pbf backend/app/prov
 
 ## Izbirni OSRM
 
-Pripravite regionalni izvleček OpenStreetMap za Slovenijo s profilom `car.lua`. Uporabite isto različico OSRM za `osrm-extract`, `osrm-partition`, `osrm-customize` in `osrm-routed`. Vse datoteke `slovenia.osrm.*` shranite v `routing/data/`. V `.env` nastavite `RESCUEFLOW_OSRM_URL=http://osrm:5000` in zaženite `docker compose --profile routing up --build`.
+Iz korena projekta pripravite cestni graf in zaženite Compose s profilom `routing`.
 
-Gumb »Osveži zunanje vire« preveri eno cestno relacijo v Ljubljani. Potrditev povezave z OSRM je neodvisna od demo matrike. [Dokumentacija OSRM](https://project-osrm.org/docs/v5.24.0/api/)
+```sh
+sh routing/prepare.sh
+RESCUEFLOW_OSRM_URL=http://osrm:5000 docker compose --profile routing up --build
+```
+
+Skripta prenese izvleček Slovenije in ga pripravi s profilom `car.lua` in postopkom CH. Če imate svoj izvleček, ga shranite kot `routing/data/slovenia.osm.pbf` pred zagonom skripte. Pred ponovno pripravo grafa ustavite OSRM. Po zamenjavi grafa ponovno zaženite tudi backend, da osveži predpomnilnik matrik. Za primerjavo izračunov z drugim grafom začnite nov demo scenarij. [Izvleček OpenStreetMap za Slovenijo](https://download.geofabrik.de/europe/slovenia.html) · [Dokumentacija OSRM](https://github.com/Project-OSRM/osrm-backend/blob/v5.27.1/docs/http.md#table-service)
+
+Plan vsebuje `distance_meters` za posamezno dodelitev in skupno razdaljo, ki vključuje vožnjo do prevzema in vožnjo s pacientom. `/api/state` v polju `travel_source` navede vir izračuna, `OSM_LJUBLJANA` ali `OSRM`. Sledenje za aktivni plan uporabi poti iz vira, s katerim je bil plan izračunan.
+
+Za aktivne simulirane zastoje in zapore izbranih cestnih odsekov planer uporabi priloženo cestno omrežje Ljubljane, kjer se vpliv upošteva na posameznih odsekih.
+
+Če je za izračun izbran OSRM in potrebne matrike ni mogoče pridobiti, API vrne `503 ROAD_ROUTING_UNAVAILABLE`.

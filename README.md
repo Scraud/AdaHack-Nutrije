@@ -36,6 +36,8 @@ Začetni plan se pripravi samodejno. **Regeneriraj plan** neposredno posodobi ra
 
 Na strani **Naloge → Novo** shranite prevoz z datumom prevzema. Naloge v naslednjih 24 urah simulirane ure odprejo modal s predlogi; poznejše so shranjene pod **Prihodnje** in ne vplivajo na trenutni routing. Ob vstopu v 24-urno okno se samodejno ponudijo za razporejanje. Ročni **Osveži demo** odpravi tudi aktivne zastoje in zapore.
 
+Pri pokvarjenem vozilu izberite **Prevzemi opremo** na strani Vozila ali v pregledu okvare. Lokacija prevzema je shranjeno mesto okvare, oprema je predizbrana iz vozila. Določite prioriteto in ciljno ustanovo, nato primerjajte predloge ter enega izrecno potrdite. Nastane naloga dostave opreme brez potnikov; prevzemnemu vozilu ni treba že imeti prevažane opreme in dostava ne porabi kvote za paciente. Iste opreme pri isti okvari ni mogoče naročiti dvakrat. Demo beleži prevzem in dostavo, ne vodi pa količinske evidence zalog ali prenosa opreme med inventarji vozil.
+
 ## Demo in preverjanje
 
 Odprite [scenarij predstavitve](docs/demo-scenario.md) in [pravila načrtovanja](docs/rules.md). Pokriva okvaro V3, primerjavo alternativ, odobritev nove verzije, zgodovino in primer z nezadostno kapaciteto vozil.

@@ -134,4 +134,10 @@ Naloga s prevzemom najpozneje v naslednjih **24 urah, vključno z mejo**, vstopi
 
 Backend API: `POST /api/tasks` zahteva datum z časovnim odmikom; naivni datumi brez časovnega pasu se zavrnejo. Migracija `0002` doda tabelo prihodnjih nalog brez brisanja obstoječe baze.
 
+## Prevzem opreme ob okvari
+
+Na kartici pokvarjenega vozila ali v pregledu okvare izberite **Prevzemi opremo**. Obrazec predizpolni mesto okvare in opremo vozila. Določite prioriteto, označite opremo za prevzem ter izberite ciljno ustanovo. Oddaja odpre obstoječi modal s predlogi, zemljevidom in časovnico; aktivni plan se spremeni šele po potrditvi.
+
+`POST /api/vehicles/{vehicle_id}/equipment-recovery` sprejme `priority`, `equipment`, `facility_id` in neobvezen `description`. Backend preveri okvaro, izbrano opremo in podvojene zahteve. Nastane trajna naloga `EQUIPMENT_DELIVERY` s tovorom `cargo_equipment`, brez potnikov in brez zahteve, da ima prevzemno vozilo že to opremo. Privzeto sta nakladanje in predaja po **2 minuti**, čiščenje **0 minut**; vožnja se izračuna posebej. Oprema ne zasede sprejemne kvote za paciente. Evidenca naloge sledi prevzemu in dostavi; količinsko skladišče ter spreminjanje inventarja vozil nista vključena.
+
 Nad ustanovo je pri zapolnjeni kvoti rdeča oznaka **Polno**. Ob prehodu z miško so prikazani zasedeni oziroma rezervirani in prosti sprejemi. Števci sledijo prikazanemu planu, zato se spreminjajo tudi pri predogledu rešitev. Demo uporablja sprejemne kvote na nalogo, ne dejanske zasedenosti bolnišničnih postelj.

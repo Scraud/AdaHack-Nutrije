@@ -4,10 +4,11 @@ export const VEHICLE_COLORS: Record<string, string> = { V1: '#1e5ec1', V2: '#008
 export const colorFor = (id: string) => VEHICLE_COLORS[id] ?? '#64818a';
 export function facilityCapacity(
   facility:{id:string;quota:number;accepting:boolean},
-  tasks:readonly {id:string;facility_id:string;actual_arrival?:number|null}[],
+  tasks:readonly {id:string;facility_id:string;actual_arrival?:number|null;type?:string}[],
   assignmentTaskIds:readonly string[],
 ){
   const assigned=new Set(assignmentTaskIds);
+  tasks=tasks.filter(task=>task.type!=='EQUIPMENT_DELIVERY');
   const delivered=tasks.filter(task=>task.facility_id===facility.id&&task.actual_arrival!=null);
   const reserved=tasks.filter(task=>task.facility_id===facility.id&&task.actual_arrival==null&&assigned.has(task.id));
   const used=delivered.length+reserved.length,capacity=Math.max(0,facility.quota);
@@ -79,7 +80,7 @@ export function passengerOnBoard(state:DispatchState,vehicleId:string):boolean {
   if(!vehicle)return false;
   const assignment=currentAssignment(state,state.active_plan,vehicleId);
   const task=state.tasks.find(t=>t.id===assignment?.task_id);
-  return !!task && task.actual_arrival==null && (task.actual_pickup!=null || task.status==='PICKED_UP');
+  return !!task && task.passenger_count>0 && task.actual_arrival==null && (task.actual_pickup!=null || task.status==='PICKED_UP');
 }
 
 export function timelineStatus(state:DispatchState,assignment:Assignment,isPreview=false):'active'|'future'|'completed'|'failed' {
@@ -95,13 +96,14 @@ export function timelineStatus(state:DispatchState,assignment:Assignment,isPrevi
   return assignment.status==='IN_PROGRESS'?'active':'future';
 }
 
-export function trackingEtaLabel(vehicle:TrackingFrame['vehicles'][number]){
+export function trackingEtaLabel(vehicle:TrackingFrame['vehicles'][number],taskType?:string){
+  const cargo=taskType==='EQUIPMENT_DELIVERY';
   if(vehicle.status==='WAITING')return 'V čakanju';
   if(vehicle.status==='STOPPED')return 'Ustavljeno';
-  if(vehicle.status==='AT_PICKUP')return 'Prevzem pacienta';
+  if(vehicle.status==='AT_PICKUP')return cargo?'Prevzem opreme':'Prevzem pacienta';
   if(vehicle.status==='AT_HOSPITAL')return 'Pri ustanovi';
   if(!vehicle.eta||!['TO_PICKUP','TO_HOSPITAL'].includes(vehicle.status))return '';
-  return `${vehicle.eta.destination==='PICKUP'?'Do pacienta':'Do ustanove'} · ${Math.ceil(vehicle.eta.seconds/60)} min`;
+  return `${vehicle.eta.destination==='PICKUP'?(cargo?'Do opreme':'Do pacienta'):'Do ustanove'} · ${Math.ceil(vehicle.eta.seconds/60)} min`;
 }
 
 export function vehicleEta(state:DispatchState,vehicleId:string,frame?:TrackingFrame|null) {

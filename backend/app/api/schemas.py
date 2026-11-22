@@ -48,6 +48,13 @@ class CreateScheduledTask(BaseModel):
     description: str = Field(default="", max_length=1000)
 
 
+class CreateEquipmentRecovery(BaseModel):
+    priority: Priority = "P2"
+    equipment: list[Equipment] = Field(min_length=1, max_length=4)
+    facility_id: str
+    description: str = Field(default="", max_length=1000)
+
+
 class ScheduledTaskView(BaseModel):
     id: str
     scheduled_at: AwareDatetime

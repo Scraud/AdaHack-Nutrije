@@ -141,7 +141,8 @@ class ScheduleModel:
                 model.add(times.pickup == lower).only_enforce_if(~present)
         for facility in self.state.facilities.values():
             arrivals = [present for key, present in self.present.items()
-                        if self.state.tasks[key].facility_id == facility.id and key not in self.state.frozen]
+                        if self.state.tasks[key].facility_id == facility.id and key not in self.state.frozen
+                        and self.state.tasks[key].uses_patient_quota]
             self.model.add(sum(arrivals) <= (facility_remaining(self.state, facility.id) if facility.accepting else 0))
 
     def _add_routes(self):

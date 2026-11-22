@@ -38,11 +38,12 @@ def validate_plan(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> 
                 if anchor.blocked:
                     fail("VEHICLE_UNAVAILABLE")
                 facility = snapshot.facilities[task.facility_id]
-                quotas[facility.id] += 1
-                if quotas[facility.id] > facility_remaining(snapshot, facility.id):
-                    fail("FACILITY_CAPACITY")
-                if not facility.accepting:
-                    fail("FACILITY_NOT_ACCEPTING")
+                if task.uses_patient_quota:
+                    quotas[facility.id] += 1
+                    if quotas[facility.id] > facility_remaining(snapshot, facility.id):
+                        fail("FACILITY_CAPACITY")
+                    if not facility.accepting:
+                        fail("FACILITY_NOT_ACCEPTING")
             if not compatible(vehicle, task):
                 fail("NO_COMPATIBLE_VEHICLE")
             to_pickup = snapshot.travel.seconds(origin, pickup(task.id))

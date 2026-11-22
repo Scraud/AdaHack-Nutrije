@@ -9,6 +9,7 @@ export type SourceStatus = components['schemas']['SourceStatus'];
 export type RecommendationInsight = components['schemas']['Explanation'];
 export type BackendState = components['schemas']['State'];
 export type ScheduledTaskInput = components['schemas']['CreateScheduledTask'];
+export type EquipmentRecoveryInput = components['schemas']['CreateEquipmentRecovery'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN' | 'VENTILATOR';
 export type VehicleTaskType = 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
 export interface VehicleSettings { capacity: number; equipment: Equipment[]; task_types: VehicleTaskType[] }
@@ -25,6 +26,7 @@ export interface TransportTask {
   id: string; task_type: 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
   priority: Priority; status: string; origin: Location; destination: Location;
   passenger_count: number; required_equipment: Equipment[];
+  cargo_equipment?: Equipment[]; source_vehicle_id?: string | null;
   // earliest_pickup is the desired pickup; latest_pickup follows from priority (null for red = ASAP).
   earliest_pickup: string; latest_pickup: string | null;
   actual_pickup?: string | null; actual_arrival?: string | null;

@@ -24,11 +24,11 @@ def explain(snapshot: PlanningSnapshot, task_id: str, assignments: list[Assignme
             coverage_proven: bool = False) -> Issue:
     task = snapshot.tasks[task_id]
     facility = snapshot.facilities[task.facility_id]
-    booked = Counter(snapshot.tasks[row.task_id].facility_id for row in assignments if row.task_id not in snapshot.frozen)
+    booked = Counter(snapshot.tasks[row.task_id].facility_id for row in assignments if row.task_id not in snapshot.frozen and snapshot.tasks[row.task_id].uses_patient_quota)
     vehicles, fleet_issue = _fleet_options(snapshot, task)
-    if not facility.accepting:
+    if task.uses_patient_quota and not facility.accepting:
         code = "FACILITY_NOT_ACCEPTING"
-    elif booked[facility.id] >= facility_remaining(snapshot, facility.id):
+    elif task.uses_patient_quota and booked[facility.id] >= facility_remaining(snapshot, facility.id):
         accepting = [item.id for item in snapshot.facilities.values() if item.accepting]
         all_full = len(accepting) > 1 and all(booked[key] >= facility_remaining(snapshot, key) for key in accepting)
         code = "ALL_FACILITIES_FULL" if all_full and task.type == "PRIORITY_TRANSPORT" else "FACILITY_CAPACITY"
@@ -159,10 +159,10 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
             if anchor.blocked or not compatible(vehicle, task):
                 report(_fleet_options(snapshot, task)[1] or "REASSIGNMENT_REQUIRED")
                 continue
-            if not facility.accepting:
+            if task.uses_patient_quota and not facility.accepting:
                 report("FACILITY_NOT_ACCEPTING")
                 continue
-            if not row.is_locked and arrivals[facility.id] >= facility_remaining(snapshot, facility.id):
+            if task.uses_patient_quota and not row.is_locked and arrivals[facility.id] >= facility_remaining(snapshot, facility.id):
                 report("FACILITY_CAPACITY")
                 continue
             deadhead = snapshot.travel.seconds(origin, pickup(task.id))
@@ -186,7 +186,7 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
                 continue
             if (take, arrive) != (row.planned_pickup, row.planned_dropoff):
                 report("INVALID_TRAVEL_TIME")
-            if not row.is_locked:
+            if not row.is_locked and task.uses_patient_quota:
                 arrivals[facility.id] += 1
             projected.append(row.model_copy(update={
                 "planned_departure": depart, "planned_pickup": take, "planned_dropoff": arrive,

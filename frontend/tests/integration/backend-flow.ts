@@ -167,6 +167,25 @@ const scheduledIncident=store.state()!.incidents.find(event=>event.affected_task
 await store.generate(scheduledIncident.id);healthy();
 assert.ok(store.recommendations().some(rec=>rec.proposed_plan.assignments.some(a=>a.task_id===created.taskId)));
 console.log('PASS: future tasks persist outside routes and enter planning at the rolling 24-hour boundary.');
+await store.reset();healthy();
+await store.createIncident({incident_type:'VEHICLE_BREAKDOWN',affected_vehicle_id:'V3',priority:'P2'});healthy();
+const planBeforeRecovery=store.activePlan()!.id;
+const recovery=await store.recoverEquipment('V3',{priority:'P1',equipment:['OXYGEN'],facility_id:store.state()!.facilities[0].id});healthy();
+assert.ok(recovery?.incidentId);
+const cargoTask=store.state()!.tasks.find(task=>task.id===recovery.taskId)!;
+assert.equal(cargoTask.task_type,'EQUIPMENT_DELIVERY');assert.equal(cargoTask.passenger_count,0);
+assert.deepEqual(cargoTask.cargo_equipment,['OXYGEN']);assert.deepEqual(cargoTask.required_equipment,[]);
+assert.equal(cargoTask.source_vehicle_id,'V3');
+assert.ok(store.urgentNotices().some(event=>event.id===recovery.incidentId&&event.title==='Prevzem opreme'));
+assert.equal(store.activePlan()!.id,planBeforeRecovery);
+store.inspectIncident(recovery.incidentId);await store.generate(recovery.incidentId);healthy();
+const recoveryProposal=store.recommendations().find(rec=>rec.proposed_plan.assignments.some(a=>a.task_id===cargoTask.id));
+assert.ok(recoveryProposal);store.pin(recoveryProposal.id);
+assert.ok(store.displayedTracking());
+assert.ok(await store.accept(recoveryProposal));healthy();
+assert.ok(store.activePlan()!.assignments.some(a=>a.task_id===cargoTask.id&&a.vehicle_id!=='V3'));
+assert.equal(store.state()!.vehicles.find(v=>v.id==='V3')!.status,'BROKEN');
+console.log('PASS: equipment pickup uses backend recommendations, preview and explicit approval without repairing the source.');
 store.dispose();
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

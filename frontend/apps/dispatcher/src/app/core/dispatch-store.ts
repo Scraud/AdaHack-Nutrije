@@ -222,6 +222,17 @@ export class DispatchStore {
     this.toast(incident?'Naloga je v naslednjih 24 urah. Preglejte predloge razporeda.':'Naloga je shranjena za prihodnost; trenutni routing ostane nespremenjen.');
     return {taskId:created.id,incidentId:incident?.id??null};
   }
+  async recoverEquipment(vehicleId:string,input:import('@rescueflow/contracts').EquipmentRecoveryInput){
+    if(!this.gateway.recoverEquipment){this.error.set('Za prevzem opreme povežite backend.');return null;}
+    const before=new Set(this.state()?.tasks.map(task=>task.id));
+    this.clearPreview();
+    if(!await this.run(()=>this.gateway.recoverEquipment!(vehicleId,input)))return null;
+    const state=this.state()!,task=state.tasks.find(item=>!before.has(item.id));
+    if(!task)return null;
+    const incident=state.incidents.find(item=>item.affected_task_ids.includes(task.id));
+    this.lastCreatedIncidentId.set(incident?.id??null);
+    return {taskId:task.id,incidentId:incident?.id??null};
+  }
   async generate(id: string) {
     if(this.state()?.incidents.some(i=>i.id===id&&this.isRoadIncident(i)))return false;
     this.clearPreview();this.generationInfo.set('');

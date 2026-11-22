@@ -259,6 +259,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vehicles/{vehicle_id}/equipment-recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Equipment Recovery */
+        post: operations["equipment_recovery_api_vehicles__vehicle_id__equipment_recovery_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vehicles": {
         parameters: {
             query?: never;
@@ -639,6 +656,24 @@ export interface components {
             old_pickup?: number | null;
             /** New Pickup */
             new_pickup?: number | null;
+        };
+        /** CreateEquipmentRecovery */
+        CreateEquipmentRecovery: {
+            /**
+             * Priority
+             * @default P2
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
+            /** Equipment */
+            equipment: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
+            /** Facility Id */
+            facility_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /** CreateIncident */
         CreateIncident: {
@@ -1267,6 +1302,12 @@ export interface components {
             passenger_count: number;
             /** Equipment */
             equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
+            /** Cargo Equipment */
+            cargo_equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
+            /** Source Vehicle Id */
+            source_vehicle_id?: string | null;
+            /** Source Incident Id */
+            source_incident_id?: number | null;
             /** Earliest Pickup */
             earliest_pickup: number;
             /** Latest Pickup */
@@ -1839,6 +1880,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    equipment_recovery_api_vehicles__vehicle_id__equipment_recovery_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEquipmentRecovery"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -47,6 +47,8 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         if event.type == "VEHICLE_BREAKDOWN":
             if vehicle.broken:
                 raise problem(409, "VEHICLE_ALREADY_BROKEN", "Okvara vozila je že zabeležena.")
+            from app.services.equipment_recovery import vehicle_position
+            event.location = vehicle_position(db, scope, vehicle.id, road_matrix)
             vehicle.broken = True
         else:
             vehicle.unavailable.append((scope.now, min(horizon, scope.now + (event.duration or 1800))))
@@ -80,7 +82,7 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
             raise problem(400, "INVALID_TASK_TIME", "Prevzem mora biti znotraj delovnega časa.")
         facilities = entities(db, scope, FacilityRecord, Facility)
         incidents = entities(db, scope, IncidentRecord, Incident)
-        booked = Counter(task.facility_id for task in entities(db, scope, TaskRecord, Task))
+        booked = Counter(task.facility_id for task in entities(db, scope, TaskRecord, Task) if task.uses_patient_quota)
         task_id = f"N{scope.revision + 1:03}"
         nodes = (Node(task_id, "PICKUP", request.task.pickup), *facility_nodes(facilities))
         travel = travel_snapshot(nodes, scope.now, incidents, road_matrix)

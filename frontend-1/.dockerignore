@@ -1,6 +1,7 @@
 node_modules
-dist
-.angular
 .npm-cache
-.git
-*.log
+.npm-lock-work
+.angular
+dist
+playwright-report
+test-results

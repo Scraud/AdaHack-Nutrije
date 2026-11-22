@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import L from 'leaflet';
 import type { DispatchViewProps } from './types';
 import { colorFor, formatTime, statusLabel } from '../../contracts/plan-utils';
@@ -37,6 +37,7 @@ function vehiclePoints(props: DispatchViewProps, vehicleId: string): L.LatLngTup
 }
 
 export function DispatchMap(props: DispatchViewProps) {
+  const layersId=useId();
   const container=useRef<HTMLDivElement>(null);
   const expandButton=useRef<HTMLButtonElement>(null);
   const map=useRef<L.Map|null>(null);
@@ -58,14 +59,14 @@ export function DispatchMap(props: DispatchViewProps) {
     if(!container.current) return;
     const instance=L.map(container.current,{zoomControl:false,scrollWheelZoom:false,attributionControl:true,zoomSnap:0.5,zoomDelta:0.5}).fitBounds(initialBounds,{padding:[45,45]});
     map.current=instance;
-    L.imageOverlay('/map-fallback.svg',[[46.018,14.445],[46.105,14.59]],{interactive:false}).addTo(instance);
+    const fallback=L.imageOverlay('/map-fallback.svg',[[46.018,14.445],[46.105,14.59]],{interactive:false,opacity:0}).addTo(instance);
     for(const [name,zIndex] of [['dispatchRoutes',410],['dispatchFacilities',430],['dispatchVehicles',450],['dispatchIncidents',470]] as const) instance.createPane(name).style.zIndex=String(zIndex);
     const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>'});
     let loadedTiles=0,failedTiles=0;
     tiles.on('loading',()=>{loadedTiles=0;failedTiles=0;});
-    tiles.on('tileload',()=>{loadedTiles++;setTileState('ready');});
+    tiles.on('tileload',()=>{loadedTiles++;fallback.setOpacity(0);setTileState('ready');});
     tiles.on('tileerror',()=>{failedTiles++;});
-    tiles.on('load',()=>{if(failedTiles && !loadedTiles)setTileState('offline');});
+    tiles.on('load',()=>{if(failedTiles && !loadedTiles){fallback.setOpacity(1);setTileState('offline');}});
     tiles.addTo(instance);
     features.current=L.layerGroup().addTo(instance);
     const observer=new ResizeObserver(()=>instance.invalidateSize());observer.observe(container.current);
@@ -114,7 +115,7 @@ export function DispatchMap(props: DispatchViewProps) {
       tooltip.append(title,detail,availability);
       marker.bindTooltip(tooltip,{className:'rf-map-tooltip',direction:'top',offset:[0,-23]});
     }
-    for(const incident of state.incidents.filter(i=>i.status!=='RESOLVED')) {
+    for(const incident of state.incidents.filter(i=>i.status!=='RESOLVED' && i.has_location!==false)) {
       L.marker([incident.location.lat,incident.location.lon],{pane:'dispatchIncidents',icon:L.divIcon({className:'rf-incident-marker',html:'<span>!</span>',iconSize:[34,34],iconAnchor:[17,17]}),title:incident.title,zIndexOffset:1100})
         .addTo(group).bindTooltip(escapeHtml(`${incident.title} · ${incident.priority}`),{className:'rf-map-tooltip',direction:'top',offset:[0,-20]});
     }
@@ -154,8 +155,8 @@ export function DispatchMap(props: DispatchViewProps) {
       <div className="rf-selection-status"><i className={`rf-marker-status ${unavailable(selectedVehicle.status)?'unavailable':selectedVehicle.status==='AVAILABLE'?'available':'moving'}`}/>{statusLabel(selectedVehicle.status)}</div>
       <p><MapIcon name="pin"/>{selectedVehicle.location_name}</p><p><MapIcon name="clock"/>Prosto ob {formatTime(selectedVehicle.available_at)}</p>{props.diff.vehicle_ids.has(selectedVehicle.id)&&<span className="rf-selection-change">Spremenjeno v predogledu</span>}
     </div>}
-    <div className="rf-map-bottom-controls"><button type="button" aria-label="Plasti in izgled zemljevida" title="Plasti in izgled" aria-expanded={layersOpen} aria-controls="dispatch-map-layers" className={layersOpen?'is-active':''} onClick={()=>setLayersOpen(!layersOpen)}><MapIcon name="layers"/></button><button ref={expandButton} type="button" aria-label={fullScreen?'Zapri povečani zemljevid':'Povečaj prikaz zemljevida'} title={fullScreen?'Zapri (Esc)':'Povečaj prikaz'} aria-pressed={fullScreen} onClick={()=>setFullScreen(!fullScreen)}><MapIcon name={fullScreen?'close':'expand'}/></button></div>
-    {layersOpen&&<div id="dispatch-map-layers" className="rf-map-layers"><div className="rf-layers-heading"><b>Izgled zemljevida</b><button type="button" aria-label="Zapri nastavitve zemljevida" onClick={()=>setLayersOpen(false)}><MapIcon name="close"/></button></div>
+    <div className="rf-map-bottom-controls"><button type="button" aria-label="Plasti in izgled zemljevida" title="Plasti in izgled" aria-expanded={layersOpen} aria-controls={layersId} className={layersOpen?'is-active':''} onClick={()=>setLayersOpen(!layersOpen)}><MapIcon name="layers"/></button><button ref={expandButton} type="button" aria-label={fullScreen?'Zapri povečani zemljevid':'Povečaj prikaz zemljevida'} title={fullScreen?'Zapri (Esc)':'Povečaj prikaz'} aria-pressed={fullScreen} onClick={()=>setFullScreen(!fullScreen)}><MapIcon name={fullScreen?'close':'expand'}/></button></div>
+    {layersOpen&&<div id={layersId} className="rf-map-layers"><div className="rf-layers-heading"><b>Izgled zemljevida</b><button type="button" aria-label="Zapri nastavitve zemljevida" onClick={()=>setLayersOpen(false)}><MapIcon name="close"/></button></div>
       <div className="rf-map-style-picker" role="group" aria-label="Barvni slog podlage"><button type="button" aria-pressed={mapStyle==='calm'} className={mapStyle==='calm'?'is-active':''} onClick={()=>setMapStyle('calm')}><span className="rf-style-swatch calm"/>Umirjen</button><button type="button" aria-pressed={mapStyle==='streets'} className={mapStyle==='streets'?'is-active':''} onClick={()=>setMapStyle('streets')}><span className="rf-style-swatch streets"/>Ulični</button></div>
       <label><input type="checkbox" checked={showFacilities} onChange={e=>setShowFacilities(e.target.checked)}/>Zdravstvene ustanove</label><label><input type="checkbox" checked={showRoutes} onChange={e=>setShowRoutes(e.target.checked)}/>Poti vozil</label>
     </div>}

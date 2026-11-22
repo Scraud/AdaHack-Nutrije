@@ -5,6 +5,7 @@ export interface DispatchViewProps {
   basePlan: DispatchPlan | null;
   diff: PlanDiff;
   selectedVehicleId: string | null;
+  selectedTaskId?: string | null;
   isPreview: boolean;
   onSelectVehicle: (id: string) => void;
   onSelectTask: (id: string) => void;

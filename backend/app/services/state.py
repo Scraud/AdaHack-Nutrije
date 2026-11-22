@@ -117,11 +117,15 @@ def view_plan(db: Session, plan: Plan) -> PlanView:
 
 def view_recommendation(db: Session, scope: Scenario, rec: Recommendation) -> RecommendationView:
     decision = db.scalar(select(Decision).where(Decision.recommendation_id == rec.id))
+    proposed = db.get(Plan, rec.proposed_plan_id)
+    saved = db.get(SnapshotRecord, proposed.snapshot_id)
+    incident_ids = [item["id"] for item in saved.payload.get("incidents", [])
+                    if item.get("status", "OPEN") == "OPEN"] if saved else []
     status = "STALE" if rec.status == "PROPOSED" and rec.base_revision != scope.revision else rec.status
     return RecommendationView(id=rec.id, base_plan_id=rec.base_plan_id, base_revision=rec.base_revision,
                               status=status, plan=view_plan(db, db.get(Plan, rec.proposed_plan_id)),
                               decision_reason=decision.reason if decision else None,
-                              decided_at=decision.created_at if decision else None)
+                              decided_at=decision.created_at if decision else None, incident_ids=incident_ids)
 
 
 def baseline(state: PlanningSnapshot, rows: list[Assignment]) -> Baseline:

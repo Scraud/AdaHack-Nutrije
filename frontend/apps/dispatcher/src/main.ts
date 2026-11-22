@@ -1,4 +1,8 @@
+import { provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
-import { Dispatcher } from './app/dashboard/dispatcher';
+import { AppComponent } from './app/app.component';
 
-bootstrapApplication(Dispatcher).catch(error => console.error(error));
+bootstrapApplication(AppComponent,{providers:[provideZonelessChangeDetection()]}).catch(error=>{
+  console.error(error);
+  document.body.textContent='Vmesnika ni bilo mogoče zagnati. Osvežite stran.';
+});

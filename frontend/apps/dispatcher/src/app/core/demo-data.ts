@@ -52,7 +52,7 @@ export function createFixtureRecommendations(state: DispatchState, incidentId: s
   if (!state.active_plan) return [];
   return ([['MIN_DELAY','Najmanj zamud','V1','11:50','12:25'], ['MIN_CHANGES','Najmanj sprememb','V5','11:55','12:35'], ['MAX_BUFFER','Več časovne rezerve','V3','12:15','12:55']] as const).map(([strategy,title,vehicle,start,end], i) => {
     const plan = structuredClone(state.active_plan!);
-    plan.id = `fixture-plan-${i+2}`; plan.version += i+1; plan.status = 'DRAFT'; plan.unassigned_task_ids = [];
+    plan.id = `fixture-plan-${i+2}`; plan.version = (plan.version ?? 0)+i+1; plan.status = 'DRAFT'; plan.unassigned_task_ids = [];
     plan.assignments.push({ id:`a-priority-${i}`, task_id:'N021', vehicle_id:vehicle, sequence_order:3, planned_departure:demoTime(start), planned_pickup:new Date(Date.parse(demoTime(start))+5*60_000).toISOString(), planned_dropoff:new Date(Date.parse(demoTime(end))-5*60_000).toISOString(), planned_end:demoTime(end), status:'PLANNED', is_locked:false });
     if (i === 0) {
       const moved = plan.assignments.find(a => a.task_id === 'N004')!;

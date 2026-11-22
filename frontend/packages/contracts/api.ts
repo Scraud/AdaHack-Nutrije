@@ -123,6 +123,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vehicles/{vehicle_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vehicle Restore */
+        post: operations["vehicle_restore_api_vehicles__vehicle_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plans": {
         parameters: {
             query?: never;
@@ -396,6 +413,17 @@ export interface components {
              * @enum {string}
              */
             type: "VEHICLE_BREAKDOWN" | "VEHICLE_UNAVAILABLE" | "TRAFFIC_DELAY" | "ROAD_CLOSURE" | "NEW_TASK" | "WEATHER_DELAY" | "FACILITY_CAPACITY_CHANGE";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Priority
+             * @default P2
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
             /** Duration */
             duration?: number | null;
             /** Vehicle Id */
@@ -489,6 +517,27 @@ export interface components {
              * @default SIMULATED
              */
             source: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Priority
+             * @default P2
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
+            /**
+             * Status
+             * @default OPEN
+             * @enum {string}
+             */
+            status: "OPEN" | "RESOLVED";
+            /** Selected Recommendation Id */
+            selected_recommendation_id?: string | null;
+            /** Resolved At */
+            resolved_at?: string | null;
         };
         /** Issue */
         Issue: {
@@ -657,6 +706,8 @@ export interface components {
             decision_reason?: string | null;
             /** Decided At */
             decided_at?: string | null;
+            /** Incident Ids */
+            incident_ids?: number[];
         };
         /** Recommendations */
         Recommendations: {
@@ -1105,6 +1156,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["State"];
+                };
+            };
+        };
+    };
+    vehicle_restore_api_vehicles__vehicle_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -5,31 +5,23 @@
   "projects": {
     "dispatcher": {
       "projectType": "application",
-      "root": "",
+      "root": "apps/dispatcher",
       "sourceRoot": "apps/dispatcher/src",
       "architect": {
         "build": {
           "builder": "@angular/build:application",
           "options": {
+            "outputPath": "dist/dispatcher",
             "browser": "apps/dispatcher/src/main.ts",
             "index": "apps/dispatcher/src/index.html",
-            "tsConfig": "tsconfig.app.json",
-            "outputPath": "dist/dispatcher",
-            "assets": [{ "glob": "**/*", "input": "public" }],
-            "styles": ["node_modules/leaflet/dist/leaflet.css", "apps/dispatcher/src/styles.css", "packages/react-views/src/map.css"],
-            "allowedCommonJsDependencies": ["leaflet", "react", "react-dom/client", "react/jsx-runtime"]
-          },
-          "configurations": {
-            "production": { "outputHashing": "all", "budgets": [{ "type": "initial", "maximumWarning": "1.5MB", "maximumError": "2MB" }] },
-            "development": { "optimization": false, "sourceMap": true, "extractLicenses": false }
-          },
-          "defaultConfiguration": "production"
+            "tsConfig": "tsconfig.json",
+            "allowedCommonJsDependencies": ["react", "react-dom", "leaflet"],
+            "styles": ["leaflet/dist/leaflet.css", "apps/dispatcher/src/styles.css"]
+          }
         },
         "serve": {
           "builder": "@angular/build:dev-server",
-          "options": { "proxyConfig": "proxy.conf.json" },
-          "configurations": { "development": { "buildTarget": "dispatcher:build:development" } },
-          "defaultConfiguration": "development"
+          "options": { "buildTarget": "dispatcher:build" }
         }
       }
     }

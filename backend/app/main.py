@@ -19,7 +19,7 @@ from app.providers.conditions import Conditions
 from app.providers.roads import road_network
 from app.services.decisions import decide
 from app.services.planning import PlanningService, recommendation_history
-from app.services.simulation import add_incident, advance
+from app.services.simulation import add_incident, advance, restore_vehicle
 from app.services.state import problem, reset, scenario, view_plan, view_state
 from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 
@@ -98,6 +98,14 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     def initial_plan() -> State:
         tracking.pause()
         return planner.generate()
+
+    @app.post("/api/vehicles/{vehicle_id}/restore")
+    def vehicle_restore(vehicle_id: str) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            restore_vehicle(db, scope, vehicle_id)
+            return view_state(db, scope)
 
     @app.get("/api/plans")
     def plans() -> list[PlanSummary]:

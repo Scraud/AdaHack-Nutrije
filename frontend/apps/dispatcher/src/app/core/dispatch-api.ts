@@ -1,13 +1,17 @@
 import type { DispatchState, IncidentInput, RuntimeConfig } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
+import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
+import type { components } from '@rescueflow/contracts/api';
 
 export interface DispatchGateway {
   readonly isDemo: boolean;
   getState(): Promise<DispatchState>;
   generateInitialPlan(): Promise<DispatchState>;
+  advanceTime(to: string): Promise<DispatchState>;
   createIncident(input: IncidentInput): Promise<DispatchState>;
+  restoreVehicle(id:string): Promise<DispatchState>;
   generateRecommendations(incidentId: string, state: DispatchState): Promise<DispatchState>;
-  accept(id: string, state: DispatchState): Promise<DispatchState>;
+  accept(id: string, state: DispatchState, reason?: string): Promise<DispatchState>;
   reject(id: string, state: DispatchState): Promise<DispatchState>;
   reset(): Promise<DispatchState>;
 }
@@ -24,23 +28,32 @@ export class HttpDispatchGateway implements DispatchGateway {
     if (!response.ok) {
       if (response.status === 409) throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
       let detail = '';
-      try { const json = await response.json(); if (typeof json.detail === 'string') detail = json.detail; } catch { /* Non-JSON upstream response. */ }
+      try { const json = await response.json(); if (typeof json.detail === 'string') detail = json.detail; else if(typeof json.detail?.message==='string')detail=json.detail.message; else if(response.status===422)detail='Preverite obvezne podatke in časovna okna.'; } catch { /* Non-JSON upstream response. */ }
       throw new Error(detail || `Povezava z zaledjem ni uspela (HTTP ${response.status}).`);
     }
     return response.status === 204 ? undefined as T : response.json();
   }
   async getState() {
-    const [state, recommendations] = await Promise.all([this.request<DispatchState>('/state'),this.request<DispatchState['recommendations']>('/recommendations')]);
-    if (!Array.isArray(state.vehicles) || !Array.isArray(state.tasks) || !('active_plan' in state)) throw new Error('Odziv /api/state se ne ujema s pogodbo v packages/contracts.');
+    const [state, recommendations,history] = await Promise.all([this.request<BackendState>('/state'),this.request<BackendRecommendation[]>('/recommendations'),this.request<components['schemas']['PlanSummary'][]>('/plans')]);
     if (!Array.isArray(recommendations)) throw new Error('Odziv /api/recommendations mora biti seznam predlogov s celotnimi plani.');
-    return { ...state, incidents:state.incidents ?? [], recommendations, decisions:state.decisions ?? [] };
+    return adaptBackendState(state,recommendations,history);
   }
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
-  createIncident(input: IncidentInput) { return this.mutate('/incidents', input); }
-  generateRecommendations(incidentId: string, state: DispatchState) { return this.mutate('/recommendations/generate', { incident_id:incidentId, base_plan_id:state.active_plan?.id, expected_state_revision:state.state_revision }); }
-  accept(id: string, state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/accept`, { base_plan_id:state.active_plan?.id, expected_state_revision:state.state_revision }); }
-  reject(id: string, state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/reject`, { reason:'Predlog zavrnjen v dispečerskem vmesniku.', expected_state_revision:state.state_revision }); }
+  restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}
+  async advanceTime(to:string){const state=await this.request<BackendState>('/state');return this.mutate('/demo/advance-time',{to:Math.round((Date.parse(to)-Date.parse(state.start_at))/1000)});}
+  async createIncident(input: IncidentInput) {
+    const state=await this.request<BackendState>('/state');
+    const offset=(time:string)=>Math.round((Date.parse(time)-Date.parse(state.start_at))/1000);
+    const body:components['schemas']['CreateIncident']={type:input.incident_type,description:input.description??'',priority:input.priority,
+      vehicle_id:input.affected_vehicle_id,duration:input.duration_minutes?input.duration_minutes*60:undefined,multiplier:input.delay_multiplier,location:input.location?{lat:input.location.lat,lon:input.location.lon}:undefined};
+    if(input.task)body.task={facility_id:input.task.facility_id,priority:input.priority,pickup:{lat:input.task.pickup.lat,lon:input.task.pickup.lon},passenger_count:input.task.passenger_count,equipment:input.task.equipment,earliest_pickup:offset(input.task.earliest_pickup),preferred_arrival:offset(input.task.preferred_arrival),latest_arrival:offset(input.task.latest_arrival)};
+    else if(input.incident_type==='NEW_TASK')body.task={facility_id:'F3',priority:input.priority,pickup:{lat:46.068,lon:14.542},passenger_count:1,equipment:['OXYGEN'],earliest_pickup:state.now+15*60,preferred_arrival:state.now+45*60,latest_arrival:state.now+70*60};
+    return this.mutate('/incidents',body);
+  }
+  generateRecommendations(_incidentId: string, state: DispatchState) { return this.mutate('/recommendations/generate', { base_plan_id:state.active_plan?.id, expected_state_revision:state.state_revision }); }
+  accept(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/accept`, {}); }
+  reject(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/reject`, { reason:'Predlog zavrnjen v dispečerskem vmesniku.' }); }
   reset() { return this.mutate('/demo/reset', {}); }
 }
 
@@ -51,6 +64,12 @@ export class DemoDispatchGateway implements DispatchGateway {
   private copy() { return structuredClone(this.state); }
   async getState() { return this.copy(); }
   async generateInitialPlan() { return this.copy(); }
+  async restoreVehicle(id:string){
+    const vehicle=this.state.vehicles.find(v=>v.id===id);if(!vehicle)throw new Error('Vozilo ne obstaja.');
+    if(vehicle.status==='BROKEN'){vehicle.status='AVAILABLE';vehicle.available_at=this.state.simulated_time;this.state.state_revision++;this.state.incidents=this.state.incidents.map(i=>i.incident_type==='VEHICLE_BREAKDOWN'&&i.affected_vehicle_ids.includes(id)?{...i,status:'RESOLVED'}:i);}
+    return this.copy();
+  }
+  async advanceTime(to:string) { this.state.simulated_time=to;this.state.state_revision++;return this.copy(); }
   async createIncident(input: IncidentInput) {
     if (input.incident_type !== 'NEW_TASK') throw new Error('Vzorčni scenarij podpira novo prednostno nalogo. Ostale dogodke pripravi backend.');
     if (this.state.tasks.some(t => t.id === 'N021')) return this.copy();

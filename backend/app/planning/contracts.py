@@ -96,6 +96,11 @@ class Incident(BaseModel):
     multiplier: float = Field(default=1.6, ge=1, le=5)
     quota: int | None = Field(default=None, ge=0, le=100)
     source: str = "SIMULATED"
+    description: str = ""
+    priority: Priority = "P2"
+    status: Literal["OPEN", "RESOLVED"] = "OPEN"
+    selected_recommendation_id: str | None = None
+    resolved_at: str | None = None
 
 
 class Issue(BaseModel):

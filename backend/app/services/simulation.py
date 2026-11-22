@@ -1,4 +1,5 @@
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import CreateIncident
@@ -7,7 +8,7 @@ from app.planning.contracts import Facility, HORIZON, Incident, Task, Vehicle
 from app.planning.snapshot_builder import routes
 from app.planning.validator import validate_plan
 from app.providers.roads import center_distance, road_network
-from app.services.state import active_plan, audit, inputs, problem
+from app.services.state import active_plan, audit, inputs, problem, timestamp
 
 
 def add_incident(db: Session, scope: Scenario, request: CreateIncident):
@@ -61,6 +62,7 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident):
             raise problem(400, "INVALID_TASK_TIME", exc.errors()[0]["msg"]) from exc
         db.add(TaskRecord(id=task.id, scenario_id=scope.id, payload=task.model_dump(mode="json")))
         event.task_id = task.id
+        event.priority = task.priority
     record = IncidentRecord(scenario_id=scope.id, payload=event.model_dump(mode="json"))
     db.add(record)
     db.flush()
@@ -73,6 +75,27 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident):
         for issue in snapshot.blocking:
             if issue.vehicle_id == event.vehicle_id and issue.code == "MANUAL_COORDINATION":
                 audit(db, scope, issue.code, incident_id=event.id, task_id=issue.task_id)
+
+
+def restore_vehicle(db: Session, scope: Scenario, vehicle_id: str):
+    record = db.get(VehicleRecord, (vehicle_id, scope.id))
+    if record is None:
+        raise problem(404, "VEHICLE_NOT_FOUND", "Vozilo ne obstaja.")
+    vehicle = Vehicle.model_validate(record.payload)
+    if not vehicle.broken:
+        return
+    vehicle.broken = False
+    record.payload = vehicle.model_dump(mode="json")
+    resolved_ids = []
+    for incident in db.scalars(select(IncidentRecord).where(IncidentRecord.scenario_id == scope.id)):
+        if (incident.payload.get("type") == "VEHICLE_BREAKDOWN"
+                and incident.payload.get("vehicle_id") == vehicle_id
+                and incident.payload.get("status", "OPEN") == "OPEN"):
+            incident.payload = {**incident.payload, "status": "RESOLVED", "resolved_at": timestamp()}
+            resolved_ids.append(incident.id)
+    scope.revision += 1
+    audit(db, scope, "VEHICLE_RESTORED", vehicle_id=vehicle_id,
+          simulated_time=scope.now, incident_ids=resolved_ids)
 
 
 def advance(db: Session, scope: Scenario, until: int, *, record_audit: bool = True):

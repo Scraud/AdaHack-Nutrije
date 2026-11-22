@@ -1,0 +1,85 @@
+# RescueFlow frontend
+
+Slovenski dispečerski UI v mapi `frontend/`, povezan s FastAPI backendom in njegovo SQLite bazo. Prejšnji vmesnik iz `main` je ohranjen v `frontend-1/`. Angular upravlja stanje in HTTP, React izriše Leaflet zemljevid in časovnico.
+
+## Zagon na Windows
+
+V prvem terminalu, iz korena repozitorija:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e '.\backend[test]'
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+V drugem terminalu, iz korena repozitorija:
+
+```powershell
+cd frontend
+npm.cmd ci
+npm.cmd start
+```
+
+Odprite **http://127.0.0.1:4200**. Za razvoj uporabite Node 22.12+ v veji 22 ali združljiv Node 24. Ob prvem zagonu kliknite **Pripravi demo 11:20**: backend izračuna začetni plan in premakne simulacijo. Nato izberite **Simuliraj dogodek**, preglejte podatke in dodajte dogodek. Predloge primerjajte s kazalcem oziroma tipkovnico, enega pripnite in izrecno potrdite.
+
+Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1:8080. Docker v tej izvedbi ni bil preverjen.
+
+## Strani
+
+- **Domov:** zemljevid čez celotno širino strani, zložljiva opozorila s prioritetami in razvrščanjem, samodejni povzetek, operativni KPI ter časovnica. Brez opozoril je panel zaprt; gumb Opozorila ga odpre ali pospravi. Za vsak dogodek je eno obvestilo. Klik odpre velik modal z zemljevidom, časovnico in največ tremi rešitvami na desni; hover/fokus posodobi oba predogleda.
+- **Naloge:** iskanje, filtri, nerazporejene/ogrožene naloge, podrobnosti in povezava s časovnico. Nepotrjene naloge in spremembe so označene z rdečim opozorilom »Čaka na potrditev«.
+- **Vozila:** oprema, lokacija, status, zasedenost, prosti čas in naloge; preostali čas do prevzema in do bolnišnice po aktivnem razporedu; prijava okvare ali nedosegljivosti z razlogom in trajanjem. Gumb **Odpravi okvaro** shrani popravilo, razveljavi stare predloge in omogoči nove dodelitve ob naslednjem izračunu; aktivni plan se ob popravilu ne zamenja samodejno.
+- **Dogodki:** seznam, filtri in dodajanje; podrobnosti odprejo stranski pregled na domači strani, skupaj z zgodovino odločitev.
+- **Analiza:** jasno označeni **vzorčni podatki** za teden/mesec/leto, 24-urna napoved povpraševanja, časovna heatmapa 00–23 in zemljevid obremenitve celotne Slovenije ter primerjava vozil. Ti podatki ne vplivajo na planer in niso zgodovina baze.
+
+Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid ohranja približne, jasno označene povezave med dodelitvami; GPS predvajanje starega vmesnika ni del novega UI.
+
+Časovnica uporablja polno barvo vozila za aktivne prevoze, prosojno za prihodnje, sivo za opravljene in rdečo za neuspešne oziroma blokirane. Pokvarjeno vozilo ostane v vrstici z oznako časa okvare. Spremembe med predogledom imajo zelen/oranžen obris, prejšnje dodelitve pa črtkan obris. Hover ne pošilja HTTP zahtev in ne spremeni plana v bazi. Gumb v podrobnostih naloge zapre dialog, odpre stran nalog in se pomakne do označene časovnice.
+
+## Povezava z backendom
+
+`public/config.json` je privzeto nastavljen na pravi API:
+
+```json
+{ "dataSource": "api", "apiBaseUrl": "/api" }
+```
+
+Razvojni proxy preusmeri `/api` na `127.0.0.1:8000`; nginx v Dockerju na storitev backend. Ob napaki povezave aplikacija pokaže napako. Podatke prebere ob zagonu, ročni osvežitvi in po spremembah. Ločeni `dataSource: "demo"` je namenjen starim UI fixtures in testom, ne celotnemu integriranemu demu.
+
+Backend vrne do tri različne kandidate. UI pokaže samo aktualne potrdivne možnosti, blokade pa posebej. Ne ustvarja nadomestnih predlogov. Revizije, izvedljivost in atomaren sprejem preveri backend.
+
+Generirani tipi dejanske OpenAPI sheme so v `packages/contracts/api.ts`. `core/backend-adapter.ts` pretvori relativne sekunde v ISO čase in dejanske API podatke v prikazne modele. HTTP klici so zbrani v `core/dispatch-api.ts`. Podrobnosti: [API_CONTRACT.md](API_CONTRACT.md).
+
+## Preverjanje
+
+```powershell
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+```
+
+Produkcijski rezultat je v `dist/dispatcher/browser/`; potrebuje HTTP strežnik. Videz je urejen v `apps/dispatcher/src/workspace.css`, mapa v `packages/react-views/src/map.css`.
+
+Integracijski preizkus izvaja reset, zato uporabite **ločeno testno bazo**. V prvem terminalu iz korena:
+
+```powershell
+$env:RESCUEFLOW_DB="$PWD\ui-integration.sqlite"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001
+```
+
+V drugem, iz `frontend/`:
+
+```powershell
+$env:RESCUEFLOW_TEST_API='http://127.0.0.1:8001/api'
+npm.cmd run test:integration
+```
+
+Preizkus pokrije pripravo dneva, nov prevoz, izolacijo predogleda, potrditev, zgodovino, vreme, okvaro, zavrnitev, nedosegljivost in reset. Standardni backend testi ostanejo v `backend/tests`.
+
+Za ločen razvojni predogled tega testnega backenda lahko uporabite `npm.cmd start -- --port 4201 --proxy-config tests/integration/proxy.json`.
+
+Če je bil `ng serve` odprt med preimenovanjem oziroma dodajanjem datotek analize in še prikazuje »Cannot find module«, ga ustavite s Ctrl+C ter ponovno zaženite `npm.cmd start`. Ob dodajanju novega API endpointa ponovno zaženite tudi backend, če ne uporablja `--reload`.
+
+## Zemljevid
+
+Podlaga uporablja OpenStreetMap ploščice; umirjen videz je CSS filter. Povezave na zemljevidu so približne, ne cestno usmerjanje. Ob nedosegljivih ploščicah je na voljo lokalna shema. Položaji prihajajo iz stanja simulacije. Dejanski cestni planer in dodatni tracking endpointi backenda ostajajo na voljo, vendar nova različica UI ne predstavlja približnih povezav kot njihovih geometrij.

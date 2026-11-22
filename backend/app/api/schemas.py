@@ -23,6 +23,8 @@ class NewTask(BaseModel):
 
 class CreateIncident(BaseModel):
     type: IncidentType
+    description: str = Field(default="", max_length=1000)
+    priority: Priority = "P2"
     duration: int | None = Field(default=None, gt=0, le=HORIZON)
     vehicle_id: str | None = None
     facility_id: str | None = None
@@ -73,6 +75,7 @@ class RecommendationView(BaseModel):
     plan: PlanView
     decision_reason: str | None = None
     decided_at: str | None = None
+    incident_ids: list[int] = Field(default_factory=list)
 
 
 class Recommendations(BaseModel):

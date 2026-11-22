@@ -2,6 +2,8 @@
 
 RescueFlow je interaktivna simulacija dispečiranja naročenih in medustanovnih zdravstvenih prevozov v Ljubljani. Začetni plan in predloge izračuna OR-Tools CP-SAT. Dispečer primerja posledice motnje in izrecno potrdi novo verzijo. Vse naloge, vozila in sprejemne kvote v demu so sintetični.
 
+Aktivni uporabniški vmesnik je v `frontend/`: Domov, Naloge, Vozila, Dogodki in Analiza. Prejšnji vmesnik iz `main` je ohranjen v `frontend-1/`. [Navodila novega frontenda](frontend/README.md) vključujejo opis strani, povezave z API in integracijskega preverjanja. Analiza uporablja izrecno označene vzorčne podatke za 24-urni forecast in heatmape celotne Slovenije; operativne strani uporabljajo backend.
+
 ## Zagon z Dockerjem
 
 ```sh
@@ -24,11 +26,13 @@ Na Linuxu ali macOS uporabite `.venv/bin/python` ter pot `./backend[test]`. Drug
 
 ```sh
 cd frontend
-npm ci
-npm start
+npm.cmd ci
+npm.cmd start
 ```
 
 Odprite [lokalni UI](http://127.0.0.1:4200) ali [dokumentacijo API](http://127.0.0.1:8000/docs).
+
+Kliknite **Pripravi demo 11:20**, nato **Simuliraj dogodek**. Po dodajanju dogodka v stranskem panelu primerjajte razpoložljive predloge, enega pripnite in potrdite. Aktivni plan se spremeni šele ob potrditvi.
 
 ## Demo in preverjanje
 
@@ -39,18 +43,18 @@ Push-Location backend
 ..\.venv\Scripts\python.exe -m pytest
 Pop-Location
 Set-Location frontend
-npm run build
-npx playwright install chromium
-npm run test:e2e
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
 ```
 
-Playwright zažene ločeni lokalni storitvi z lastno SQLite bazo. Za preverjanje z obstoječim brskalnikom Chrome nastavite `RESCUEFLOW_TEST_BROWSER=chrome`. Če spremenite API, iz korena zaženite `.venv\Scripts\python.exe backend\export_openapi.py`, nato v `frontend` zaženite `npm run contracts`.
+Integracijski preizkus novega UI uporablja pravi HTTP gateway in ločeno SQLite bazo; natančni ukazi so v [frontend/README.md](frontend/README.md#preverjanje). Prejšnji Playwright testi ostajajo skupaj s prejšnjim vmesnikom v `frontend-1/`. Če spremenite API, iz korena zaženite `.venv\Scripts\python.exe backend\export_openapi.py`, nato v `frontend` zaženite `npm.cmd run contracts`.
 
 ## Zemljevid in sledenje
 
-Zemljevid uporablja lokalni izsek cest OpenStreetMap za Ljubljano. Polna črta vodi do pacienta, pikčasta do ciljne ustanove. Barva poti se ujema z oznako vozila. Za zastoj ali zaporo izberite cestni odsek v panelu **Motnje**. Na istem odseku zemljevid prikaže rdečo črto oziroma znak zapore. Stanje se pri naslednjem izračunu upošteva na izbranih povezavah cestnega omrežja.
+Backend za načrtovanje uporablja lokalni izsek cest OpenStreetMap za Ljubljano. Novi UI prikazuje Leaflet podlago in jasno označene približne povezave med dodelitvami. Barve vozil so usklajene z njihovo časovnico. Pri dodajanju zastoja ali zapore pošljete točko, backend pa poišče najbližji konfigurirani cestni odsek.
 
-Po ustvarjanju plana kliknite **Predvajaj 60×** ali **300×**. Zadnja prejeta simulirana lokacija se osveži vsako sekundo. Motnja, premik ure ali ponovni izračun ustavi predvajanje. [Izvor in obnovitev cestnega izseka](routing/README.md)
+Simulirani čas v novem UI premikate z uro ob časovnici. GPS in samodejno predvajanje sta podprta v dodatnih backend endpointih ter ohranjenem starem UI; novi UI ju trenutno ne prikazuje. [Izvor in obnovitev cestnega izseka](routing/README.md)
 
 Za povezavo GPS nastavite `RESCUEFLOW_GPS_KEY` v okolju backenda oziroma v `.env` za Compose in ponovno zaženite backend. GPS odjemalec pošlje `POST /api/tracking/gps` z glavo `Authorization: Bearer <ključ>`. Telo zahtevka vsebuje ID vozila, položaj in čas meritve z odmikom ali UTC.
 
@@ -66,9 +70,9 @@ GPS odjemalec uporabi čas dejanske meritve. V načinu GPS zemljevid označi lok
 
 ## Zunanji viri
 
-Demo deluje brez ključev in brez zunanjih zemljevidnih ploščic. [Avtorstvo OpenStreetMap](https://www.openstreetmap.org/copyright)
+Planer deluje brez ključev. Novi Leaflet UI uporablja zunanje OpenStreetMap ploščice z lokalno shemo kot alternativo. [Avtorstvo OpenStreetMap](https://www.openstreetmap.org/copyright)
 
-»Osveži zunanje vire« preveri zadnje opazovanje postaje Ljubljana Bežigrad in ločeni povezavi do OSRM ter NAP. Vir vremenskih podatkov je ARSO. Plošča razmer uporablja te podatke informativno. [Dokumentacija ARSO](https://meteo.arso.gov.si/uploads/meteo/help/sl/xml_service.html)
+Backend ima tudi informativne zunanje vire za zadnje opazovanje postaje Ljubljana Bežigrad ter povezavi do OSRM in NAP. Novi UI teh podatkov ne meša s simulacijami vremena. Vir vremenskih podatkov je ARSO. [Dokumentacija ARSO](https://meteo.arso.gov.si/uploads/meteo/help/sl/xml_service.html)
 
 OSRM potrebuje pripravljen cestni izvleček. Za prometni vir nastavite `RESCUEFLOW_NAP_URL` in veljavni `RESCUEFLOW_NAP_TOKEN` v okolju backenda ali v lokalni datoteki `.env` za Compose. NAP zahteva registracijo in dovoljenje za konkretni tok. [Priprava OSRM](routing/README.md) · [Navodila NAP za dostop](https://nap.si/resources/doc/nap_B2B_sl.pdf)
 

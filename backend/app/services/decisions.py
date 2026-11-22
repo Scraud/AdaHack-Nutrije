@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models import Decision, Plan, Recommendation, Scenario
+from app.models import Decision, IncidentRecord, Plan, Recommendation, Scenario, SnapshotRecord
 from app.planning.validator import validate_plan
 from app.services.state import (
     active_plan, assignments, audit, inputs, problem, snapshot_payload, timestamp, view_recommendation,
@@ -33,6 +33,12 @@ def decide(db: Session, scope: Scenario, rec_id: str, *, accept: bool, reason: s
         candidate.status = "ACTIVE"
         candidate.version = active.version + 1
         scope.revision += 1
+        saved = db.get(SnapshotRecord, candidate.snapshot_id)
+        for incident in saved.payload.get("incidents", []) if saved else []:
+            record = db.get(IncidentRecord, incident["id"])
+            if record and record.scenario_id == scope.id and record.payload.get("status", "OPEN") == "OPEN":
+                record.payload = {**record.payload, "status": "RESOLVED",
+                                  "selected_recommendation_id": rec.id, "resolved_at": timestamp()}
     rec.status = target_status
     db.add(Decision(recommendation_id=rec.id, action=target_status, reason=reason,
                     actor="dispatcher", created_at=timestamp()))

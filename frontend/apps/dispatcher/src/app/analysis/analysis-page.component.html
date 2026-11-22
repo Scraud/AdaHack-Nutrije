@@ -1,0 +1,47 @@
+<div class="analytics-notice">
+ <span><app-icon name="sparkles" [size]="18"/><b>Vzorčna analitika</b></span>
+ <p>Podatki in napovedi so ilustrativni. Dnevni graf in časovna heatmapa pokrivata vseh 24 ur.</p>
+ <select aria-label="Obdobje analitike" (change)="period.set($any($event.target).value)"><option value="week">Ta teden</option><option value="month">Ta mesec</option><option value="year">To leto</option></select>
+</div>
+<div class="analytics-kpis">
+ @for(kpi of kpis();track kpi.label){<article class="panel analytics-kpi"><span>{{kpi.label}}<app-icon [name]="kpi.icon" [size]="18"/></span><b>{{kpi.value}}<small>{{kpi.unit}}</small></b><p>{{kpi.note}}</p></article>}
+</div>
+<section class="panel forecast-card forecast-full-day">
+ <div class="chart-heading"><div><span class="eyebrow">NAPOVED POVPRAŠEVANJA · 24 UR</span><h2>Celoten dan, od polnoči do polnoči.</h2><p>Vzorčno pričakovano število prevozov po urah · 00:00–23:59</p></div><span class="mock-badge">MOCK</span></div>
+ <div class="chart-key"><span><i class="demand-high"></i>Visoka obremenitev</span><span><i class="demand-mid"></i>Srednja</span><span><i class="demand-low"></i>Nizka</span></div>
+ <div class="forecast-plot"><svg viewBox="0 0 1160 260" role="group" aria-label="Vzorčna 24-urna napoved prevozov od 00:00 do 23:00">
+  <defs>
+   <linearGradient id="forecast-neutral" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e0e9e6"/><stop offset="1" stop-color="#f6f9f7"/></linearGradient>
+   <linearGradient id="forecast-green" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#94dfba"/><stop offset="1" stop-color="#f4fcf7"/></linearGradient>
+   <linearGradient id="forecast-orange" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f5c48f"/><stop offset="1" stop-color="#fffaf4"/></linearGradient>
+   <linearGradient id="forecast-red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ee9ea5"/><stop offset="1" stop-color="#fff7f7"/></linearGradient>
+  </defs>
+  @for(tick of [0,10,20,30,40];track tick){<line x1="40" x2="1145" [attr.y1]="218-tick*4.5" [attr.y2]="218-tick*4.5" stroke="#e9efed"/><text x="12" [attr.y]="222-tick*4.5" class="chart-axis-label">{{tick}}</text>}
+  @for(value of demand();track $index;let i=$index){
+   <g class="forecast-bar" role="button" tabindex="0" [attr.aria-pressed]="i===selectedHour()" [attr.aria-label]="hours[i]+':00, '+value+' vzorčnih prevozov'" (click)="selectedHour.set(i)" (keydown.enter)="selectedHour.set(i)" (keydown.space)="$event.preventDefault();selectedHour.set(i)">
+    <title>{{hours[i]}}:00 · {{value}} prevozov · vzorčna napoved</title>
+    <rect [attr.x]="49+i*45.5" [attr.y]="218-value*4.5" width="27" [attr.height]="value*4.5" rx="13" [attr.fill]="i===selectedHour()?value>=22?'url(#forecast-red)':value>=17?'url(#forecast-orange)':'url(#forecast-green)':'url(#forecast-neutral)'" [attr.stroke]="i===selectedHour()?value>=22?'#d98691':value>=17?'#e6a865':'#6ec494':'none'"/>
+    <text [attr.x]="62.5+i*45.5" y="244" class="chart-axis-label" text-anchor="middle">{{hours[i]}}:00</text>
+    @if(i===selectedHour()){<text [attr.x]="62.5+i*45.5" [attr.y]="208-value*4.5" class="chart-value-label" text-anchor="middle">{{value}}</text>}
+   </g>
+  }
+ </svg></div>
+ <div class="forecast-insight" aria-live="polite"><span><app-icon name="clock" [size]="16"/>{{hours[selectedHour()]}}:00 · {{demand()[selectedHour()]}} pričakovanih prevozov</span><b>{{selectedHour()===peakHour()?'Največja obremenitev':'Vzorčna napoved'}}</b></div>
+</section>
+<div class="analysis-country-grid">
+ <section class="panel heatmap-card">
+  <div class="chart-heading"><div><span class="eyebrow">RUSH HOURS · 24 UR</span><h2>Kdaj je flota najbolj obremenjena?</h2><p>Vzorčna intenzivnost po dnevih in urah · 00:00–23:59</p></div><span class="mock-badge">MOCK</span></div>
+  <div class="heatmap-scroll"><div class="heatmap-grid heatmap-full-day"><span></span>@for(hour of heatHours;track hour){<span class="heat-hour">{{hours[hour]}}</span>}
+   @for(day of days;track day;let d=$index){<b class="heat-day">{{day}}</b>@for(hour of heatHours;track hour){<button class="heat-cell" [style.background]="heatColor(d,hour)" [class.selected]="selectedHeat()?.day===d&&selectedHeat()?.hour===hour" [attr.aria-label]="day+', '+hours[hour]+':00, vzorčna zasedenost '+heat(d,hour)+' odstotkov'" [title]="day+' '+hours[hour]+':00 · '+heat(d,hour)+' % · vzorčno'" (click)="selectedHeat.set({day:d,hour:hour})"></button>}}
+  </div></div>
+  <div class="heatmap-footer"><span>{{selectedHeat()?days[selectedHeat()!.day]+' ob '+hours[selectedHeat()!.hour]+':00 · '+heat(selectedHeat()!.day,selectedHeat()!.hour)+' %':'Izberite celico za podrobnosti.'}}</span><span>Nizka <i></i> Visoka</span></div>
+ </section>
+ <section class="panel area-heatmap country-heatmap">
+  <div class="chart-heading"><div><span class="eyebrow">SLOVENIJA · VZORČNI DOGODKI</span><h2>Obremenitev po območjih</h2><p>Pregled celotne Slovenije z vzorčnimi intenzivnostmi.</p></div></div>
+  <app-slovenia-map [factor]="factor()"/>
+ </section>
+</div>
+<section class="panel vehicle-analysis">
+ <div class="page-panel-header"><div><h2>Učinkovitost po vozilih</h2><p>Vzorčna primerjava nalog, prevozov, čiščenja in priprave na odhod. Čas do odhoda pomeni čas od dodelitve do odhoda.</p></div><span class="mock-badge">MOCK · {{periodLabel()}}</span></div>
+ <div class="table-scroll"><table><thead><tr><th>Vozilo</th><th>Opravljene naloge</th><th>Zasedenost</th><th>Povprečni prevoz</th><th>Povpr. čiščenje</th><th>Povpr. čas do odhoda</th><th>Prazna vožnja</th></tr></thead><tbody>@for(v of vehicles;track v.id){<tr><td><span class="analytics-vehicle"><i [style.background]="color(v.id)"></i><b>{{v.id}}</b></span></td><td>{{v.completed*factor()}}</td><td><span class="utilization"><i><b [style.width.%]="v.utilization" [style.background]="color(v.id)"></b></i>{{v.utilization}} %</span></td><td>{{v.average}} min</td><td>{{minutes(v.cleaning)}}</td><td>{{minutes(v.departure)}}</td><td>{{v.empty}} %</td></tr>}</tbody></table></div>
+</section>

@@ -71,6 +71,10 @@ frontend/
 | `notification` | `string` | Last success message |
 | `roadTarget` | `RoadSegment \| null` | Road selected for a new delay/closure (by street name or map click) |
 | `picking` | `boolean` | Map click selects a road (`pickAt` → `/api/map/roads/nearest`) |
+| `explanations` | `Record<string, Explanation>` | Advisor explanations per recommendation id |
+| `explaining` | `string` | Recommendation id whose explanation is loading (does not set `busy`, so the map keeps updating) |
+
+`explain(item)` loads `GET /api/recommendations/{id}/explanation`; the recommendations panel shows a "Pojasni posledice" button per card and then short green **+** pros, red **−** cons and a collapsed "Opozorila" section with the colour-coded verified flags (see [advisor.md](advisor.md)).
 
 Road event helpers: `findStreet(name)` (`/api/map/roads/street`), `pickAt(lat, lon)` and `resolveIncident(id)` (`POST /api/incidents/{id}/resolve`).
 

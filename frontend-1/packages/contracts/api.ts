@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/incidents/{incident_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove Incident */
+        post: operations["remove_incident_api_incidents__incident_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plans/generate": {
         parameters: {
             query?: never;
@@ -117,6 +134,23 @@ export interface paths {
         put?: never;
         /** Initial Plan */
         post: operations["initial_plan_api_plans_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vehicles/{vehicle_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vehicle Restore */
+        post: operations["vehicle_restore_api_vehicles__vehicle_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -183,6 +217,23 @@ export interface paths {
         };
         /** Recommendations */
         get: operations["recommendations_api_recommendations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recommendations/{rec_id}/explanation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Explanation */
+        get: operations["explanation_api_recommendations__rec_id__explanation_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -268,6 +319,40 @@ export interface paths {
         };
         /** Road Map */
         get: operations["road_map_api_map_roads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/roads/street": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Road Street */
+        get: operations["road_street_api_map_roads_street_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/roads/nearest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Nearest Road */
+        get: operations["nearest_road_api_map_roads_nearest_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -363,6 +448,9 @@ export interface components {
              * @default false
              */
             is_locked: boolean;
+            /** Distance Meters */
+            distance_meters?: number | null;
+            reroute?: components["schemas"]["Reroute"] | null;
             /** Planned Arrival */
             readonly planned_arrival: number;
         };
@@ -396,6 +484,17 @@ export interface components {
              * @enum {string}
              */
             type: "VEHICLE_BREAKDOWN" | "VEHICLE_UNAVAILABLE" | "TRAFFIC_DELAY" | "ROAD_CLOSURE" | "NEW_TASK" | "WEATHER_DELAY" | "FACILITY_CAPACITY_CHANGE";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Priority
+             * @default P2
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
             /** Duration */
             duration?: number | null;
             /** Vehicle Id */
@@ -413,6 +512,43 @@ export interface components {
             quota?: number | null;
             task?: components["schemas"]["NewTask"] | null;
         };
+        /** DestinationETA */
+        DestinationETA: {
+            /**
+             * Destination
+             * @enum {string}
+             */
+            destination: "PICKUP" | "HOSPITAL";
+            /** Seconds */
+            seconds: number;
+        };
+        /** Explanation */
+        Explanation: {
+            /** Recommendation Id */
+            recommendation_id: string;
+            /**
+             * Strategy
+             * @enum {string}
+             */
+            strategy: "MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "OLLAMA" | "RULES";
+            /** Model */
+            model?: string | null;
+            /** Pros */
+            pros: string[];
+            /** Cons */
+            cons: string[];
+            /** Flags */
+            flags: components["schemas"]["Flag"][];
+            /** Impacts */
+            impacts: components["schemas"]["TaskImpact"][];
+            /** Notice */
+            notice?: string | null;
+        };
         /** Facility */
         Facility: {
             /** Id */
@@ -427,6 +563,27 @@ export interface components {
              * @default true
              */
             accepting: boolean;
+        };
+        /** Flag */
+        Flag: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "UNASSIGNED" | "RESOLVED" | "CREW_NOTICE" | "TIGHT_DEADLINE" | "LATER_ARRIVAL" | "CASCADE" | "FACILITY_BUNCHING" | "SHARED_DELAY_EXPOSURE";
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "HIGH" | "MEDIUM" | "INFO";
+            /** Message */
+            message: string;
+            /** Short */
+            short: string;
+            /** Task Ids */
+            task_ids?: string[];
+            /** Vehicle Ids */
+            vehicle_ids?: string[];
         };
         /** GPSFix */
         GPSFix: {
@@ -461,6 +618,8 @@ export interface components {
              * @default 0
              */
             occurred_at: number;
+            /** Ended At */
+            ended_at?: number | null;
             /** Duration */
             duration?: number | null;
             /** Vehicle Id */
@@ -489,6 +648,27 @@ export interface components {
              * @default SIMULATED
              */
             source: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Priority
+             * @default P2
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
+            /**
+             * Status
+             * @default OPEN
+             * @enum {string}
+             */
+            status: "OPEN" | "RESOLVED";
+            /** Selected Recommendation Id */
+            selected_recommendation_id?: string | null;
+            /** Resolved At */
+            resolved_at?: string | null;
         };
         /** Issue */
         Issue: {
@@ -525,6 +705,8 @@ export interface components {
              * @default 0
              */
             travel_seconds: number;
+            /** Distance Meters */
+            distance_meters?: number | null;
             /**
              * Vehicle Changes
              * @default 0
@@ -657,6 +839,8 @@ export interface components {
             decision_reason?: string | null;
             /** Decided At */
             decided_at?: string | null;
+            /** Incident Ids */
+            incident_ids?: number[];
         };
         /** Recommendations */
         Recommendations: {
@@ -682,6 +866,16 @@ export interface components {
             /** Expected State Revision */
             expected_state_revision: number;
         };
+        /** Reroute */
+        Reroute: {
+            /** At */
+            at: number;
+            /** Start */
+            start: number;
+            origin?: components["schemas"]["Point"] | null;
+            /** Leg */
+            leg?: ("PICKUP" | "HOSPITAL") | null;
+        };
         /** RoadEvent */
         RoadEvent: {
             /** Id */
@@ -693,6 +887,13 @@ export interface components {
              * @enum {string}
              */
             type: "TRAFFIC_DELAY" | "ROAD_CLOSURE";
+            /** Name */
+            name: string;
+            /** Paths */
+            paths: [
+                number,
+                number
+            ][][];
         };
         /** RoadLayer */
         RoadLayer: {
@@ -717,8 +918,8 @@ export interface components {
             timestamp: string;
             /** Layers */
             layers: components["schemas"]["RoadLayer"][];
-            /** Segments */
-            segments: components["schemas"]["RoadSegment"][];
+            /** Streets */
+            streets: string[];
         };
         /** RoadSegment */
         RoadSegment: {
@@ -726,11 +927,11 @@ export interface components {
             id: string;
             /** Name */
             name: string;
-            /** Path */
-            path: [
+            /** Paths */
+            paths: [
                 number,
                 number
-            ][];
+            ][][];
         };
         /** SourceStatus */
         SourceStatus: {
@@ -834,6 +1035,28 @@ export interface components {
             /** Actual Arrival */
             actual_arrival?: number | null;
         };
+        /** TaskImpact */
+        TaskImpact: {
+            /** Task Id */
+            task_id: string;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
+            /** Old Vehicle Id */
+            old_vehicle_id?: string | null;
+            /** New Vehicle Id */
+            new_vehicle_id?: string | null;
+            /** Old Pickup */
+            old_pickup?: number | null;
+            /** New Pickup */
+            new_pickup?: number | null;
+            /** Delay Seconds */
+            delay_seconds?: number | null;
+            /** Margin Seconds */
+            margin_seconds?: number | null;
+        };
         /** TrackedVehicle */
         TrackedVehicle: {
             /** Id */
@@ -860,6 +1083,7 @@ export interface components {
                 number,
                 number
             ][];
+            eta?: components["schemas"]["DestinationETA"] | null;
             /** Recorded At */
             recorded_at?: string | null;
             /**
@@ -1089,6 +1313,37 @@ export interface operations {
             };
         };
     };
+    remove_incident_api_incidents__incident_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     initial_plan_api_plans_generate_post: {
         parameters: {
             query?: never;
@@ -1105,6 +1360,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["State"];
+                };
+            };
+        };
+    };
+    vehicle_restore_api_vehicles__vehicle_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1209,6 +1495,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationView"][];
+                };
+            };
+        };
+    };
+    explanation_api_recommendations__rec_id__explanation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Explanation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1339,9 +1656,74 @@ export interface operations {
             };
         };
     };
+    road_street_api_map_roads_street_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoadSegment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nearest_road_api_map_roads_nearest_get: {
+        parameters: {
+            query: {
+                lat: number;
+                lon: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoadSegment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     vehicle_tracking_api_tracking_get: {
         parameters: {
-            query?: never;
+            query?: {
+                plan_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1355,6 +1737,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrackingFrame"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

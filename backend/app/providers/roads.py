@@ -209,6 +209,22 @@ class RoadNetwork:
             path.append(self.points[target])
         return list(reversed(path))
 
+    def path_edges(self, a: Point, b: Point, effects: Effects) -> frozenset[tuple[int, int]]:
+        origin, target = self.snap((a.lat, a.lon)), self.snap((b.lat, b.lon))
+        if origin is None or target is None:
+            return frozenset()
+        costs, previous, _ = self._search(origin, effects)
+        if costs[target] == float("inf"):
+            return frozenset()
+        edges = set()
+        while target != origin:
+            edges.add(edge_key(previous[target], target))
+            target = previous[target]
+        return frozenset(edges)
+
+    def segment_edges(self, segment: Segment) -> frozenset[tuple[int, int]]:
+        return frozenset(edge_key(a, b) for chain in segment.chains for a, b in zip(chain, chain[1:]))
+
     def route(self, origin: Coordinate, target: Point, effects: Effects) -> tuple[int, list[Coordinate]] | None:
         start = self.snap(origin)
         end = self.snap((target.lat, target.lon))

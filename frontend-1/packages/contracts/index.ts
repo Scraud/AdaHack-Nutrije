@@ -8,6 +8,7 @@ export type Assignment = Schema['Assignment'];
 export type Incident = Schema['CreateIncident'];
 export type Recommendation = Schema['RecommendationView'];
 export type Recommendations = Schema['Recommendations'];
+export type Explanation = Schema['Explanation'];
 export type Issue = Schema['Issue'];
 export type NewTask = Schema['NewTask'];
 export type Point = Schema['Point'];

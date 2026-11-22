@@ -6,6 +6,7 @@ export type RoadSegment = components['schemas']['RoadSegment'];
 export type Priority = components['schemas']['NewTask']['priority'];
 export const PRIORITY_LABELS: Record<Priority, string> = { P1: 'Visoka', P2: 'Srednja', P3: 'Nizka' };
 export type SourceStatus = components['schemas']['SourceStatus'];
+export type RecommendationInsight = components['schemas']['Explanation'];
 export type BackendState = components['schemas']['State'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
 export type VehicleStatus = 'AVAILABLE' | 'EN_ROUTE' | 'TRANSPORTING' | 'SERVICE' | 'UNAVAILABLE' | 'BROKEN';

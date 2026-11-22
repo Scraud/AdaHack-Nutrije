@@ -77,15 +77,23 @@ The weights prioritise the number of high-priority assignments. The urgent and c
 
 ### Strategy Objectives
 
-Once maximum coverage is locked in (by adding a constraint `coverage == optimal_value`), the model is re-solved for each of three **strategies**, each for up to `strategy_seconds` (default 2 s):
+Once maximum coverage is locked in (by adding a constraint `coverage == optimal_value`), the model is re-solved for each of three **strategies**, each for up to `strategy_seconds` (default 2 s).
 
-| Strategy | Objective |
-|---|---|
-| `MIN_DELAY` | Minimise total weighted delay past preferred_arrival, plus travel time and earliest pickup |
-| `MIN_CHANGES` | Minimise vehicle reassignments, then sequence changes, then time shifts (suitable for re-planning) |
-| `MAX_BUFFER` | Maximise the minimum slack buffer across all tasks (most robust schedule) |
+All three strategies minimise **the same cost model**, expressed in *minutes of P3 delay*. Each strategy only changes the rates (`PROFILES` in `cp_sat_planner.py`), so every alternative is a sensible restructure rather than an extreme:
 
-The planner uses the last feasible solution as a warm start for the first strategy solve.
+| Criterion | What is counted | `MIN_DELAY` | `MIN_CHANGES` | `MAX_BUFFER` |
+|---|---|---|---|---|
+| Delay | Minutes past `preferred_arrival`, × P1 4 / P2 2 / P3 1 (not for ASAP tasks) | 1 | 1 | 0.5 |
+| Vehicle swap | Task moved to another vehicle (crew must be told) | 3 | 30 | 6 |
+| Urgent swap (extra) | Swap of a task departing within 60 min of now | +3 | +15 | +6 |
+| Route-order change | Task gets a different predecessor | 0.5 | 6 | 1 |
+| Pickup shift | Per minute the pickup moves | 0.05 | 0.25 | 0.05 |
+| Buffer shortfall | Per minute any task's buffer is below 20 min | 0.1 | 0.1 | 1.5 (+ reward for the smallest buffer) |
+| Driving | Per minute of driving | 0.05 | 0.02 | 0.02 |
+
+How to read the table: with `MIN_DELAY` a vehicle swap is worth it if it saves at least 3 min of P3 delay (45 s of P1 delay). With `MIN_CHANGES` it must save at least 30 min of P3 delay (7.5 min of P1), or more if the task departs within the hour. Before this change, `MIN_CHANGES` used lexicographic weights (one swap = 10⁹), so it accepted any amount of delay to avoid a single swap. `MIN_DELAY` had no change cost at all, so it could move 10 tasks to other vehicles to save one minute.
+
+Every strategy solve is warm-started from the coverage solution.
 
 ### Circuit Constraint
 
@@ -132,7 +140,13 @@ for strategy in strategies:
 
 The solver is deterministic (`random_seed = 42`) and single-threaded (`num_workers = 1`).
 
-After each strategy solve, the model adds a **diversity constraint** (`sum(active_arcs) < count`), which forces subsequent strategies to find a structurally different route layout. This ensures the three recommendations shown to the dispatcher are meaningfully distinct.
+**Choosing which alternatives to show:**
+
+1. Each strategy is solved **independently** on the same model, so no strategy is degraded by the ones before it. Previously, every later strategy had to differ from earlier ones by at least one route arc. That forced `MIN_CHANGES` and `MAX_BUFFER` into worse plans, often with *more* vehicle swaps than `MIN_DELAY`.
+2. If a strategy lands on a vehicle assignment that was already found, it is re-solved with a temporary cut (`require_difference`, applied through CP-SAT *assumptions* and removed afterwards) that moves at least one task to a different vehicle.
+3. A candidate is **dropped as `DOMINATED`** if an already accepted alternative is no worse on every axis and clearly better on at least one. The axes are: priority-weighted unassigned tasks, priority-weighted delay, vehicle swaps, smallest buffer and driving time. Differences below `TOLERANCE` (2 min weighted delay, 5 min buffer, 5 min driving) count as ties, so a 1-minute buffer gain does not justify an extra swap.
+
+As a result, the dispatcher sees one to three genuinely different trade-offs. When one plan is best on everything (e.g. a single breakdown with plenty of slack), only that plan is shown. `backend/tests/test_recommendation_quality.py` checks that there are no mass reshuffles for tiny gains, that alternatives are distinct and not dominated, and that `MIN_CHANGES` swaps fewer vehicles than `MIN_DELAY` when both are shown.
 
 ---
 

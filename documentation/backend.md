@@ -126,6 +126,12 @@ Manages the live tracking view. See [tracking.md](tracking.md) for the full algo
 
 ---
 
+## Service: `advisor.py` — `Advisor`
+
+Explains a proposed recommendation without changing it. `recommendation_facts()` compares the proposal with the active plan under current conditions and computes verified flags (tight deadlines, cascades along a vehicle's chain, later arrivals, vehicles sharing an active traffic jam, facility bunching, crew notices). `Advisor.explain()` optionally sends these facts to a local Ollama model (`RESCUEFLOW_OLLAMA_URL`, `RESCUEFLOW_OLLAMA_MODEL`) for short Slovenian pros and cons (≤ 3 each), drops lines that are too long or mention IDs not in the facts, keeps P1 risks in the cons, and falls back to the rule-based pros/cons when Ollama is unavailable. Details: [advisor.md](advisor.md).
+
+---
+
 ## Service: `metrics.py`
 
 Calculates the `Metrics` object from a solved plan: late tasks, total delay, travel time, distance, vehicle changes, sequence changes, time shifts, buffer times. Also computes "affected" tasks — those in the active plan whose timing is threatened by incidents.

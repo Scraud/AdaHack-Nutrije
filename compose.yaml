@@ -7,6 +7,10 @@ services:
       RESCUEFLOW_NAP_URL: ${RESCUEFLOW_NAP_URL:-}
       RESCUEFLOW_NAP_TOKEN: ${RESCUEFLOW_NAP_TOKEN:-}
       RESCUEFLOW_GPS_KEY: ${RESCUEFLOW_GPS_KEY:-}
+      RESCUEFLOW_OLLAMA_URL: ${RESCUEFLOW_OLLAMA_URL-http://host.docker.internal:11434}
+      RESCUEFLOW_OLLAMA_MODEL: ${RESCUEFLOW_OLLAMA_MODEL:-gemma3}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - rescueflow-data:/data
     healthcheck:

@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from app.api.schemas import (
-    Advance, Baseline, CreateIncident, PickupAddress, PlanSummary, PlanView, RecommendationView, Recommendations,
-    Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State,
+    Advance, Baseline, CreateIncident, Explanation, PickupAddress, PlanSummary, PlanView, RecommendationView,
+    Recommendations, Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State,
 )
 from app.db import Database
 from app.models import Plan, Scenario
@@ -19,6 +19,7 @@ from app.planning.contracts import SolveBudget
 from app.providers.conditions import Conditions
 from app.providers.osrm import RoadMatrix, RoadRoutingUnavailable
 from app.providers.roads import road_network
+from app.services.advisor import Advisor, recommendation_facts
 from app.services.decisions import decide
 from app.services.planning import PlanningService, recommendation_history
 from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident
@@ -26,8 +27,10 @@ from app.services.state import problem, reset, scenario, view_plan, view_state
 from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 
 
-def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget()) -> FastAPI:
+def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
+               advisor: Advisor | None = None) -> FastAPI:
     db_path = db_path or Path(os.environ.get("RESCUEFLOW_DB", "rescueflow.sqlite"))
+    advisor = advisor or Advisor.from_env()
     database = Database(db_path.absolute())
     conditions = Conditions()
     road_matrix = RoadMatrix(conditions.osrm_url) if conditions.osrm_url else None
@@ -151,6 +154,12 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     def recommendations() -> list[RecommendationView]:
         with database.session() as db:
             return recommendation_history(db, scenario(db))
+
+    @app.get("/api/recommendations/{rec_id}/explanation")
+    def explanation(rec_id: str) -> Explanation:
+        with database.session() as db:
+            rules, payload = recommendation_facts(db, scenario(db), rec_id, road_matrix)
+        return advisor.explain(rules, payload)
 
     @app.post("/api/recommendations/{rec_id}/accept")
     def accept(rec_id: str) -> RecommendationView:

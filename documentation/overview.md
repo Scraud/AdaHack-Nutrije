@@ -58,6 +58,7 @@ AdaHack-Nutrije/
 | [planning.md](planning.md) | CP-SAT scheduler: how the optimiser works, strategies, constraints |
 | [routing.md](routing.md) | Road network: OSM graph, OSRM, path finding, travel matrices |
 | [tracking.md](tracking.md) | Real-time simulation: position interpolation, playback clock |
+| [advisor.md](advisor.md) | Consequence explanations and trade-off flags for recommendations (local Ollama) |
 | [frontend.md](frontend.md) | Angular/React frontend: state store, map, timeline, incident form |
 | [data-model.md](data-model.md) | All domain types: Vehicle, Task, Facility, Assignment, Incident, Plan |
 | [api.md](api.md) | Full REST API reference with request/response shapes |
@@ -84,6 +85,8 @@ The app is served at `http://localhost:8080` by default. The backend stores its 
 | `RESCUEFLOW_NAP_TOKEN` | _(empty)_ | Bearer token for the NAP feed |
 | `RESCUEFLOW_GPS_KEY` | _(empty)_ | Static key for real-vehicle GPS push endpoint |
 | `RESCUEFLOW_PORT` | `8080` | Host port the frontend is exposed on |
+| `RESCUEFLOW_OLLAMA_URL` | `http://host.docker.internal:11434` | Local Ollama for recommendation explanations; empty disables the LLM text |
+| `RESCUEFLOW_OLLAMA_MODEL` | `gemma3` | Ollama model used by the advisor |
 
 ### Optional OSRM routing
 

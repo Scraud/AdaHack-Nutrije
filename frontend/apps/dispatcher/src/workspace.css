@@ -85,3 +85,7 @@ body{font-size:1rem}
 .road-target-label{display:flex;align-items:center;gap:7px;color:#147f75}
 .road-incident-action{padding:13px;margin:12px 0;background:#fff8ef;border:1px solid #f0d9b9;border-radius:8px;color:#7f6041;font-size:12px;line-height:1.5}
 .road-incident-action p{margin:6px 0 10px}
+.rec-insight{display:flex;flex-direction:column;border-top:1px solid #e3ede7;margin-top:10px;padding-top:9px}
+.rec-insight-head{display:flex;align-items:center;gap:6px;font-size:.6875rem;font-weight:600;letter-spacing:.02em;color:#3f9e85}
+.rec-insight .rec-benefit{color:#3f7f66;margin-top:6px}.rec-insight .rec-tradeoff{margin-top:6px}
+.rec-insight small{display:flex;align-items:center;gap:5px;margin-top:7px;font-size:.625rem;color:#9aaea7}

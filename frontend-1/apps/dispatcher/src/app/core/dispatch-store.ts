@@ -1,6 +1,7 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import type {
-  Condition, Incident, Plan, PlanSummary, Playback, Recommendation, Recommendations, RoadMap, State, TrackingFrame,
+  Condition, Explanation, Incident, Plan, PlanSummary, Playback, Recommendation, Recommendations, RoadMap, State,
+  TrackingFrame,
 } from '../../../../../packages/contracts';
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -31,6 +32,8 @@ export class DispatchStore {
   readonly notification = signal('');
   readonly error = signal('');
   readonly openRecommendations = computed(() => this.recommendations().filter(item => item.status === 'PROPOSED'));
+  readonly explanations = signal<Record<string, Explanation>>({});
+  readonly explaining = signal('');
   readonly roads = signal<RoadMap | null>(null);
   readonly roadId = signal('');
   readonly tracking = signal<TrackingFrame | null>(null);
@@ -175,6 +178,20 @@ export class DispatchStore {
         this.notification.set(detail);
       }
     });
+  }
+
+  async explain(item: Recommendation) {
+    if (this.explaining()) return;
+    this.explaining.set(item.id);
+    this.error.set('');
+    try {
+      const result = await request<Explanation>(`recommendations/${item.id}/explanation`);
+      this.explanations.update(all => ({ ...all, [item.id]: result }));
+    } catch (error) {
+      this.error.set(error instanceof Error ? error.message : 'Analize predloga ni bilo mogoče pripraviti.');
+    } finally {
+      this.explaining.set('');
+    }
   }
 
   select(item: Recommendation) {

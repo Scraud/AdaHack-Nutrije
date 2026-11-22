@@ -44,6 +44,34 @@
               }
             </details>
           }
+          <div class="advisor">
+            @if (store.explanations()[item.id]; as advice) {
+              <ul class="advisor-list pros" aria-label="Prednosti">
+                @for (line of advice.pros; track $index) { <li>{{ line }}</li> }
+                @empty { <li class="none">Ni izrazitih prednosti</li> }
+              </ul>
+              <ul class="advisor-list cons" aria-label="Slabosti">
+                @for (line of advice.cons; track $index) { <li>{{ line }}</li> }
+                @empty { <li class="none">Ni izrazitih slabosti</li> }
+              </ul>
+              @if (advice.flags.length) {
+                <details>
+                  <summary>Opozorila ({{ advice.flags.length }})</summary>
+                  <ul class="advisor-flags">
+                    @for (flag of advice.flags; track $index) {
+                      <li [class]="'flag-' + flag.severity.toLowerCase()">{{ flag.message }}</li>
+                    }
+                  </ul>
+                </details>
+              }
+              <p class="small">{{ advice.source === 'OLLAMA' ? 'Lokalni model ' + advice.model : 'Izračunano iz plana' }}</p>
+              @if (advice.notice) { <p class="small">{{ advice.notice }}</p> }
+            } @else {
+              <button class="button secondary" [disabled]="!!store.explaining()" (click)="store.explain(item)">
+                @if (store.explaining() === item.id) { <span class="spinner"></span> Analiza poteka… } @else { Pojasni posledice }
+              </button>
+            }
+          </div>
           <div class="recommendation-actions">
             <button class="button secondary" (click)="store.select(item)">Predogled</button>
             <button class="button primary" [disabled]="!!store.busy() || item.plan.blocking.length > 0" (click)="store.decide(item, true)">Potrdi predlog</button>

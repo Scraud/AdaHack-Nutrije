@@ -39,6 +39,8 @@ export interface DispatchPlan {
   blocking_issues?: string[]; unassigned_reasons?: Record<string,string>;
 }
 export type IncidentType = 'NEW_TASK' | 'VEHICLE_BREAKDOWN' | 'TRAFFIC_DELAY' | 'ROAD_CLOSURE' | 'VEHICLE_UNAVAILABLE' | 'WEATHER_DELAY' | 'FACILITY_CAPACITY_CHANGE';
+// Same traffic simulation parameters as main's IncidentCenter.traffic().
+export const ROAD_EVENT_DEFAULTS = {duration_minutes:90,delay_multiplier:2.3} as const;
 export interface Incident {
   id: string; incident_type: IncidentType; title: string; description: string;
   priority: 'P1' | 'P2' | 'P3'; status: 'OPEN' | 'AWAITING_DECISION' | 'RESOLVED';

@@ -1,6 +1,7 @@
 import { Component, ElementRef, EventEmitter, Output, ViewChild, computed, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { Equipment, IncidentInput, IncidentType } from '@rescueflow/contracts';
+import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
 import { formatTime, incidentType } from '@rescueflow/contracts/plan-utils';
 import { DispatchStore } from '../core/dispatch-store';
 import { IconComponent } from '../shared/icon.component';
@@ -10,7 +11,7 @@ import type { DispatchViewProps } from '@rescueflow/react-views/src';
 @Component({selector:'app-event-form',standalone:true,imports:[FormsModule,IconComponent,ReactViewHost],template:`
 <dialog #dialog class="event-dialog" [class.road-event-dialog]="isRoad()" (close)="store.pickingRoad.set(false)"><form ngNativeValidate (ngSubmit)="submit()">
   <div class="form-dialog-header"><span class="dialog-hero-icon"><app-icon [name]="type==='WEATHER_DELAY'?'oxygen':'alert'" [size]="25"/></span><button type="button" class="dialog-close" aria-label="Zapri obrazec" (click)="close()"><app-icon name="close"/></button><span class="eyebrow">SIMULIRANI DOGODEK</span><h2>{{label(type)}}</h2><p>Dogodek zabeleži spremembo razmer. Nov razpored aktivirate šele s potrditvijo predloga.</p></div>
-  <div class="form-grid"><label class="field">Vrsta dogodka<select name="type" [(ngModel)]="type"><option value="NEW_TASK">Nova prednostna naloga</option><option value="VEHICLE_BREAKDOWN">Okvara vozila</option><option value="VEHICLE_UNAVAILABLE">Nedosegljivost vozila</option><option value="WEATHER_DELAY">Slabo vreme</option><option value="TRAFFIC_DELAY">Prometni zastoj</option><option value="ROAD_CLOSURE">Zapora ceste</option></select></label><label class="field">Prioriteta<select name="priority" [(ngModel)]="priority"><option>P1</option><option>P2</option><option>P3</option></select></label>
+  <div class="form-grid"><label class="field">Vrsta dogodka<select name="type" [(ngModel)]="type" (ngModelChange)="changeType($event)"><option value="NEW_TASK">Nova prednostna naloga</option><option value="VEHICLE_BREAKDOWN">Okvara vozila</option><option value="VEHICLE_UNAVAILABLE">Nedosegljivost vozila</option><option value="WEATHER_DELAY">Slabo vreme</option><option value="TRAFFIC_DELAY">Prometni zastoj</option><option value="ROAD_CLOSURE">Zapora ceste</option></select></label><label class="field">Prioriteta<select name="priority" [(ngModel)]="priority"><option>P1</option><option>P2</option><option>P3</option></select></label>
   @if(type==='VEHICLE_BREAKDOWN'||type==='VEHICLE_UNAVAILABLE'){<label class="field">Vozilo<select name="vehicle" [(ngModel)]="vehicle" required>@for(v of store.state()?.vehicles;track v.id){<option [value]="v.id">{{v.code}} · {{v.vehicle_type}}</option>}</select></label>}
   @if(type==='VEHICLE_UNAVAILABLE'||type==='WEATHER_DELAY'||type==='TRAFFIC_DELAY'||type==='ROAD_CLOSURE'){<label class="field">Predvideno trajanje (min)<input type="number" name="duration" [(ngModel)]="duration" min="5" max="600" required/></label>}
   @if(type==='WEATHER_DELAY'||type==='TRAFFIC_DELAY'){<label class="field">Faktor časa vožnje<input type="number" name="multiplier" [(ngModel)]="multiplier" min="1" max="5" step="0.1" required/></label>}
@@ -25,7 +26,7 @@ import type { DispatchViewProps } from '@rescueflow/react-views/src';
     </div>
   }
   @if(type==='NEW_TASK'||type==='WEATHER_DELAY'){<label class="field">Zemljepisna širina<input type="number" name="lat" [(ngModel)]="lat" min="-90" max="90" step="0.0001" required/></label><label class="field">Zemljepisna dolžina<input type="number" name="lon" [(ngModel)]="lon" min="-180" max="180" step="0.0001" required/></label>}
-  <label class="field full">Opis / razlog<textarea name="description" [(ngModel)]="description" rows="3" maxlength="1000" required placeholder="Kaj se je zgodilo in kakšen vpliv pričakujete?"></textarea></label></div>
+  <label class="field full">Opis / razlog (neobvezno)<textarea name="description" [(ngModel)]="description" rows="3" maxlength="1000" placeholder="Kaj se je zgodilo in kakšen vpliv pričakujete?"></textarea></label></div>
   @if(type==='WEATHER_DELAY'){<div class="form-impact"><app-icon name="clock" [size]="17"/>Časi vožnje v izbranem območju bodo {{multiplier}}× daljši, naslednjih {{duration}} minut.</div>}
   @if(type==='NEW_TASK'){<p class="form-note">Prioriteto, zahtevano opremo in cilj prevoza določi dispečer. Sistem jih med razporejanjem ne spreminja.</p>}
   @if(error||store.error()){<p class="form-error" role="alert">{{error||store.error()}}</p>}
@@ -36,12 +37,13 @@ export class EventFormComponent {
   type:IncidentType='NEW_TASK';priority:'P1'|'P2'|'P3'='P1';vehicle='V3';duration=90;multiplier=1.6;facility='F3';equipment:Equipment='OXYGEN';passengers=1;
   lat=46.068;lon=14.542;pickup='11:35';preferred='12:05';deadline='12:35';description='';error='';label=incidentType;
   roadName='';isRoad(){return this.type==='TRAFFIC_DELAY'||this.type==='ROAD_CLOSURE';}
+  changeType(type:IncidentType){this.type=type;this.multiplier=type==='TRAFFIC_DELAY'?ROAD_EVENT_DEFAULTS.delay_multiplier:1.6;}
   readonly roadMapProps=computed<DispatchViewProps|null>(()=>{const state=this.store.state();return state?{state,plan:this.store.activePlan(),basePlan:this.store.activePlan(),diff:this.store.diff(),selectedVehicleId:null,isPreview:false,tracking:this.store.tracking(),roads:this.store.roads(),roadPreview:this.store.roadTarget(),pickingRoad:this.store.pickingRoad(),onPickRoad:location=>void this.store.pickRoad(location),onSelectVehicle:()=>undefined,onSelectTask:()=>undefined}:null;});
   async findRoad(){await this.store.findStreet(this.roadName);}
   open(type:IncidentType='NEW_TASK',vehicle?:string){
     const state=this.store.state();if(!state)return;
     this.roadName='';this.store.roadTarget.set(null);this.store.pickingRoad.set(false);
-    this.type=type;this.vehicle=vehicle??'V3';this.priority=type==='NEW_TASK'?'P1':'P2';this.error='';this.store.error.set('');this.duration=90;this.multiplier=1.6;
+    this.type=type;this.vehicle=vehicle??'V3';this.priority=type==='NEW_TASK'?'P1':'P2';this.error='';this.store.error.set('');this.duration=ROAD_EVENT_DEFAULTS.duration_minutes;this.changeType(type);
     this.facility=state.facilities.find(f=>f.id==='F3')?.id??state.facilities[0]?.id??'';
     const now=Date.parse(state.simulated_time);this.pickup=formatTime(new Date(now+15*60_000).toISOString());this.preferred=formatTime(new Date(now+45*60_000).toISOString());this.deadline=formatTime(new Date(now+75*60_000).toISOString());
     this.description=type==='WEATHER_DELAY'?'Močno deževje na območju Ljubljane; pričakovani počasnejši prevozi.':type==='NEW_TASK'?'Simulirana prometna nesreča. Dispečer je določil prednostni prevoz.':type==='VEHICLE_BREAKDOWN'?'Tehnična okvara; vozilo ostaja vidno, prihodnje naloge potrebujejo pregled.':'';

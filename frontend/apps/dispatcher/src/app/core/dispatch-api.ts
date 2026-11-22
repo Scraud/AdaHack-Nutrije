@@ -2,6 +2,7 @@ import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMa
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
 import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
+import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
 
 export interface DispatchGateway {
   readonly isDemo: boolean;
@@ -57,6 +58,7 @@ export class HttpDispatchGateway implements DispatchGateway {
   getSources(refresh=false){return this.request<SourceStatus[]>(`/conditions${refresh?'/refresh':''}`,refresh?{}:undefined);}
   async advanceTime(to:string){const state=await this.request<BackendState>('/state');return this.mutate('/demo/advance-time',{to:Math.round((Date.parse(to)-Date.parse(state.start_at))/1000)});}
   async createIncident(input: IncidentInput) {
+    if(input.incident_type==='TRAFFIC_DELAY'||input.incident_type==='ROAD_CLOSURE')input={...ROAD_EVENT_DEFAULTS,...input};
     const state=await this.request<BackendState>('/state');
     const offset=(time:string)=>Math.round((Date.parse(time)-Date.parse(state.start_at))/1000);
     const body:components['schemas']['CreateIncident']={type:input.incident_type,description:input.description??'',priority:input.priority,

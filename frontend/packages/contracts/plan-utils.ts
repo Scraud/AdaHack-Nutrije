@@ -1,6 +1,6 @@
 import type { Assignment, DispatchPlan, DispatchState, PlanDiff, TransportTask } from './index';
 
-export const VEHICLE_COLORS: Record<string, string> = { V1: '#0f8b7b', V2: '#5984c5', V3: '#dc922c', V4: '#8670c7', V5: '#439bab' };
+export const VEHICLE_COLORS: Record<string, string> = { V1: '#1e5ec1', V2: '#00846e', V3: '#7d42bc', V4: '#a76a05', V5: '#ac397d' };
 export const colorFor = (id: string) => VEHICLE_COLORS[id] ?? '#64818a';
 export const formatTime = (value: string | null) => value===null?'—':new Intl.DateTimeFormat('sl-SI', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Ljubljana' }).format(new Date(value));
 export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCHAIR: 'Voziček', OXYGEN: 'Kisik' }[value] ?? value);

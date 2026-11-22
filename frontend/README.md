@@ -32,7 +32,7 @@ Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1
 - **Dogodki:** seznam, filtri in dodajanje; podrobnosti odprejo stranski pregled na domači strani, skupaj z zgodovino odločitev.
 - **Analiza:** jasno označeni **vzorčni podatki** za teden/mesec/leto, 24-urna napoved povpraševanja, časovna heatmapa 00–23 in zemljevid obremenitve celotne Slovenije ter primerjava vozil. Ti podatki ne vplivajo na planer in niso zgodovina baze.
 
-Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid uporablja cestno geometrijo, sledenje in gladko premikanje iz `main`, ob tem pa ohranja prilagojeni videz, barve vozil in upravljalne gumbe. Predvajanje podpira hitrosti 30×, 60× in 300× ter premor. GPS način uporablja iste backend endpointe.
+Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid uporablja izvirni prikaz iz `main`: lokalno cestno podlago, krožne ikone vozil in ustanov, barve, ETA, sledenje in gladko premikanje. Barve časovnice in vozil so usklajene z zemljevidom. Predvajanje podpira hitrosti 30×, 60× in 300× ter premor. GPS način uporablja iste backend endpointe. Opis dodanega dogodka je neobvezen.
 
 Časovnica uporablja polno barvo vozila za aktivne prevoze, prosojno za prihodnje, sivo za opravljene in rdečo za neuspešne oziroma blokirane. Pokvarjeno vozilo ostane v vrstici z oznako časa okvare. Spremembe med predogledom imajo zelen/oranžen obris, prejšnje dodelitve pa črtkan obris. Hover ne pošilja HTTP zahtev in ne spremeni plana v bazi. Gumb v podrobnostih naloge zapre dialog, odpre stran nalog in se pomakne do označene časovnice.
 
@@ -82,8 +82,8 @@ Za ločen razvojni predogled tega testnega backenda lahko uporabite `npm.cmd sta
 
 ## Zemljevid
 
-Podlaga uporablja OpenStreetMap ploščice; umirjen videz je CSS filter. Lokalno cestno omrežje iz backenda ostane na voljo tudi brez ploščic. Polna pot vodi do pacienta, pikčasta do ustanove; položaji in ETA prihajajo iz `/api/tracking`. Že prevoženi del poti se sproti umika.
+Operativni zemljevid prikazuje lokalno cestno omrežje iz `main` brez zunanjih ploščic. Polna pot vodi do pacienta, pikčasta do ustanove; položaji in ETA prihajajo iz `/api/tracking`. Že prevoženi del poti se sproti umika. Zemljevid ostane čez razpoložljivo širino in je enak tudi v pregledu rešitev ter izbiri cestnega dogodka. Statistični zemljevid Slovenije ostaja ločen prikaz vzorčnih podatkov.
 
-V meniju **Simuliraj dogodek** izberite **Prometni zastoj** ali **Zapora ceste**. Ulico poiščite po imenu ali vključite **Izberi na zemljevidu** in kliknite cestni odsek. Izbor je označen oranžno; aktivne motnje se prikažejo rdeče. Backend iz `main` izračuna obvoz in posodobi čase ob ohranjeni dodelitvi vozila. V pregledu dogodka gumb **Odstrani zastoj/zaporo** ponovno sprosti odsek. Obravnavana odločitev in fizično odstranjena motnja sta ločeni stanji.
+V meniju **Simuliraj dogodek** izberite **Prometni zastoj** ali **Zapora ceste**. Ulico poiščite po imenu ali vključite **Izberi na zemljevidu** in kliknite cestni odsek. Izbor je označen oranžno; aktivne motnje se prikažejo rdeče. Privzeti zastoj uporablja parametre iz `main`: faktor **2,3** in trajanje **90 minut**. Backend iz `main` izračuna obvoz in posodobi čase ob ohranjeni dodelitvi vozila. V pregledu dogodka gumb **Odstrani zastoj/zaporo** ponovno sprosti odsek. Obravnavana odločitev in fizično odstranjena motnja sta ločeni stanji.
 
 Cestni predogledi največ treh rešitev se vnaprej preberejo prek `/api/tracking?plan_id=...`; uporabljajo iste cestne funkcije iz `main` in ne spreminjajo baze ali aktivnega plana. Prehod s kazalcem nato samo izbere že naloženo geometrijo in pripadajočo časovnico. Plan aktivira šele izrecna potrditev.

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import type { RoadMap, RoadSegment, BackendState as State, TrackingFrame } from '../../contracts';
-import { colorFor } from '../../contracts/plan-utils';
 import { measure, pointAt, progress, remaining } from './route-motion';
 import type { Coordinate, Leg } from './route-motion';
 
-
+const colors: Record<string, string> = {
+  V1: '#1e5ec1', V2: '#00846e', V3: '#7d42bc', V4: '#a76a05', V5: '#ac397d',
+};
 const statuses: Record<string, string> = {
   WAITING: 'Čaka', TO_PICKUP: 'Na poti do pacienta', AT_PICKUP: 'Prevzem pacienta',
   TO_HOSPITAL: 'Na poti v ustanovo', AT_HOSPITAL: 'Pri ustanovi', STOPPED: 'Ustavljeno', GPS: 'Lokacija GPS',
@@ -58,20 +59,21 @@ function drawMotion(motion: VehicleMotion, marker: L.Marker | undefined, routes:
 }
 
 function icon(symbol: string, badge: string, kind: string, size: number, color?: string, eta?: HTMLElement) {
-  const content=document.createElement('div');
-  if(kind==='ambulance-pin'){
-    content.className='rf-vehicle-pin';
-    content.style.setProperty('--marker-color',color??'#008c82');
-    const glyph=document.createElement('span');glyph.className='rf-vehicle-glyph';
-    glyph.innerHTML='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h12v12H3zM15 10h4l3 4v4h-7M6 18a2 2 0 1 0 4 0M16 18a2 2 0 1 0 4 0M9 9v6M6 12h6"/></svg>';
-    const label=document.createElement('b');label.textContent=badge;
-    const dot=document.createElement('i');dot.className='rf-marker-status';
-    content.append(glyph,label,dot);if(eta){eta.className='rf-tracking-eta';content.append(eta);}
-    return L.divIcon({className:'rf-vehicle-marker rf-live-vehicle',html:content,iconSize:[82,40],iconAnchor:[41,22]});
+  const content = document.createElement('span');
+  content.className = 'map-pin-content';
+  if (color) content.style.setProperty('--pin-color', color);
+  const graphic = document.createElement('span');
+  graphic.textContent = symbol;
+  graphic.setAttribute('aria-hidden', 'true');
+  content.append(graphic);
+  if (badge) {
+    const label = document.createElement('b');
+    label.textContent = badge;
+    content.append(label);
   }
-  content.className=kind==='closure-pin'?'rf-road-closure-pin':'rf-pickup-pin';
-  content.textContent=symbol;
-  return L.divIcon({className:'rf-road-marker',html:content,iconSize:[size,size],iconAnchor:[size/2,size/2]});
+  if (eta) content.append(eta);
+  return L.divIcon({ className: `map-pin ${kind}`, html: content,
+    iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
 function tooltip(label: string) {
@@ -80,14 +82,11 @@ function tooltip(label: string) {
   return element;
 }
 
-// Road geometry, tracking, route interpolation and incident overlays from main.
-// The surrounding map, controls and vehicle appearance belong to the custom UI.
-export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehicle, pickingRoad, roadPreview, onPick, showRoutes, showFacilities, selectedVehicleId }: {
-  leaf:L.Map;state:State;roads:RoadMap|null;frame:TrackingFrame|null;onSelect:(id:string)=>void;
-  onVehicle:(id:string)=>void;pickingRoad:boolean;roadPreview:RoadSegment|null;
-  onPick:(location:Coordinate)=>void;showRoutes:boolean;showFacilities:boolean;
-  selectedVehicleId:string|null;
+export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPreview, onPick }: {
+  state: State; roads: RoadMap | null; frame: TrackingFrame | null; onSelect: (id: string) => void;
+  pickingRoad: boolean; roadPreview: RoadSegment | null; onPick: (location: Coordinate) => void;
 }) {
+  const element = useRef<HTMLDivElement>(null);
   const layers = useRef<{
     leaf: L.Map;
     roads: L.LayerGroup; routes: L.LayerGroup; sites: L.LayerGroup; events: L.LayerGroup;
@@ -105,10 +104,14 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
   const animationFrame = useRef<number | null>(null);
 
   useEffect(() => {
-    const map=leaf;
+    if (!element.current) return;
+    const map = L.map(element.current, { scrollWheelZoom: false, minZoom: 11, maxZoom: 18 })
+      .setView([46.060, 14.515], 12);
+    map.attributionControl.setPrefix(false);
+    map.attributionControl.addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>');
     for (const [name, index] of [['road-base', 300], ['vehicle-paths', 390], ['road-events', 410],
       ['road-selection', 420]] as const) {
-      (map.getPane(name) ?? map.createPane(name)).style.zIndex = String(index);
+      map.createPane(name).style.zIndex = String(index);
     }
     layers.current = {
       leaf: map,
@@ -116,10 +119,11 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
       events: L.layerGroup().addTo(map), selection: L.layerGroup().addTo(map), tracking: L.layerGroup().addTo(map),
       renderer: L.canvas({ pane: 'road-base', padding: .35 }),
     };
-
+    L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
+    const resize = new ResizeObserver(() => map.invalidateSize());
+    resize.observe(element.current);
     return () => {
-      const owned=layers.current;
-      if(owned)for(const group of [owned.roads,owned.routes,owned.sites,owned.events,owned.selection,owned.tracking])map.removeLayer(group);
+      resize.disconnect();
       layers.current = null;
       vehicleMarkers.current.clear();
       routeLayers.current.clear();
@@ -129,9 +133,9 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
       frameKey.current = '';
       lastFrameAt.current = null;
       routeKey.current = siteKey.current = eventKey.current = '';
-
+      map.remove();
     };
-  }, [leaf]);
+  }, []);
 
   useEffect(() => {
     const map = layers.current;
@@ -195,6 +199,10 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
     if (sites !== siteKey.current) {
       siteKey.current = sites;
       map.sites.clearLayers();
+      for (const site of state.facilities) {
+        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48), title: site.name, alt: site.name })
+          .bindTooltip(tooltip(site.name)).addTo(map.sites);
+      }
       for (const task of pickups) {
         const title = `Prevzem ${task.id}`;
         L.marker([task.pickup.lat, task.pickup.lon], { icon: icon(task.id, '', 'pickup-pin', 32), title, alt: title })
@@ -225,7 +233,7 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
           const path = remaining(leg, distance);
           const casing = L.polyline(path, { ...style, color: '#fff', weight: weight + 3, interactive: false,
             dashArray: dotted ? '2 8' : undefined }).addTo(map.routes);
-          const line = L.polyline(path, { ...style, color: colorFor(vehicle.id), weight,
+          const line = L.polyline(path, { ...style, color: colors[vehicle.id], weight,
             dashArray: dotted ? '2 8' : undefined, className: dotted ? 'route-to-hospital' : 'route-to-pickup' });
           line.bindTooltip(tooltip(`${vehicle.id} · ${dotted ? 'Do ustanove' : 'Do pacienta'}`)).addTo(map.routes);
           if (vehicle.task_id) line.on('click', () => onSelect(vehicle.task_id!));
@@ -282,18 +290,11 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
         eta.className = 'map-eta';
         eta.hidden = true;
         const marker = L.marker(vehicle.location, { title: `Reševalno vozilo ${vehicle.id}`, alt: `Reševalno vozilo ${vehicle.id}`,
-          icon: icon('🚑', vehicle.id, 'ambulance-pin', 38, colorFor(vehicle.id), eta), zIndexOffset: 400 }).addTo(map.tracking);
-        marker.on('click',()=>onVehicle(vehicle.id));
+          icon: icon('🚑', vehicle.id, 'ambulance-pin', 38, colors[vehicle.id], eta), zIndexOffset: 400 }).addTo(map.tracking);
         entry = { marker, eta };
         vehicleMarkers.current.set(vehicle.id, entry);
       }
       const { marker, eta } = entry;
-      const element=marker.getElement();
-      element?.classList.toggle('is-selected',vehicle.id===selectedVehicleId);
-      element?.classList.toggle('is-muted',!!selectedVehicleId&&vehicle.id!==selectedVehicleId);
-      const dot=element?.querySelector('.rf-marker-status');
-      const operational=state.vehicles.find(v=>v.id===vehicle.id);
-      if(dot)dot.className=`rf-marker-status ${operational?.broken||vehicle.status==='STOPPED'?'unavailable':vehicle.status==='WAITING'?'available':'moving'}`;
       const countdown = vehicle.eta
         ? `${vehicle.eta.destination === 'PICKUP' ? 'Do pacienta' : 'Do ustanove'} · ${Math.ceil(vehicle.eta.seconds / 60)} min`
         : '';
@@ -360,13 +361,7 @@ export function RoadTrackingLayer({ leaf, state, roads, frame, onSelect, onVehic
       };
       animationFrame.current = requestAnimationFrame(animate);
     }
-  }, [state, roads, frame, onSelect, selectedVehicleId]);
+  }, [state, roads, frame, onSelect]);
 
-  useEffect(()=>{
-    const owned=layers.current;if(!owned)return;
-    for(const [group,visible] of [[owned.routes,showRoutes],[owned.sites,showFacilities]] as const){
-      if(visible)group.addTo(leaf);else leaf.removeLayer(group);
-    }
-  },[leaf,showRoutes,showFacilities]);
-  return null;
+  return <div ref={element} className="dispatch-map" aria-label="Zemljevid cest in reševalnih vozil" />;
 }

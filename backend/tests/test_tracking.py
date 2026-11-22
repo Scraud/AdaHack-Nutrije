@@ -204,6 +204,45 @@ def test_position_interpolates_by_distance_and_keeps_corners():
     assert position_on_path(road, 2, fallback) == road[-1]
 
 
+def test_main_traffic_factor_delays_hospital_arrival_and_tracking_eta(tmp_path):
+    network = road_network()
+    with TestClient(create_app(tmp_path / "traffic-eta.sqlite")) as client:
+        state = client.post("/api/plans/generate").json()
+        assignment = min(state["active_plan"]["assignments"], key=lambda row: row["planned_departure"])
+        task = next(row for row in state["tasks"] if row["id"] == assignment["task_id"])
+        instant = assignment["planned_pickup"] + task["pickup_service"]
+        assert client.post("/api/demo/advance-time", json={"to": instant}).is_success
+        vehicle = next(row for row in client.get("/api/tracking").json()["vehicles"]
+                       if row["id"] == assignment["vehicle_id"])
+        assert vehicle["status"] == "TO_HOSPITAL"
+        destination = Point.model_validate(next(f["location"] for f in state["facilities"]
+                                                if f["id"] == task["facility_id"]))
+        targets = {}
+        for a, b in zip(vehicle["to_hospital"], vehicle["to_hospital"][1:]):
+            segment = network.nearest((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            if segment:
+                road_id = f"street:{segment.name}"
+                if network.segment(road_id):
+                    event = Incident(type="TRAFFIC_DELAY", road_id=road_id, multiplier=2.3)
+                    route = network.route(tuple(vehicle["location"]), destination, network.effects([event]))
+                    if route:
+                        targets[road_id] = route[0]
+        road_id = max(targets, key=targets.get)
+        assert targets[road_id] > vehicle["eta"]["seconds"], "Select a street affecting the current trip"
+        response = client.post("/api/incidents", json={"type": "TRAFFIC_DELAY", "road_id": road_id,
+                                                      "duration": 5400, "multiplier": 2.3})
+        assert response.is_success, response.text
+        updated = next(row for row in response.json()["active_plan"]["assignments"]
+                       if row["task_id"] == assignment["task_id"])
+        assert updated["planned_dropoff"] > assignment["planned_dropoff"]
+        assert updated["vehicle_id"] == assignment["vehicle_id"]
+        tracked = next(row for row in client.get("/api/tracking").json()["vehicles"]
+                       if row["id"] == assignment["vehicle_id"])
+        assert tracked["eta"]["seconds"] == updated["planned_dropoff"] - instant
+        assert tracked["eta"]["seconds"] > vehicle["eta"]["seconds"]
+        assert response.json()["incidents"][-1]["description"] == ""
+
+
 def test_gps_requires_key_and_does_not_replace_simulated_dispatch_state(tmp_path, monkeypatch):
     monkeypatch.setenv("RESCUEFLOW_GPS_KEY", "test-only-key")
     with TestClient(create_app(tmp_path / "gps.sqlite")) as client:

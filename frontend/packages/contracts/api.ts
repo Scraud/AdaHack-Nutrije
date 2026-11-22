@@ -242,6 +242,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recommendations/{rec_id}/explanation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Explanation */
+        get: operations["explanation_api_recommendations__rec_id__explanation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recommendations/{rec_id}/accept": {
         parameters: {
             query?: never;
@@ -544,6 +561,33 @@ export interface components {
             /** Seconds */
             seconds: number;
         };
+        /** Explanation */
+        Explanation: {
+            /** Recommendation Id */
+            recommendation_id: string;
+            /**
+             * Strategy
+             * @enum {string}
+             */
+            strategy: "MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "OLLAMA" | "RULES";
+            /** Model */
+            model?: string | null;
+            /** Pros */
+            pros: string[];
+            /** Cons */
+            cons: string[];
+            /** Flags */
+            flags: components["schemas"]["Flag"][];
+            /** Impacts */
+            impacts: components["schemas"]["TaskImpact"][];
+            /** Notice */
+            notice?: string | null;
+        };
         /** Facility */
         Facility: {
             /** Id */
@@ -558,6 +602,27 @@ export interface components {
              * @default true
              */
             accepting: boolean;
+        };
+        /** Flag */
+        Flag: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "UNASSIGNED" | "RESOLVED" | "CREW_NOTICE" | "TIGHT_DEADLINE" | "LATER_ARRIVAL" | "CASCADE" | "FACILITY_BUNCHING" | "SHARED_DELAY_EXPOSURE";
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "HIGH" | "MEDIUM" | "INFO";
+            /** Message */
+            message: string;
+            /** Short */
+            short: string;
+            /** Task Ids */
+            task_ids?: string[];
+            /** Vehicle Ids */
+            vehicle_ids?: string[];
         };
         /** GPSFix */
         GPSFix: {
@@ -1019,6 +1084,28 @@ export interface components {
             actual_pickup?: number | null;
             /** Actual Arrival */
             actual_arrival?: number | null;
+        };
+        /** TaskImpact */
+        TaskImpact: {
+            /** Task Id */
+            task_id: string;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
+            /** Old Vehicle Id */
+            old_vehicle_id?: string | null;
+            /** New Vehicle Id */
+            new_vehicle_id?: string | null;
+            /** Old Pickup */
+            old_pickup?: number | null;
+            /** New Pickup */
+            new_pickup?: number | null;
+            /** Delay Seconds */
+            delay_seconds?: number | null;
+            /** Margin Seconds */
+            margin_seconds?: number | null;
         };
         /** TrackedVehicle */
         TrackedVehicle: {
@@ -1493,6 +1580,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationView"][];
+                };
+            };
+        };
+    };
+    explanation_api_recommendations__rec_id__explanation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Explanation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

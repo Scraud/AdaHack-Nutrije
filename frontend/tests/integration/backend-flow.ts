@@ -38,7 +38,7 @@ assert.ok(store.recommendations().length>0,'Expected a feasible backend proposal
 assert.ok(store.recommendations().length<=3);
 for(const rec of store.recommendations()){
   assert.ok(rec.incident_ids?.includes(incident.id));
-  assert.equal(candidateProblem(store.activePlan(),rec.proposed_plan,store.state()!.tasks),null);
+  assert.equal(candidateProblem(store.activePlan(),rec.proposed_plan,store.state()!),null);
   store.hover(rec.id);
   assert.ok(store.displayedTracking(),'Each proposal must have a real backend road preview.');
   assert.ok(store.displayedTracking()!.vehicles.some(v=>(v.to_pickup?.length??0)>2||(v.to_hospital?.length??0)>2));

@@ -27,7 +27,16 @@
       <span class="recommendation-summary">Vozila: {{vehicles(rec)}} · {{diff(rec).added.size}} novih, {{diff(rec).changed.size}} sprememb</span>
       <span class="recommendation-metrics"><span><b>{{metrics(rec).delay}} <small>min</small></b>Zamuda</span><span><b>{{metrics(rec).unassigned}}</b>Nerazporejeno</span><span><b>{{rec.proposed_plan.metrics?.remaining_buffer_minutes??'—'}} <small>min</small></b>Rezerva</span></span>
       <span class="rec-benefit"><app-icon name="check" [size]="14"/>{{benefit(rec)}}</span><span class="rec-tradeoff"><app-icon name="alert" [size]="14"/>{{tradeoff(rec)}}</span>
-      @if(store.selectedRecommendationId()===rec.id){<span class="rec-explanation">{{rec.explanation}}</span>@for(reason of rec.feasibility_reasons;track reason){<span class="rec-reason">{{reason}}</span>}<span class="rec-change-list">@for(id of changedTasks(rec);track id){<span><b>{{id}}</b>{{changeText(rec,id)}}</span>}</span>}
+      @if(store.selectedRecommendationId()===rec.id){<span class="rec-explanation">{{rec.explanation}}</span>@for(reason of rec.feasibility_reasons;track reason){<span class="rec-reason">{{reason}}</span>}<span class="rec-change-list">@for(id of changedTasks(rec);track id){<span><b>{{id}}</b>{{changeText(rec,id)}}</span>}</span>
+       @if(store.gateway.explain){<span class="rec-insight" aria-live="polite"><span class="rec-insight-head"><app-icon name="sparkles" [size]="14"/>AI pregled posledic</span>
+        @if(store.insights()[rec.id];as ai){
+         @for(pro of ai.pros;track pro){<span class="rec-benefit"><app-icon name="check" [size]="14"/>{{pro}}</span>}
+         @for(con of ai.cons;track con){<span class="rec-tradeoff"><app-icon name="alert" [size]="14"/>{{con}}</span>}
+         <small>{{ai.source==='OLLAMA'?'Lokalni model '+ai.model:'Izračunano iz plana'}}</small>
+        }@else if(store.insightLoading()===rec.id){<small><app-icon name="loader" [size]="12"/>Pripravljam pregled …</small>}
+        @else if(store.insights()[rec.id]===null){<small>Pregleda ni bilo mogoče pripraviti.</small>}
+       </span>}
+      }
      </button>
     }@empty{<div class="empty-small"><app-icon [name]="store.selectedIncident()?.status==='RESOLVED'?'check':'help'" [size]="28"/><b>{{store.selectedIncident()?.status==='RESOLVED'?'Dogodek je obravnavan':'Veljavnih predlogov še ni'}}</b><p>{{store.generationInfo()||'Izračun prikaže največ tri različne izvedljive rešitve, če obstajajo.'}}</p></div>}
    </div>

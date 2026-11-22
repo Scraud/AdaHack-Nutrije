@@ -32,9 +32,9 @@ Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1
 - **Dogodki:** seznam, filtri in dodajanje; podrobnosti odprejo stranski pregled na domači strani, skupaj z zgodovino odločitev.
 - **Analiza:** jasno označeni **vzorčni podatki** za teden/mesec/leto, 24-urna napoved povpraševanja, časovna heatmapa 00–23 in zemljevid obremenitve celotne Slovenije ter primerjava vozil. Ti podatki ne vplivajo na planer in niso zgodovina baze.
 
-Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid uporablja izvirni prikaz iz `main`: lokalno cestno podlago, krožne ikone vozil in ustanov, barve, ETA, sledenje in gladko premikanje. Barve časovnice in vozil so usklajene z zemljevidom. Predvajanje podpira hitrosti 30×, 60× in 300× ter premor. GPS način uporablja iste backend endpointe. Opis dodanega dogodka je neobvezen.
+Povzetek dneva je determinističen prikaz podatkov iz stanja, brez zunanjega jezikovnega modela. Zemljevid uporablja lokalno cestno podlago, krožne ikone vozil in ustanov, barve, ETA, sledenje in gladko premikanje. Ikona vozila ima na časovnici isto barvo kot na zemljevidu. Predvajanje podpira hitrosti 30×, 60× in 300× ter premor. GPS način uporablja iste backend endpointe. Opis dodanega dogodka je neobvezen.
 
-Časovnica uporablja polno barvo vozila za aktivne prevoze, prosojno za prihodnje, sivo za opravljene in rdečo za neuspešne oziroma blokirane. Pokvarjeno vozilo ostane v vrstici z oznako časa okvare. Spremembe med predogledom imajo zelen/oranžen obris, prejšnje dodelitve pa črtkan obris. Hover ne pošilja HTTP zahtev in ne spremeni plana v bazi. Gumb v podrobnostih naloge zapre dialog, odpre stran nalog in se pomakne do označene časovnice.
+Časovnica obarva naloge po prioriteti. Visoka je rdeča, srednja oranžna in nizka zelena. Na glavni strani in v predogledu predloga premik kazalca ali fokus na nalogo pokaže želeni in napovedani prihod iz prikazanega plana. Pri visoki prednostni nalogi je želeni prihod označen s »Čim prej«. Pokvarjeno vozilo ostane v vrstici z oznako časa okvare. Nove in spremenjene dodelitve so v predogledu poudarjene z obrisom. Gumb v podrobnostih naloge zapre dialog, odpre stran nalog in se pomakne do označene časovnice.
 
 ## Povezava z backendom
 

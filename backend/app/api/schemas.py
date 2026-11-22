@@ -4,8 +4,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.planning.contracts import (
-    Assignment, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics, Point, Priority, Task, Vehicle,
-    Candidate,
+    Assignment, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics, Point, Priority, Strategy, Task,
+    Vehicle, Candidate,
 )
 
 
@@ -85,6 +85,39 @@ class Recommendations(BaseModel):
     items: list[RecommendationView]
     solver_statuses: list[str]
     duration_ms: int
+
+
+class Flag(BaseModel):
+    code: Literal["UNASSIGNED", "RESOLVED", "CREW_NOTICE", "TIGHT_DEADLINE", "LATER_ARRIVAL", "CASCADE",
+                  "FACILITY_BUNCHING", "SHARED_DELAY_EXPOSURE"]
+    severity: Literal["HIGH", "MEDIUM", "INFO"]
+    message: str
+    short: str
+    task_ids: list[str] = Field(default_factory=list)
+    vehicle_ids: list[str] = Field(default_factory=list)
+
+
+class TaskImpact(BaseModel):
+    task_id: str
+    priority: Priority
+    old_vehicle_id: str | None = None
+    new_vehicle_id: str | None = None
+    old_pickup: int | None = None
+    new_pickup: int | None = None
+    delay_seconds: int | None = None
+    margin_seconds: int | None = None
+
+
+class Explanation(BaseModel):
+    recommendation_id: str
+    strategy: Strategy
+    source: Literal["OLLAMA", "RULES"]
+    model: str | None = None
+    pros: list[str]
+    cons: list[str]
+    flags: list[Flag]
+    impacts: list[TaskImpact]
+    notice: str | None = None
 
 
 class Baseline(BaseModel):

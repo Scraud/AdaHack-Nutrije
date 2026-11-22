@@ -46,15 +46,26 @@ body{font-size:1rem}
 .incident-expansion .event-summary{margin:11px}.incident-expansion .recommendation-list{padding:0 10px;gap:10px}
 .incident-expansion .assistant-confirm{position:sticky;bottom:0;z-index:4;margin:8px 10px 0;border:1px solid #cde2d5;border-radius:7px;box-shadow:0 -3px 12px #254b3b0c}
 #transport-timeline{scroll-margin-top:22px}#transport-timeline:focus{outline:2px solid #65a893;outline-offset:4px}
-/* Timeline state is the only fill color; preview changes use outlines. */
-.phase-timeline .timeline-task.task-active{background:var(--vehicle-color);border-color:var(--vehicle-color);color:#fff;opacity:1}
-.phase-timeline .timeline-task.task-future{background:color-mix(in srgb,var(--vehicle-color) 17%,transparent);border-color:color-mix(in srgb,var(--vehicle-color) 35%,transparent);color:color-mix(in srgb,var(--vehicle-color) 78%,#203a34);opacity:1}
-.phase-timeline .timeline-task.task-completed{background:#e2e7e9;border-color:#d3dbdf;color:#6c7b83;opacity:1}
-.phase-timeline .timeline-task.task-failed{background:#d96060;border-color:#c44c4c;color:#fff;opacity:1}
+[data-priority="P1"]{--timeline-priority:#ac3135;--timeline-fill:#f8d7d7}
+[data-priority="P2"]{--timeline-priority:#a34e13;--timeline-fill:#ffe5cb}
+[data-priority="P3"]{--timeline-priority:#246b46;--timeline-fill:#d8efde}
+.phase-timeline .timeline-task{container-type:inline-size;background:var(--timeline-fill,#e7edef);border-color:var(--timeline-priority,#5b6c73);color:var(--timeline-priority,#5b6c73);justify-content:space-between;gap:2px}
+.phase-timeline .timeline-task.task-active{background:var(--timeline-priority,#5b6c73);color:white}
+.phase-timeline .timeline-task.task-completed{opacity:.72}
+.phase-timeline .timeline-task.task-failed{background:repeating-linear-gradient(135deg,var(--timeline-fill,#e7edef) 0 5px,white 5px 9px);border-style:dashed}
 .phase-timeline .timeline-task .phase-task-label{color:inherit;background:none;font-size:.75rem!important;font-weight:650!important;padding-inline:3px}
-.phase-timeline .timeline-task.preview-added{outline:2px solid #5aab79;outline-offset:1px}.phase-timeline .timeline-task.preview-changed{outline:2px dashed #cb9a49;outline-offset:1px}
+.timeline-arrival{display:none;padding-right:5px;font-size:.6875rem;font-weight:600;font-variant-numeric:tabular-nums}
+@container (min-width: 67px){.timeline-arrival{display:block}}
+.phase-timeline .timeline-task.preview-added{outline:2px solid #515071;outline-offset:1px}.phase-timeline .timeline-task.preview-changed{outline:2px dashed #515071;outline-offset:1px}
 .phase-timeline .timeline-task.task-selected{outline:3px solid #254f49;outline-offset:2px}
-.timeline-key .key-active{background:#0f8b7b}.timeline-key .key-future{background:#0f8b7b2b;border:1px solid #8ebfb0}.timeline-key .key-completed{background:#d9e0e4}.timeline-key .key-failed{background:#d96060}
+.timeline-key span{color:#4f6665}
+.timeline-key i{background:var(--timeline-fill);border-color:var(--timeline-priority);width:12px;height:10px}
+.unassigned-strip button[data-priority]{background:var(--timeline-fill);border-color:var(--timeline-priority);color:var(--timeline-priority)}
+.task-tooltip{width:min(292px,calc(100vw - 16px))}
+.task-tooltip>div>span[data-priority]{background:var(--timeline-fill);color:var(--timeline-priority)}
+.timeline-tooltip-times{display:grid;gap:4px;margin:9px 0;color:#314b4a;font-size:.75rem}
+.timeline-tooltip-times>div{display:grid;grid-template-columns:1fr auto;gap:8px}
+.timeline-tooltip-times dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}
 .vehicle-eta{background:#f4f8f6;border:1px solid #e1eae5;border-radius:8px;padding:13px;margin:0 0 15px}
 .vehicle-eta dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0}.vehicle-eta dt{font-size:.875rem;color:#6f857b}.vehicle-eta dd{font-size:1rem;color:#285e4b;font-weight:650;margin:7px 0 0}.vehicle-eta p{font-size:.875rem;color:#60796f;line-height:1.6;margin-top:12px}.vehicle-eta small{display:block;color:#87998e;font-size:.75rem;margin-top:5px}
 /* All-day analytics and national coverage. */
@@ -86,3 +97,7 @@ body{font-size:1rem}
 .road-incident-action{padding:13px;margin:12px 0;background:#fff8ef;border:1px solid #f0d9b9;border-radius:8px;color:#7f6041;font-size:12px;line-height:1.5}
 .road-incident-action p{margin:6px 0 10px}
 .analytics-period-controls{display:flex;justify-content:flex-end;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+.rec-insight{display:flex;flex-direction:column;border-top:1px solid #e3ede7;margin-top:10px;padding-top:9px}
+.rec-insight-head{display:flex;align-items:center;gap:6px;font-size:.6875rem;font-weight:600;letter-spacing:.02em;color:#3f9e85}
+.rec-insight .rec-benefit{color:#3f7f66;margin-top:6px}.rec-insight .rec-tradeoff{margin-top:6px}
+.rec-insight small{display:flex;align-items:center;gap:5px;margin-top:7px;font-size:.625rem;color:#9aaea7}

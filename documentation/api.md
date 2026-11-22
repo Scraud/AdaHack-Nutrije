@@ -90,6 +90,9 @@ Fails with `409 STALE_STATE` if the scenario has changed since the client last f
 ### `GET /api/recommendations` → `RecommendationView[]`
 All recommendations for the current scenario (including ACCEPTED/REJECTED history).
 
+### `GET /api/recommendations/{rec_id}/explanation` → `Explanation`
+Explains the consequences of accepting a proposed recommendation: verified `flags` (severity HIGH/MEDIUM/INFO), per-task `impacts`, and short `pros` / `cons` (≤ 3 each, a few words per line), written by a local Ollama model when available, otherwise rule-based. `source` is `OLLAMA` or `RULES`; `notice` says why the LLM text is missing or was shortened. Takes a few seconds with a local model; cached per recommendation. Fails with `409 STALE_STATE` for stale/decided recommendations and `404 RECOMMENDATION_NOT_FOUND`. See [advisor.md](advisor.md).
+
 ### `POST /api/recommendations/{rec_id}/accept` → `RecommendationView`
 Accepts a recommendation: promotes its plan to ACTIVE. Pauses playback.
 
@@ -180,6 +183,7 @@ Records a real GPS fix. Only available when `RESCUEFLOW_GPS_KEY` is configured.
 | `STALE_STATE` | 409 | Re-fetch state and retry |
 | `SOLVER_BUSY` | 409 | Another solve is in progress |
 | `PLAN_NOT_FOUND` | 404 | Plan id does not exist |
+| `RECOMMENDATION_NOT_FOUND` | 404 | Recommendation id does not exist (explanation endpoint) |
 | `VEHICLE_NOT_FOUND` | 404 | Vehicle id does not exist |
 | `FACILITY_NOT_FOUND` | 404 | Facility id does not exist |
 | `ROAD_NOT_FOUND` | 404 | Road segment id does not exist |

@@ -1,4 +1,4 @@
-import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
 import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
@@ -23,16 +23,17 @@ export interface DispatchGateway {
   setPlayback?(playing:boolean,speed:Playback['speed']): Promise<Playback>;
   resolveIncident?(id:string): Promise<DispatchState>;
   getSources?(refresh?:boolean): Promise<SourceStatus[]>;
+  explain?(id:string): Promise<RecommendationInsight>;
 }
 
 export class HttpDispatchGateway implements DispatchGateway {
   readonly isDemo = false;
   constructor(private readonly baseUrl: string) {}
-  private async request<T>(path: string, body?: unknown): Promise<T> {
+  private async request<T>(path: string, body?: unknown, timeout = 30_000): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
       method: body === undefined ? 'GET' : 'POST', credentials:'same-origin',
       headers: { Accept:'application/json', ...(body === undefined ? {} : { 'Content-Type':'application/json' }) },
-      body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30_000),
+      body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok) {
       if (response.status === 409) throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
@@ -58,6 +59,8 @@ export class HttpDispatchGateway implements DispatchGateway {
   setPlayback(playing:boolean,speed:Playback['speed']){return this.request<Playback>('/tracking/playback',{playing,speed});}
   resolveIncident(id:string){return this.mutate(`/incidents/${encodeURIComponent(id)}/resolve`,{});}
   getSources(refresh=false){return this.request<SourceStatus[]>(`/conditions${refresh?'/refresh':''}`,refresh?{}:undefined);}
+  // A local model can need a while to load on first use.
+  explain(id:string){return this.request<RecommendationInsight>(`/recommendations/${encodeURIComponent(id)}/explanation`,undefined,120_000);}
   async advanceTime(to:string){
     const state=await this.request<BackendState>('/state');
     const seconds=Math.round((Date.parse(to)-Date.parse(state.start_at))/1000);

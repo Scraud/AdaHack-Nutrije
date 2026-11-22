@@ -12,6 +12,40 @@ from app.services.metrics import explain, metrics, predecessors
 
 STRATEGIES: tuple[Strategy, ...] = ("MIN_DELAY", "MIN_CHANGES", "MAX_BUFFER")
 Arc = tuple[str, str | None, str | None]
+PRIORITY_WEIGHT = {"P1": 4, "P2": 2, "P3": 1}
+BUFFER_TARGET = 20 * 60
+NEAR_TERM = 3600
+SCALE = 100
+
+
+@dataclass(frozen=True)
+class Profile:
+    """Costs in minutes of P3 delay, so every strategy trades the same criteria at different rates."""
+    change: float
+    near_change: float
+    sequence: float
+    shift: float
+    shortfall: float
+    travel: float
+    delay: float = 1.0
+
+
+PROFILES: dict[Strategy, Profile] = {
+    "MIN_DELAY": Profile(change=3, near_change=3, sequence=0.5, shift=0.05, shortfall=0.1, travel=0.05),
+    "MIN_CHANGES": Profile(change=30, near_change=15, sequence=6, shift=0.25, shortfall=0.1, travel=0.02),
+    "MAX_BUFFER": Profile(change=6, near_change=6, sequence=1, shift=0.05, shortfall=1.5, travel=0.02, delay=0.5),
+}
+
+
+@dataclass
+class Terms:
+    travel: cp.LinearExprT
+    delays: list[tuple[int, cp.IntVar]]
+    switched: list[cp.LinearExprT]
+    near_switched: list[cp.LinearExprT]
+    predecessor_changes: list[cp.LinearExprT]
+    shifts: list[cp.IntVar]
+    shortfalls: list[cp.IntVar]
 
 
 @dataclass
@@ -35,6 +69,7 @@ class ScheduleModel:
         self.arcs: dict[Arc, tuple[cp.IntVar, int]] = {}
         self.present: dict[str, cp.IntVar] = {}
         self.min_buffer = self.model.new_int_var(0, HORIZON, "min_buffer")
+        self._terms: Terms | None = None
         self._add_tasks()
         self._add_routes()
         base = len(state.tasks) + 1
@@ -46,12 +81,12 @@ class ScheduleModel:
         routine = []
         for key, times in self.times.items():
             task = state.tasks[key]
-            if key in state.frozen or task.arrival_policy is None:
+            if key in state.frozen or (not task.arrival_asap and task.arrival_policy is None):
                 continue
             present = self.present[key]
             # Unscheduled pickups equal their lower bound and contribute zero elapsed time.
             elapsed = times.pickup - times.lower + present * (times.lower + times.to_dropoff - task.earliest_pickup)
-            if task.arrival_policy == "ASAP":
+            if task.arrival_asap:
                 urgent.append(elapsed)
                 urgent_count.append(present)
             else:
@@ -72,7 +107,7 @@ class ScheduleModel:
             to_dropoff = task.pickup_service + loaded
             to_end = to_dropoff + task.dropoff_service + task.cleaning
             upper = min(task.latest_pickup if task.latest_pickup is not None else HORIZON,
-                        task.latest_arrival - to_dropoff, HORIZON - to_end)
+                        task.arrival_deadline - to_dropoff, HORIZON - to_end)
             lower = max(task.earliest_pickup, self.state.now)
             if upper < lower and fixed is None:
                 continue
@@ -166,28 +201,54 @@ class ScheduleModel:
         return edge
 
     def set_objective(self, strategy: Strategy):
+        profile, terms = PROFILES[strategy], self._objective_terms()
+
+        def weight(factor: float) -> int:
+            return round(SCALE * factor)
+
+        cost = weight(profile.travel) * terms.travel
+        cost += sum(weight(profile.delay * PRIORITY_WEIGHT[priority]) * delay for priority, delay in terms.delays)
+        cost += weight(60 * profile.change) * sum(terms.switched)
+        cost += weight(60 * profile.near_change) * sum(terms.near_switched)
+        cost += weight(60 * profile.sequence) * sum(terms.predecessor_changes)
+        cost += weight(profile.shift) * sum(terms.shifts)
+        cost += weight(profile.shortfall) * sum(terms.shortfalls)
+        if strategy == "MAX_BUFFER":
+            cost -= weight(profile.shortfall) * self.min_buffer
+        self.model.minimize(cost)
+
+    def _objective_terms(self) -> Terms:
+        if self._terms is not None:
+            return self._terms
         travel = sum(edge * seconds for edge, seconds in self.arcs.values())
         travel += sum(self.present[key] * times.loaded for key, times in self.times.items())
         delays = []
         shifts = []
         switched = []
+        near_switched = []
         predecessor_changes = []
+        shortfalls = []
         previous = predecessors(list(self.state.previous.values()))
         for key, times in self.times.items():
             if key in self.state.frozen:
                 continue
             task = self.state.tasks[key]
             present = self.present[key]
-            if task.arrival_policy != "ASAP":
+            shortfall = self.model.new_int_var(0, BUFFER_TARGET, f"shortfall_{key}")
+            self.model.add(shortfall >= BUFFER_TARGET - (times.latest - times.pickup)).only_enforce_if(present)
+            shortfalls.append(shortfall)
+            if not task.arrival_asap:
                 delay = self.model.new_int_var(0, HORIZON, f"delay_{key}")
                 self.model.add(delay >= times.pickup + times.to_dropoff - task.preferred_arrival).only_enforce_if(present)
                 self.model.add(delay == 0).only_enforce_if(~present)
-                delays.append(delay * (4 if task.priority == "P1" else 1))
+                delays.append((task.priority, delay))
             old = self.state.previous.get(key)
             if old is None:
                 continue
             same_vehicle = self.choices.get((old.vehicle_id, key), 0)
             switched.append(1 - same_vehicle)
+            if old.planned_departure - self.state.now < NEAR_TERM:
+                near_switched.append(1 - same_vehicle)
             same_predecessor = self.arcs.get((old.vehicle_id, previous[key], key))
             barrier = self.state.frozen.get(previous[key]) if previous[key] is not None else None
             if (same_predecessor is None and barrier and barrier.status != "PLANNED"
@@ -200,13 +261,17 @@ class ScheduleModel:
             self.model.add(shift >= old.planned_pickup - times.pickup).only_enforce_if(present)
             self.model.add(shift == 0).only_enforce_if(~present)
             shifts.append(shift)
-        if strategy == "MIN_CHANGES":
-            self.model.minimize(1_000_000_000 * sum(switched) + 10_000_000 * sum(predecessor_changes)
-                                + 4 * sum(shifts) + sum(delays) + travel)
-        elif strategy == "MAX_BUFFER":
-            self.model.minimize(-1_000_000 * self.min_buffer + sum(delays) * 3 + travel)
-        else:
-            self.model.minimize(20 * sum(delays) + travel + sum(times.pickup for times in self.times.values()))
+        self._terms = Terms(travel, delays, switched, near_switched, predecessor_changes, shifts, shortfalls)
+        return self._terms
+
+    def assignment(self, solver: cp.CpSolver) -> frozenset[tuple[str, str]]:
+        return frozenset(key for key, choice in self.choices.items() if solver.boolean_value(choice))
+
+    def require_difference(self, chosen: frozenset[tuple[str, str]]) -> cp.IntVar:
+        """Optional cut: at least one task on a different vehicle; active only while assumed."""
+        switch = self.model.new_bool_var(f"differs_{len(self.model.proto.constraints)}")
+        self.model.add(sum(self.choices[key] for key in chosen) <= len(chosen) - 1).only_enforce_if(switch)
+        return switch
 
     def candidate(self, solver: cp.CpSolver, strategy: Strategy, coverage_proven: bool,
                   elapsed_ms: int, status: str) -> PlanCandidate:
@@ -244,11 +309,14 @@ class ScheduleModel:
         ), status)
 
 
-def _solve(model: cp.CpModel, seconds: float, hint: cp.CpSolver | None = None) -> tuple[cp.CpSolver, str]:
+def _solve(model: cp.CpModel, seconds: float, hint: cp.CpSolver | None = None,
+           assume: list[cp.IntVar] | None = None) -> tuple[cp.CpSolver, str]:
     if hint is not None:
         for index in range(len(hint.response_proto.solution)):
             variable = model.get_int_var_from_proto_index(index)
             model.add_hint(variable, hint.value(variable))
+    if assume:
+        model.add_assumptions(assume)
     solver = cp.CpSolver()
     solver.parameters.num_workers = 1
     solver.parameters.random_seed = 42
@@ -256,7 +324,28 @@ def _solve(model: cp.CpModel, seconds: float, hint: cp.CpSolver | None = None) -
     solver.parameters.max_deterministic_time = seconds / 4
     status = solver.solve(model)
     model.clear_hints()
+    model.clear_assumptions()
     return solver, solver.status_name(status)
+
+
+def _score(state: PlanningSnapshot, plan: Candidate) -> tuple[int, ...]:
+    """Lower is better on every axis; used to drop alternatives that no dispatcher would pick."""
+    unassigned = sum({"P1": 1_000_000, "P2": 1_000, "P3": 1}[state.tasks[issue.task_id].priority]
+                     for issue in plan.unassigned)
+    delay = sum(PRIORITY_WEIGHT[state.tasks[row.task_id].priority]
+                * max(0, row.planned_dropoff - state.tasks[row.task_id].preferred_arrival)
+                for row in plan.assignments if not state.tasks[row.task_id].arrival_asap)
+    return (unassigned, delay, plan.metrics.vehicle_changes, -plan.metrics.min_buffer_seconds,
+            plan.metrics.travel_seconds)
+
+
+# Differences below these amounts (unassigned weight, weighted delay s, changes, buffer s, travel s) are noise.
+TOLERANCE = (0, 120, 0, 300, 300)
+
+
+def _dominated(score: tuple[int, ...], others: list[tuple[int, ...]]) -> bool:
+    return any(all(a <= b + tol for a, b, tol in zip(other, score, TOLERANCE))
+               and any(a < b - tol for a, b, tol in zip(other, score, TOLERANCE)) for other in others)
 
 
 class CpSatPlanner:
@@ -290,11 +379,18 @@ class CpSatPlanner:
             if sooner_status in ("OPTIMAL", "FEASIBLE"):
                 schedule.model.add(schedule.routine == sooner.value(schedule.routine))
                 coverage_solver, coverage_status = sooner, sooner_status
-        output = []
+        output: list[PlanCandidate] = []
+        found: list[frozenset[tuple[str, str]]] = []
+        scores: list[tuple[int, ...]] = []
         for strategy in strategies:
             strategy_start = monotonic()
             schedule.set_objective(strategy)
-            solver, status = _solve(schedule.model, budget.strategy_seconds, coverage_solver if not output else None)
+            solver, status = _solve(schedule.model, budget.strategy_seconds, coverage_solver)
+            if status in ("OPTIMAL", "FEASIBLE") and schedule.assignment(solver) in found:
+                if not schedule.choices:
+                    break
+                cuts = [schedule.require_difference(chosen) for chosen in found if chosen]
+                solver, status = _solve(schedule.model, budget.strategy_seconds, assume=cuts)
             if status not in ("OPTIMAL", "FEASIBLE"):
                 if output:
                     output.append(PlanCandidate(None, status))
@@ -302,10 +398,13 @@ class CpSatPlanner:
                 solver, status = coverage_solver, coverage_status
             elapsed = monotonic() - (strategy_start if output else started)
             candidate = schedule.candidate(solver, strategy, coverage_proven, round(elapsed * 1000), status)
+            if candidate.plan and output:
+                score = _score(snapshot, candidate.plan)
+                if _dominated(score, scores):
+                    output.append(PlanCandidate(None, "DOMINATED"))
+                    continue
             output.append(candidate)
-            chosen = [edge for edge, _ in schedule.arcs.values() if solver.boolean_value(edge)]
-            if candidate.plan and chosen:
-                schedule.model.add(sum(chosen) < len(chosen))
-            elif candidate.plan:
-                break
+            if candidate.plan:
+                found.append(schedule.assignment(solver))
+                scores.append(_score(snapshot, candidate.plan))
         return output

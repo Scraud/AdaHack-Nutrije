@@ -1,5 +1,5 @@
 import { computed, Injectable, signal } from '@angular/core';
-import type { DispatchState, IncidentInput, Recommendation, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, Recommendation, RecommendationInsight, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
 import { calculatePlanMetrics, candidateProblem, comparePlans, currentAssignment, passengerOnBoard } from '@rescueflow/contracts/plan-utils';
 import type { DispatchGateway } from './dispatch-api';
 
@@ -19,6 +19,8 @@ export class DispatchStore {
   readonly generationInfo = signal('');
   readonly selectedRecommendationId = signal<string | null>(null);
   readonly hoveredRecommendationId = signal<string | null>(null);
+  readonly insights = signal<Record<string,RecommendationInsight|null>>({});
+  readonly insightLoading = signal<string|null>(null);
   readonly roads = signal<RoadMap|null>(null);
   readonly roadTarget = signal<RoadSegment|null>(null);
   readonly pickingRoad = signal(false);
@@ -36,7 +38,7 @@ export class DispatchStore {
   readonly activePlan = computed(() => this.state()?.active_plan ?? null);
   readonly recommendations = computed(() => {
     const s = this.state();
-    return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s.tasks)).slice(0,3) ?? [];
+    return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s)).slice(0,3) ?? [];
   });
   readonly previewRecommendation = computed(() => this.recommendations().find(r => r.id === (this.hoveredRecommendationId() ?? this.selectedRecommendationId())) ?? null);
   readonly previewPlan = computed(() => this.previewRecommendation()?.proposed_plan ?? null);
@@ -158,7 +160,14 @@ export class DispatchStore {
     if(Date.parse(s.simulated_time)<Date.parse(at))await this.advanceTime(at);
   }
   hover(id: string | null) { this.hoveredRecommendationId.set(id); }
-  pin(id: string) { this.selectedRecommendationId.set(id); this.hoveredRecommendationId.set(null); }
+  pin(id: string) { this.selectedRecommendationId.set(id); this.hoveredRecommendationId.set(null); void this.loadInsight(id); }
+  async loadInsight(id:string){
+    if(!this.gateway.explain||this.insights()[id]||this.insightLoading()===id)return;
+    this.insightLoading.set(id);
+    try{const insight=await this.gateway.explain(id);this.insights.update(all=>({...all,[id]:insight}));}
+    catch{this.insights.update(all=>({...all,[id]:null}));}
+    finally{if(this.insightLoading()===id)this.insightLoading.set(null);}
+  }
   clearPreview() { this.selectedRecommendationId.set(null); this.hoveredRecommendationId.set(null); }
   selectVehicle(id: string) { this.selectedVehicleId.update(old=>old===id ? null : id); }
   selectTask(id:string){this.selectedTaskId.set(id);const a=this.displayedPlan()?.assignments.find(a=>a.task_id===id);if(a)this.selectedVehicleId.set(a.vehicle_id);}

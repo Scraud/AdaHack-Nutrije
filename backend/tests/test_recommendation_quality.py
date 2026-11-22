@@ -16,11 +16,15 @@ def disrupted(client, now, incidents):
     return state
 
 
+def asap(task):
+    return task.get("arrival_policy") == "ASAP" or (task["type"] == "PRIORITY_TRANSPORT" and task["priority"] == "P1")
+
+
 def score(state, plan):
     tasks = {task["id"]: task for task in state["tasks"]}
     unassigned = sum({"P1": 1_000_000, "P2": 1_000, "P3": 1}[tasks[i["task_id"]]["priority"]] for i in plan["unassigned"])
     delay = sum(WEIGHT[tasks[r["task_id"]]["priority"]] * max(0, r["planned_dropoff"] - tasks[r["task_id"]]["preferred_arrival"])
-                for r in plan["assignments"])
+                for r in plan["assignments"] if not asap(tasks[r["task_id"]]))
     m = plan["metrics"]
     return unassigned, delay, m["vehicle_changes"], -m["min_buffer_seconds"], m["travel_seconds"]
 

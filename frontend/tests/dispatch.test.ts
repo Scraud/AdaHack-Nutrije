@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { DemoDispatchGateway } from '../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../apps/dispatcher/src/app/core/dispatch-store';
 import type { TrackingFrame } from '../packages/contracts';
-import { calculatePlanMetrics, candidateProblem, comparePlans, passengerOnBoard, timelineStatus, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
+import { calculatePlanMetrics, candidateProblem, comparePlans, formatTime, passengerOnBoard, preferredArrivalLabel, timelineStatus, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
 
 async function scenario() {
   const gateway=new DemoDispatchGateway();
@@ -82,10 +82,21 @@ test('plan differences identify new, moved and removed tasks by task identity',a
 });
 test('presentation guard blocks overlapping, late and modified locked assignments',async()=>{
   const {store}=await scenario();const state=store.state()!;const rec=store.recommendations()[0];
-  assert.equal(candidateProblem(state.active_plan,rec.proposed_plan,state.tasks),null);
-  const locked=structuredClone(rec.proposed_plan);locked.assignments[0].vehicle_id='V2';assert.ok(candidateProblem(state.active_plan,locked,state.tasks));
-  const late=structuredClone(rec.proposed_plan);late.assignments.at(-1)!.planned_dropoff='2026-11-21T20:00:00Z';late.assignments.at(-1)!.planned_end='2026-11-21T20:10:00Z';assert.ok(candidateProblem(state.active_plan,late,state.tasks));
-  const overlap=structuredClone(rec.proposed_plan);const a=overlap.assignments.find(a=>a.task_id==='N021')!;const b=overlap.assignments.find(a=>a.task_id==='N003')!;a.planned_departure=b.planned_departure;a.planned_pickup=b.planned_pickup;assert.ok(candidateProblem(state.active_plan,overlap,state.tasks));
+  assert.equal(candidateProblem(state.active_plan,rec.proposed_plan,state),null);
+  const locked=structuredClone(rec.proposed_plan);locked.assignments[0].vehicle_id='V2';assert.ok(candidateProblem(state.active_plan,locked,state));
+  const late=structuredClone(rec.proposed_plan);late.assignments.at(-1)!.planned_dropoff='2026-11-21T20:00:00Z';late.assignments.at(-1)!.planned_end='2026-11-21T20:10:00Z';assert.ok(candidateProblem(state.active_plan,late,state));
+  const overlap=structuredClone(rec.proposed_plan);const a=overlap.assignments.find(a=>a.task_id==='N021')!;const b=overlap.assignments.find(a=>a.task_id==='N003')!;a.planned_departure=b.planned_departure;a.planned_pickup=b.planned_pickup;assert.ok(candidateProblem(state.active_plan,overlap,state));
+});
+test('high-priority transports in older plans are ASAP and ignore the old arrival deadline',async()=>{
+  const {store}=await scenario();
+  const state=store.state()!;
+  const candidate=store.recommendations()[0].proposed_plan;
+  const high=state.tasks.find(task=>task.id==='N021')!;
+  high.latest_arrival=high.earliest_pickup;
+  assert.equal(preferredArrivalLabel(high),'Čim prej');
+  assert.equal(candidateProblem(state.active_plan,candidate,state),null);
+  const planned=state.tasks[0];
+  assert.equal(preferredArrivalLabel(planned),formatTime(planned.preferred_arrival));
 });
 test('reset restores the deterministic fixture and clears selection and previews',async()=>{
   const {store}=await scenario();store.pin(store.recommendations()[0].id);store.selectVehicle('V3');await store.reset();
@@ -112,7 +123,7 @@ test('derived sequence index changes do not move tasks or invalidate locked work
   const state=await new DemoDispatchGateway().getState();
   const candidate=structuredClone(state.active_plan!);
   for(const assignment of candidate.assignments)assignment.sequence_order++;
-  assert.equal(candidateProblem(state.active_plan,candidate,state.tasks),null);
+  assert.equal(candidateProblem(state.active_plan,candidate,state),null);
   assert.equal(comparePlans(state.active_plan,candidate).changed.size,0);
 });
 

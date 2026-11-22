@@ -7,7 +7,8 @@ export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCH
 export const statusLabel = (value: string) => ({ AVAILABLE: 'Na voljo', EN_ROUTE: 'Na poti', TRANSPORTING: 'V prevozu', SERVICE:'Predaja / čiščenje', UNAVAILABLE: 'Nedosegljivo', BROKEN: 'Okvara' }[value] ?? value);
 export const incidentStatus = (value: string) => ({ OPEN: 'Novo', AWAITING_DECISION: 'Čaka na odločitev', RESOLVED: 'Rešeno' }[value] ?? value);
 export const incidentType = (value: string) => ({ NEW_TASK: 'Prednostna naloga', VEHICLE_BREAKDOWN: 'Okvara vozila', TRAFFIC_DELAY: 'Prometni zastoj', ROAD_CLOSURE: 'Zapora ceste', VEHICLE_UNAVAILABLE: 'Nedosegljivost',WEATHER_DELAY:'Slabo vreme',FACILITY_CAPACITY_CHANGE:'Sprememba kapacitete' }[value] ?? value);
-export const arrivalAsap = (task: TransportTask) => task.arrival_policy === 'ASAP';
+export const arrivalAsap = (task: TransportTask) => task.arrival_policy === 'ASAP' || (task.task_type === 'PRIORITY_TRANSPORT' && task.priority === 'P1');
+export const preferredArrivalLabel = (task: TransportTask) => arrivalAsap(task) ? 'Čim prej' : formatTime(task.preferred_arrival);
 
 export function comparePlans(base: DispatchPlan | null, candidate: DispatchPlan | null): PlanDiff {
   const diff: PlanDiff = { added: new Set(), changed: new Set(), removed: new Set(), vehicle_ids: new Set() };
@@ -52,11 +53,11 @@ export function passengerOnBoard(state:DispatchState,vehicleId:string):boolean {
   return !!task && task.actual_arrival==null && (task.actual_pickup!=null || task.status==='PICKED_UP');
 }
 
-export function timelineStatus(state:DispatchState,assignment:Assignment):'active'|'future'|'completed'|'failed' {
+export function timelineStatus(state:DispatchState,assignment:Assignment,isPreview=false):'active'|'future'|'completed'|'failed' {
   if(assignment.status==='COMPLETED')return 'completed';
   const task=state.tasks.find(t=>t.id===assignment.task_id);
   const vehicle=state.vehicles.find(v=>v.id===assignment.vehicle_id);
-  const blocked=state.issues?.some(i=>i.task_id===assignment.task_id&&[
+  const blocked=!isPreview&&state.issues?.some(i=>i.task_id===assignment.task_id&&[
     'MANUAL_COORDINATION','LOCKED_EXECUTION_BLOCKED','VEHICLE_UNAVAILABLE',
     'NO_COMPATIBLE_VEHICLE','UNREACHABLE_ROUTE','INVALID_TRAVEL_TIME','HARD_TIME_WINDOW',
   ].includes(i.code));
@@ -95,7 +96,7 @@ export function vehicleServiceStats(state:DispatchState,vehicleId:string){
   return {average_cleaning_minutes:cleaning.length?cleaning.reduce((sum,value)=>sum+value,0)/cleaning.length:null,next_departure:future[0]?.planned_departure??null};
 }
 
-export function candidateProblem(base: DispatchPlan | null, candidate: DispatchPlan, tasks: TransportTask[]): string | null {
+export function candidateProblem(base: DispatchPlan | null, candidate: DispatchPlan, { tasks, horizon_end }: Pick<DispatchState, 'tasks' | 'horizon_end'>): string | null {
   // Presentation guard, not a substitute for the backend's complete constraint validator.
   if(candidate.blocking_issues?.length)return candidate.blocking_issues.join(' · ');
   const ids = new Set<string>();
@@ -105,7 +106,8 @@ export function candidateProblem(base: DispatchPlan | null, candidate: DispatchP
     const task = tasks.find(t => t.id === item.task_id);
     const times = [item.planned_departure, item.planned_pickup, item.planned_dropoff, item.planned_end].map(Date.parse);
     if (times.some(t => !Number.isFinite(t)) || times.some((t, i) => i > 0 && t < times[i - 1])) return 'Predlog vsebuje neveljavne čase.';
-    if (!task || times[2] > Date.parse(task.latest_arrival) || times[1] < Date.parse(task.earliest_pickup)) return 'Predlog krši časovno okno naloge.';
+    if (!task || times[3] > Date.parse(horizon_end) || times[1] < Date.parse(task.earliest_pickup) ||
+        (!arrivalAsap(task) && times[2] > Date.parse(task.latest_arrival))) return 'Predlog krši časovno okno naloge.';
   }
   for (const vehicleId of new Set(candidate.assignments.map(a => a.vehicle_id))) {
     const row = candidate.assignments.filter(a => a.vehicle_id === vehicleId).sort((a, b) => Date.parse(a.planned_departure) - Date.parse(b.planned_departure));

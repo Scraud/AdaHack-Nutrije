@@ -8,8 +8,8 @@ from sqlalchemy import delete
 
 from app.db import Database
 from app.main import create_app
-from app.models import TaskRecord, VehicleRecord
-from app.planning.contracts import HORIZON
+from app.models import AssignmentRecord, IncidentRecord, TaskRecord, VehicleRecord
+from app.planning.contracts import Assignment, HORIZON
 from app.providers import osrm
 
 
@@ -279,13 +279,12 @@ def test_priority_task_uses_local_address_and_automatic_arrival_window(demo):
         assert (task["earliest_pickup"], task["preferred_arrival"], task["latest_arrival"]) == (now, preferred, latest)
 
 
-def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger(demo, tmp_path):
+@pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])
+def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger(demo, tmp_path, urgency):
     database = Database(tmp_path / "dispatch.sqlite")
     with database.session(write=True) as db:
         db.execute(delete(TaskRecord))
         db.execute(delete(VehicleRecord).where(VehicleRecord.id != "V3"))
-    database.engine.dispose()
-
     def add_task(priority, lat, lon):
         state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
             "priority": priority, "pickup": {"lat": lat, "lon": lon}, "equipment": ["OXYGEN"],
@@ -299,6 +298,22 @@ def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_pass
     now = approach["planned_pickup"] // 2
     post(demo, "demo/advance-time", {"to": now})
     state, high = add_task("P1", 46.065, 14.535)
+    with database.session(write=True) as db:
+        if urgency == "legacy":
+            record = db.get(TaskRecord, (high, state["scenario_id"]))
+            record.payload = {**record.payload, "arrival_policy": None,
+                              "preferred_arrival": now + 60, "latest_arrival": now + 60}
+        elif urgency == "already_assigned":
+            # Simulate an older accepted plan that put the urgent transport behind the low one.
+            departure = approach["planned_end"]
+            row = Assignment(task_id=high, vehicle_id="V3", planned_departure=departure,
+                             planned_pickup=departure + 300, planned_dropoff=departure + 840,
+                             planned_end=departure + 1200, deadhead=300)
+            db.add(AssignmentRecord(plan_id=state["active_plan"]["id"], task_id=high,
+                                    payload=row.model_dump(mode="json")))
+            incident = db.get(IncidentRecord, state["incidents"][-1]["id"])
+            incident.payload = {**incident.payload, "status": "RESOLVED"}
+    database.engine.dispose()
     original = demo.get("/api/tracking").json()["vehicles"][0]
     assert original["task_id"] == low and original["status"] == "TO_PICKUP"
     item = replan(demo, state)[0]

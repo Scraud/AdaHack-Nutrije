@@ -85,10 +85,9 @@ def inputs(db: Session, scope: Scenario, plan: Plan | None, road_matrix: MatrixP
 
     by_task = {task.id: task for task in tasks}
     by_vehicle = {vehicle.id: vehicle for vehicle in vehicles}
-    assigned = {row.task_id for row in rows}
-    urgent = [by_task[event.task_id] for event in incidents if event.type == "NEW_TASK" and event.status == "OPEN"
-              and event.task_id in by_task and event.task_id not in assigned
-              and by_task[event.task_id].arrival_policy == "ASAP" and by_task[event.task_id].earliest_pickup <= scope.now]
+    committed = {row.task_id for row in rows if row.status != "PLANNED" or row.is_locked}
+    urgent = [task for task in tasks if task.arrival_asap and task.id not in committed
+              and task.earliest_pickup <= scope.now and task.actual_pickup is None]
     releasable = {row.vehicle_id: row.task_id for row in rows if row.status == "IN_PROGRESS" and not row.is_locked
                   and by_task[row.task_id].priority != "P1" and by_task[row.task_id].actual_pickup is None
                   and any(compatible(by_vehicle[row.vehicle_id], task) for task in urgent)}

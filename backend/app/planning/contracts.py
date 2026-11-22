@@ -59,6 +59,14 @@ class Task(BaseModel):
     actual_pickup: int | None = None
     actual_arrival: int | None = None
 
+    @property
+    def arrival_asap(self) -> bool:
+        return self.arrival_policy == "ASAP" or (self.type == "PRIORITY_TRANSPORT" and self.priority == "P1")
+
+    @property
+    def arrival_deadline(self) -> int:
+        return HORIZON if self.arrival_asap else self.latest_arrival
+
     @model_validator(mode="after")
     def check_windows(self):
         if self.latest_pickup is not None and self.earliest_pickup > self.latest_pickup:

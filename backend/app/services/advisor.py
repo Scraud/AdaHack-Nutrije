@@ -91,14 +91,14 @@ def signed(value: int, unit: str = "") -> str:
 
 
 def margin(task: Task, row: Assignment) -> int:
-    values = [task.latest_arrival - row.planned_dropoff]
+    values = [task.arrival_deadline - row.planned_dropoff]
     if task.latest_pickup is not None:
         values.append(task.latest_pickup - row.planned_pickup)
     return min(values)
 
 
 def delay(task: Task, row: Assignment) -> int:
-    return max(0, row.planned_dropoff - task.preferred_arrival)
+    return 0 if task.arrival_asap else max(0, row.planned_dropoff - task.preferred_arrival)
 
 
 def recommendation_facts(db: Session, scope: Scenario, rec_id: str,

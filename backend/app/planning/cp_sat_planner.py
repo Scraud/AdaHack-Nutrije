@@ -81,12 +81,12 @@ class ScheduleModel:
         routine = []
         for key, times in self.times.items():
             task = state.tasks[key]
-            if key in state.frozen or task.arrival_policy is None:
+            if key in state.frozen or (not task.arrival_asap and task.arrival_policy is None):
                 continue
             present = self.present[key]
             # Unscheduled pickups equal their lower bound and contribute zero elapsed time.
             elapsed = times.pickup - times.lower + present * (times.lower + times.to_dropoff - task.earliest_pickup)
-            if task.arrival_policy == "ASAP":
+            if task.arrival_asap:
                 urgent.append(elapsed)
                 urgent_count.append(present)
             else:
@@ -107,7 +107,7 @@ class ScheduleModel:
             to_dropoff = task.pickup_service + loaded
             to_end = to_dropoff + task.dropoff_service + task.cleaning
             upper = min(task.latest_pickup if task.latest_pickup is not None else HORIZON,
-                        task.latest_arrival - to_dropoff, HORIZON - to_end)
+                        task.arrival_deadline - to_dropoff, HORIZON - to_end)
             lower = max(task.earliest_pickup, self.state.now)
             if upper < lower and fixed is None:
                 continue
@@ -237,7 +237,7 @@ class ScheduleModel:
             shortfall = self.model.new_int_var(0, BUFFER_TARGET, f"shortfall_{key}")
             self.model.add(shortfall >= BUFFER_TARGET - (times.latest - times.pickup)).only_enforce_if(present)
             shortfalls.append(shortfall)
-            if task.arrival_policy != "ASAP":
+            if not task.arrival_asap:
                 delay = self.model.new_int_var(0, HORIZON, f"delay_{key}")
                 self.model.add(delay >= times.pickup + times.to_dropoff - task.preferred_arrival).only_enforce_if(present)
                 self.model.add(delay == 0).only_enforce_if(~present)
@@ -334,7 +334,7 @@ def _score(state: PlanningSnapshot, plan: Candidate) -> tuple[int, ...]:
                      for issue in plan.unassigned)
     delay = sum(PRIORITY_WEIGHT[state.tasks[row.task_id].priority]
                 * max(0, row.planned_dropoff - state.tasks[row.task_id].preferred_arrival)
-                for row in plan.assignments)
+                for row in plan.assignments if not state.tasks[row.task_id].arrival_asap)
     return (unassigned, delay, plan.metrics.vehicle_changes, -plan.metrics.min_buffer_seconds,
             plan.metrics.travel_seconds)
 

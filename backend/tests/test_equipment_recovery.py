@@ -66,6 +66,22 @@ def test_recovery_rejects_invalid_source_missing_equipment_and_duplicate_request
         assert client.post("/api/vehicles/V3/equipment-recovery", json=payload).status_code == 409
 
 
+def test_recovery_supports_the_ventilator_added_on_main(tmp_path):
+    path = tmp_path / "ventilator.sqlite"
+    equipment = ["OXYGEN", "STRETCHER", "WHEELCHAIR", "VENTILATOR"]
+    with TestClient(create_app(path)) as client:
+        state = client.get("/api/state").json()
+        with Database(path).session(write=True) as db:
+            vehicle = db.get(VehicleRecord, ("V3", state["scenario_id"]))
+            vehicle.payload = {**vehicle.payload, "equipment": equipment}
+        post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V3"})
+        created = post(client, "vehicles/V3/equipment-recovery", {
+            "priority": "P1", "equipment": equipment, "facility_id": "F1"})
+        task = next(t for t in created["tasks"] if t["type"] == "EQUIPMENT_DELIVERY")
+        assert set(task["cargo_equipment"]) == set(equipment)
+        assert task["equipment"] == []
+
+
 def test_breakdown_saves_the_actual_road_position_not_the_vehicle_base(tmp_path):
     with TestClient(create_app(tmp_path / "position.sqlite")) as client:
         post(client, "plans/generate")

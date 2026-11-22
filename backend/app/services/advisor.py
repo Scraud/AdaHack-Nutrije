@@ -24,15 +24,21 @@ except ZoneInfoNotFoundError:
 
 STRATEGY_NAMES = {"MIN_DELAY": "Najmanj zamud", "MIN_CHANGES": "Najmanj sprememb", "MAX_BUFFER": "Največ rezerve"}
 ISSUE_NAMES = {
-    "VEHICLE_UNAVAILABLE": "vozilo ni operativno",
-    "NO_COMPATIBLE_VEHICLE": "ni vozila z ustrezno opremo",
+    "VEHICLE_UNAVAILABLE": "nobeno ustrezno vozilo ni na voljo",
+    "NO_VEHICLES": "v floti ni vozil",
+    "NO_VEHICLE_FOR_TASK_TYPE": "nobeno vozilo ne podpira te vrste prevoza",
+    "NO_COMPATIBLE_VEHICLE": "ni ustreznega vozila",
+    "INSUFFICIENT_VEHICLE_CAPACITY": "nobeno vozilo za to vrsto prevoza nima dovolj mest",
+    "MISSING_VEHICLE_EQUIPMENT": "nobeno vozilo za to vrsto prevoza in s potrebno kapaciteto nima zahtevane opreme",
     "UNREACHABLE_ROUTE": "relacija je nedosegljiva",
     "HARD_TIME_WINDOW": "naloge ni mogoče opraviti do konca dneva",
     "INVALID_TRAVEL_TIME": "motnja je spremenila čas vožnje",
     "FACILITY_NOT_ACCEPTING": "ustanova ne sprejema prihodov",
     "FACILITY_CAPACITY": "kvota ustanove je porabljena",
+    "ALL_FACILITIES_FULL": "kvote vseh sprejemnih ustanov so porabljene",
     "LOCKED_EXECUTION_BLOCKED": "začeta dodelitev je blokirana",
     "NOT_SCHEDULED_WITHIN_BUDGET": "izračun naloge ni umestil v razpored",
+    "SCHEDULE_CONFLICT": "razpored ob drugih nalogah in omejitvah ne omogoča dodelitve",
 }
 SEVERITY = {"HIGH": 0, "MEDIUM": 1, "INFO": 2}
 TIGHT = 600

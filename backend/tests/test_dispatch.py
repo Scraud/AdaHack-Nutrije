@@ -326,7 +326,7 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     new_id = state["incidents"][-1]["task_id"]
     assert {task["id"]: (task["priority"], task["facility_id"])
             for task in state["tasks"] if task["id"] != new_id} == before
-    assert {"task_id": new_id, "vehicle_id": None, "code": "NO_COMPATIBLE_VEHICLE"} in (
+    assert {"task_id": new_id, "vehicle_id": None, "code": "INSUFFICIENT_VEHICLE_CAPACITY"} in (
         replan(demo, state)[0]["plan"]["unassigned"]
     )
 
@@ -348,6 +348,57 @@ def test_priority_task_uses_local_address_and_priority_pickup_window(demo):
         assert (task["pickup_name"], task["facility_id"]) == (address["name"], "F1")
         assert (task["earliest_pickup"], task["latest_pickup"]) == (now, latest)
         assert "preferred_arrival" not in task and "latest_arrival" not in task
+
+
+def test_demo_task_matches_a_manual_submission(demo):
+    state = post(demo, "demo/reset")
+    assert {task["type"] for task in state["tasks"]} == {"PRIORITY_TRANSPORT"}
+    for priority in ("P1", "P2", "P3"):
+        demo_task = next(task for task in state["tasks"] if task["priority"] == priority)
+        form = {field: demo_task[field] for field in (
+            "priority", "pickup", "pickup_name", "passenger_count", "equipment", "earliest_pickup",
+        )}
+        submitted = post(demo, "incidents", {"type": "NEW_TASK", "task": form})
+        added_id = submitted["incidents"][-1]["task_id"]
+        added_task = next(task for task in submitted["tasks"] if task["id"] == added_id)
+        assert {**added_task, "id": demo_task["id"]} == demo_task
+
+
+def test_presentation_demo_recommends_ventilator_vehicle_then_detours(demo):
+    state = post(demo, "demo/oxygen")
+    assert [v["id"] for v in state["vehicles"] if "VENTILATOR" in v["equipment"]] == ["V1"]
+    assert state["vehicles"][0]["id"] == "V1"
+    [low] = state["tasks"]
+    assert low["priority"] == "P3" and low["equipment"] == ["VENTILATOR"] and low["actual_pickup"] is None
+    original = state["active_plan"]["id"]
+    frame = demo.get("/api/tracking").json()
+    assert frame["playback"] == {"playing": True, "speed": 10}
+    tracked = next(v for v in frame["vehicles"] if v["id"] == "V1")
+    assert tracked["status"] == "TO_PICKUP" and tracked["task_id"] == low["id"]
+
+    state = post(demo, "demo/advance-time", {"to": state["active_plan"]["assignments"][0]["planned_pickup"]})
+    assert state["incidents"][-1]["source"] == "PRESENTATION_EMERGENCY"
+    [approach] = state["active_plan"]["assignments"]
+    assert state["now"] == approach["planned_departure"] + 150 < approach["planned_pickup"]
+    tracked = next(v for v in demo.get("/api/tracking").json()["vehicles"] if v["id"] == "V1")
+    high = state["incidents"][-1]["task_id"]
+    [recommendation] = replan(demo, state)
+    [first, second] = recommendation["plan"]["assignments"]
+    assert (first["task_id"], second["task_id"]) == (high, low["id"])
+    assert first["vehicle_id"] == second["vehicle_id"] == "V1"
+    assert first["planned_departure"] == state["now"]
+    preview = demo.get("/api/tracking", params={"plan_id": recommendation["plan"]["id"]}).json()
+    redirected = next(v for v in preview["vehicles"] if v["id"] == "V1")
+    assert redirected["task_id"] == high and redirected["location"] == tracked["location"]
+    assert demo.get("/api/state").json()["active_plan"]["id"] == original
+    post(demo, f"recommendations/{recommendation['id']}/accept")
+    state = post(demo, "demo/advance-time", {"to": first["planned_pickup"]})
+    assert state["incidents"][-1]["source"] == "PRESENTATION_CLOSURE"
+    assert state["active_plan"]["id"] == recommendation["plan"]["id"]
+    updated = next(row for row in state["active_plan"]["assignments"] if row["task_id"] == high)
+    assert updated["reroute"]["leg"] == "PICKUP"
+    after = next(v for v in demo.get("/api/tracking").json()["vehicles"] if v["id"] == "V1")
+    assert after["status"] == "TO_PICKUP" and after["task_id"] == high and after["to_pickup"]
 
 
 @pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])

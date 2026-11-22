@@ -28,7 +28,7 @@ class GPSFix(BaseModel):
 
 class Playback(BaseModel):
     playing: bool
-    speed: Literal[30, 60, 300] = 60
+    speed: Literal[10, 30, 60, 300] = 60
 
 
 class DestinationETA(BaseModel):
@@ -123,9 +123,8 @@ class Tracking:
                 scope = scenario(db)
                 horizon = inputs(db, scope, active_plan(db, scope), self.road_matrix, preserve_active_timing=True)[0].horizon
                 until = min(horizon, scope.now + increment)
-                if scope.now < until:
-                    advance(db, scope, until, self.road_matrix, record_audit=False)
-                if until >= horizon:
+                pause_for_decision = scope.now < until and advance(db, scope, until, self.road_matrix, record_audit=False)
+                if pause_for_decision or scope.now >= horizon:
                     self.playback = self.playback.model_copy(update={"playing": False})
 
     def record_gps(self, fix: GPSFix, authorization: str | None):

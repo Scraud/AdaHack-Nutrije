@@ -40,7 +40,7 @@ export class AppComponent implements OnInit,OnDestroy {
  ngOnDestroy(){window.removeEventListener('hashchange',this.hashChange);this.store.dispose();}
  private readHash(){const hash=window.location.hash.slice(1),value=hash==='overview'?'home':hash==='fleet'?'vehicles':hash;this.page.set(this.pages.some(p=>p.id===value)?value as Page:'home');}
  navigate(page:Page){this.page.set(page);window.location.hash=page;}
- inspectIncident(id:string){const incident=this.store.state()?.incidents.find(i=>i.id===id);if(incident&&this.store.isRoadIncident(incident)){this.store.showRoadNotice(incident);return;}this.store.inspectIncident(id);afterNextRender(()=>{const dialog=this.incidentDialog?.nativeElement;if(dialog&&!dialog.open)dialog.showModal();},{injector:this.injector});}
+ inspectIncident(id:string){const incident=this.store.state()?.incidents.find(i=>i.id===id);if(incident&&this.store.isRoadIncident(incident)){this.store.showRoadNotice(incident);return;}this.store.inspectIncident(id);if(this.presentationEmergencyId()===id)void this.store.generate(id);afterNextRender(()=>{const dialog=this.incidentDialog?.nativeElement;if(dialog&&!dialog.open)dialog.showModal();},{injector:this.injector});}
  async regeneratePlan(){
    await this.store.regeneratePlan();
  }
@@ -56,10 +56,26 @@ export class AppComponent implements OnInit,OnDestroy {
  }
  showConfirmation(rec:Recommendation){this.store.pin(rec.id);this.confirmation.set(rec);this.dialog?.nativeElement.showModal();}
  closeConfirmation(){this.dialog?.nativeElement.close();this.confirmation.set(null);}
- async accept(){const rec=this.confirmation();if(!rec)return;if(await this.store.accept(rec)){this.closeConfirmation();this.closeIncidentReview();}}
+ async accept(){const rec=this.confirmation();if(!rec)return;const emergencyId=this.presentationEmergencyId();const resumeDemo=emergencyId!=null&&rec.incident_ids?.includes(emergencyId);if(await this.store.accept(rec)){this.closeConfirmation();this.closeIncidentReview();if(resumeDemo)await this.store.setPlayback(true,10);}}
  canRecoverEquipment(id:string){const vehicle=this.store.state()?.vehicles.find(v=>v.id===id);return !!this.store.gateway.recoverEquipment&&vehicle?.status==='BROKEN'&&!!vehicle.equipment.length;}
  openEquipmentRecovery(id:string){this.closeIncidentReview();this.eventForm?.openEquipment(id);}
  openSimulation(){this.simulation?.nativeElement.showModal();}
+ readonly oxygenDemoReady = computed(() => {
+   const state = this.store.state();
+   return !!state?.tasks.some(task => task.id === 'DEMO-LOW' && task.actual_pickup == null)
+     && !state.backend?.incidents.some(event => event.source === 'PRESENTATION_EMERGENCY');
+ });
+ readonly oxygenDemoVehicle = computed(() => this.store.state()?.vehicles.find(vehicle => vehicle.equipment.includes('VENTILATOR'))?.code);
+ private readonly presentationEmergencyId = computed(() => {
+   const incident = this.store.state()?.backend?.incidents.find(
+     event => event.source === 'PRESENTATION_EMERGENCY' && event.status === 'OPEN');
+   return incident ? String(incident.id) : null;
+ });
+ readonly oxygenDemoAwaitingDecision = computed(() => this.presentationEmergencyId() !== null);
+ async startOxygenDemo(){
+   if (!window.confirm('Zaženem predstavitveni demo? Zamenjal bo trenutno simulacijo.')) return;
+   if (await this.store.prepareOxygenDemo()) this.navigate('home');
+ }
  openEvent(type:IncidentType='NEW_TASK',vehicle?:string){this.simulation?.nativeElement.close();this.eventForm?.open(type,vehicle);}
  async taskCreated(result:{taskId:string;incidentId:string|null}){
    this.navigate('tasks');

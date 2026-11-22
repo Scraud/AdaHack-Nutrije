@@ -50,7 +50,7 @@ class CreateScheduledTask(BaseModel):
 
 class CreateEquipmentRecovery(BaseModel):
     priority: Priority = "P2"
-    equipment: list[Equipment] = Field(min_length=1, max_length=3)
+    equipment: list[Equipment] = Field(min_length=1, max_length=4)
     facility_id: str
     description: str = Field(default="", max_length=1000)
 

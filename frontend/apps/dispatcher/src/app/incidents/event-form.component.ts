@@ -65,7 +65,7 @@ export class EventFormComponent {
   readonly formOpen=signal(false);
   get type(){return this.eventType();}
   priority:Priority='P1';vehicle='V3';duration=90;multiplier=1.6;equipment:Equipment[]=['OXYGEN'];passengers=1;
-  readonly equipmentOptions:{value:Equipment;label:string}[]=[{value:'OXYGEN',label:'Kisik'},{value:'STRETCHER',label:'Nosila'},{value:'WHEELCHAIR',label:'Voziček'}];
+  readonly equipmentOptions:{value:Equipment;label:string}[]=[{value:'OXYGEN',label:'Kisik'},{value:'STRETCHER',label:'Nosila'},{value:'WHEELCHAIR',label:'Voziček'},{value:'VENTILATOR',label:'Prenosni respirator'}];
   toggleEquipment(value:Equipment,selected:boolean){this.equipment=selected?[...new Set([...this.equipment,value])]:this.equipment.filter(item=>item!==value);}
   lat=46.068;lon=14.542;pickup='';description='';error='';label=incidentType;
   address='';readonly pickupLocation=signal<Location|null>(null);readonly addresses=signal<Location[]>([]);readonly searching=signal(false);

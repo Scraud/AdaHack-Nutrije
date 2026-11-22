@@ -10,7 +10,7 @@ Priority = Literal["P1", "P2", "P3"]
 # Longest wait between the desired pickup and the patient being in the vehicle; P1 has none and goes first.
 MAX_WAIT: dict[Priority, int | None] = {"P1": None, "P2": 45 * 60, "P3": 120 * 60}
 Strategy = Literal["MIN_DELAY", "MIN_CHANGES", "MAX_BUFFER"]
-Equipment = Literal["WHEELCHAIR", "STRETCHER", "OXYGEN"]
+Equipment = Literal["WHEELCHAIR", "STRETCHER", "OXYGEN", "VENTILATOR"]
 TaskType = Literal["PLANNED_TRANSPORT", "PRIORITY_TRANSPORT", "EQUIPMENT_DELIVERY"]
 IncidentType = Literal[
     "VEHICLE_BREAKDOWN", "VEHICLE_UNAVAILABLE", "TRAFFIC_DELAY", "ROAD_CLOSURE",

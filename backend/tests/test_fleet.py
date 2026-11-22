@@ -1,7 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db import Database
 from app.main import create_app
+from app.models import AssignmentRecord
 from app.services.advisor import Advisor
 from tests.test_dispatch import post, replan
 
@@ -50,20 +52,41 @@ def test_editing_equipment_affects_planned_tasks_until_replanned(demo):
                        for row in item["plan"]["assignments"] if row["status"] == "PLANNED")
 
 
-def test_removed_vehicle_disappears_and_its_tasks_move(demo):
+def test_removed_vehicle_disappears_and_its_tasks_move(demo, tmp_path):
     initial = post(demo, "plans/generate")
     planned = {row["task_id"] for row in initial["active_plan"]["assignments"] if row["vehicle_id"] == "V5"}
+    assert planned
+    database = Database(tmp_path / "fleet.sqlite")
+    with database.session(write=True) as db:
+        row = db.get(AssignmentRecord, (initial["active_plan"]["id"], min(planned)))
+        row.payload = {**row.payload, "is_locked": True}
+    database.engine.dispose()
     response = demo.delete("/api/vehicles/V5")
     assert response.is_success, response.text
     state = response.json()
     assert "V5" not in {v["id"] for v in state["vehicles"]}
     assert "V5" not in {v["id"] for v in demo.get("/api/tracking").json()["vehicles"]}
-    assert planned <= {issue["task_id"] for issue in state["baseline"]["affected"]}
+    assert planned <= {issue["task_id"] for issue in state["baseline"]["affected"]
+                       if issue["code"] == "REASSIGNMENT_REQUIRED"}
     items = replan(demo, state)
     assert items and all(row["vehicle_id"] != "V5" for item in items for row in item["plan"]["assignments"])
+    assert all(planned <= {row["task_id"] for row in item["plan"]["assignments"]} for item in items)
     assert demo.delete("/api/vehicles/V5").status_code == 404
     assert demo.put("/api/vehicles/V5", json={"capacity": 1, "task_types": ["PLANNED_TRANSPORT"]}).status_code == 404
     assert post(demo, "vehicles", OXYGEN_VAN)["vehicles"][-1]["id"] == "V6"
+
+
+def test_removed_equipment_is_reported_for_demo_and_manually_added_tasks(demo):
+    for vehicle_id in ("V3", "V4", "V5"):
+        assert demo.delete(f"/api/vehicles/{vehicle_id}").is_success
+    state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
+        "priority": "P1", "equipment": ["OXYGEN"], "pickup": {"lat": 46.061, "lon": 14.515},
+    }})
+    oxygen_tasks = {task["id"] for task in state["tasks"] if "OXYGEN" in task["equipment"]}
+    plan = post(demo, "plans/generate")["active_plan"]
+    assert {issue["task_id"]: issue["code"] for issue in plan["unassigned"]} == dict.fromkeys(
+        oxygen_tasks, "MISSING_VEHICLE_EQUIPMENT",
+    )
 
 
 def test_vehicle_on_a_transport_cannot_be_removed(demo):

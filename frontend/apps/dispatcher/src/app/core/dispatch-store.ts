@@ -229,6 +229,17 @@ export class DispatchStore {
     return success;
   }
   async generateInitialPlan() { return this.run(()=>this.gateway.generateInitialPlan()); }
+  async prepareOxygenDemo() {
+    const prepare = this.gateway.prepareOxygenDemo?.bind(this.gateway);
+    if (!prepare || !await this.run(prepare)) return false;
+    this.closeIncident();
+    this.selectedVehicleId.set(this.state()?.vehicles.find(vehicle => vehicle.equipment.includes('VENTILATOR'))?.id ?? null);
+    this.selectedTaskId.set(null);
+    this.lastCreatedIncidentId.set(null);
+    this.alertsOverride.set(null);
+    this.generationInfo.set('');
+    return true;
+  }
   async regeneratePlan(){
     this.closeIncident();this.generationInfo.set('');
     if(!this.activePlan())return this.run(async()=>this.ensureInitialPlan(await this.gateway.getState()));

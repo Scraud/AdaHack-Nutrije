@@ -11,6 +11,7 @@ export interface DispatchViewProps {
   onSelectTask: (id: string) => void;
   tracking?: TrackingFrame | null;
   roads?: RoadMap | null;
+  isHomeMap?: boolean;
   pickingRoad?: boolean;
   roadPreview?: RoadSegment | null;
   pickingLocation?: boolean;

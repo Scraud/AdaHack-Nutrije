@@ -23,7 +23,7 @@ export const formatTime = (value: string | null) => value===null?'—':new Intl.
 export const taskTypeLabel = (value: string) => ({ PLANNED_TRANSPORT: 'Načrtovani prevoz', PRIORITY_TRANSPORT: 'Prednostni prevoz', EQUIPMENT_DELIVERY: 'Dostava opreme' }[value] ?? value);
 // Display order of alternatives; the fewest-changes option is always last.
 export const STRATEGY_ORDER: Record<string, number> = { MIN_DELAY: 0, MAX_BUFFER: 1, MIN_CHANGES: 2 };
-export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCHAIR: 'Voziček', OXYGEN: 'Kisik' }[value] ?? value);
+export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCHAIR: 'Voziček', OXYGEN: 'Kisik', VENTILATOR: 'Prenosni respirator' }[value] ?? value);
 export const statusLabel = (value: string) => ({ AVAILABLE: 'Na voljo', EN_ROUTE: 'Na poti', TRANSPORTING: 'V prevozu', SERVICE:'Predaja / čiščenje', UNAVAILABLE: 'Nedosegljivo', BROKEN: 'Okvara' }[value] ?? value);
 export const incidentStatus = (value: string) => ({ OPEN: 'Novo', AWAITING_DECISION: 'Čaka na odločitev', RESOLVED: 'Rešeno' }[value] ?? value);
 export const incidentType = (value: string) => ({ NEW_TASK: 'Prednostna naloga', VEHICLE_BREAKDOWN: 'Okvara vozila', TRAFFIC_DELAY: 'Prometni zastoj', ROAD_CLOSURE: 'Zapora ceste', VEHICLE_UNAVAILABLE: 'Nedosegljivost',WEATHER_DELAY:'Slabo vreme',FACILITY_CAPACITY_CHANGE:'Sprememba kapacitete',FLEET_CHANGE:'Sprememba flote' }[value] ?? value);
@@ -89,7 +89,8 @@ export function timelineStatus(state:DispatchState,assignment:Assignment,isPrevi
   const vehicle=state.vehicles.find(v=>v.id===assignment.vehicle_id);
   const blocked=!isPreview&&state.issues?.some(i=>i.task_id===assignment.task_id&&[
     'MANUAL_COORDINATION','LOCKED_EXECUTION_BLOCKED','VEHICLE_UNAVAILABLE',
-    'NO_COMPATIBLE_VEHICLE','UNREACHABLE_ROUTE','INVALID_TRAVEL_TIME','HARD_TIME_WINDOW',
+    'NO_COMPATIBLE_VEHICLE','NO_VEHICLES','NO_VEHICLE_FOR_TASK_TYPE','MISSING_VEHICLE_EQUIPMENT','INSUFFICIENT_VEHICLE_CAPACITY',
+    'REASSIGNMENT_REQUIRED','UNREACHABLE_ROUTE','INVALID_TRAVEL_TIME','HARD_TIME_WINDOW',
   ].includes(i.code));
   if(assignment.status==='FAILED'||task?.status==='FAILED'||vehicle?.status==='BROKEN'||blocked)return 'failed';
   return assignment.status==='IN_PROGRESS'?'active':'future';

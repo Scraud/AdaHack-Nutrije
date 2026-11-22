@@ -35,7 +35,7 @@ def audit(db: Session, scope: Scenario, action: str, **details):
     db.add(Audit(scenario_id=scope.id, actor="dispatcher", action=action, created_at=timestamp(), details=details))
 
 
-def reset(db: Session) -> Scenario:
+def reset(db: Session, data: tuple[list[Vehicle], list[Facility], list[Task]] | None = None) -> Scenario:
     previous = db.scalar(select(Scenario).where(Scenario.current))
     if previous:
         previous.current = False
@@ -43,7 +43,7 @@ def reset(db: Session) -> Scenario:
     scope = Scenario(id=uuid4().hex, start_at=DEMO_START, now=0, revision=0, current=True)
     db.add(scope)
     db.flush()
-    for model, entities in zip((VehicleRecord, FacilityRecord, TaskRecord), demo_data(), strict=True):
+    for model, entities in zip((VehicleRecord, FacilityRecord, TaskRecord), data if data is not None else demo_data(), strict=True):
         db.add_all(model(id=value.id, scenario_id=scope.id, payload=value.model_dump(mode="json"))
                    for value in entities)
     audit(db, scope, "RESET", previous_scenario_id=previous.id if previous else None)
@@ -85,7 +85,8 @@ def inputs(db: Session, scope: Scenario, plan: Plan | None, road_matrix: MatrixP
 
     by_task = {task.id: task for task in tasks}
     by_vehicle = {vehicle.id: vehicle for vehicle in vehicles}
-    committed = {row.task_id for row in rows if row.status != "PLANNED" or row.is_locked}
+    committed = {row.task_id for row in rows if row.status != "PLANNED"
+                 or (row.is_locked and not by_vehicle[row.vehicle_id].retired)}
     urgent = [task for task in tasks if task.asap and task.id not in committed
               and task.earliest_pickup <= scope.now and task.actual_pickup is None]
     releasable = {row.vehicle_id: row.task_id for row in rows if row.status == "IN_PROGRESS" and not row.is_locked

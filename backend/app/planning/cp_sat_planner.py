@@ -312,7 +312,8 @@ class ScheduleModel:
         result, changes = metrics(self.state, ordered)
         return PlanCandidate(Candidate(
             strategy=strategy, assignments=ordered, unassigned=[
-                explain(self.state, key, ordered) for key in self.state.tasks if key not in assignments
+                explain(self.state, key, ordered, coverage_proven=coverage_proven)
+                for key in self.state.tasks if key not in assignments
             ], blocking=validation, metrics=result, changes=changes, solver_status=status,
             coverage_proven=coverage_proven, solve_ms=elapsed_ms,
             released_task_ids=sorted(key for key, row in self.state.previous.items()

@@ -86,7 +86,7 @@ def inputs(db: Session, scope: Scenario, plan: Plan | None, road_matrix: MatrixP
     by_task = {task.id: task for task in tasks}
     by_vehicle = {vehicle.id: vehicle for vehicle in vehicles}
     committed = {row.task_id for row in rows if row.status != "PLANNED" or row.is_locked}
-    urgent = [task for task in tasks if task.arrival_asap and task.id not in committed
+    urgent = [task for task in tasks if task.asap and task.id not in committed
               and task.earliest_pickup <= scope.now and task.actual_pickup is None]
     releasable = {row.vehicle_id: row.task_id for row in rows if row.status == "IN_PROGRESS" and not row.is_locked
                   and by_task[row.task_id].priority != "P1" and by_task[row.task_id].actual_pickup is None
@@ -116,7 +116,7 @@ def snapshot_payload(state: PlanningSnapshot, incidents: list[Incident]) -> tupl
         "durations": [list(row) for row in state.travel.durations],
         "vehicles": [vehicle.model_dump(mode="json", exclude={"repositioned_at"} if vehicle.repositioned_at is None else None)
                      for vehicle in state.vehicles.values()],
-        "tasks": [task.model_dump(mode="json", exclude={field for field in ("pickup_name", "arrival_policy")
+        "tasks": [task.model_dump(mode="json", exclude={field for field in ("pickup_name",)
                                                         if getattr(task, field) is None})
                   for task in state.tasks.values()],
         "facilities": [facility.model_dump(mode="json") for facility in state.facilities.values()],
@@ -188,6 +188,8 @@ def vehicle_views(state: PlanningSnapshot, rows: list[Assignment]) -> list[Vehic
     by_vehicle = routes(rows)
     views = []
     for vehicle in state.vehicles.values():
+        if vehicle.retired:
+            continue
         location = vehicle.location
         status = "AVAILABLE"
         next_available = max(vehicle.available_at, state.now)

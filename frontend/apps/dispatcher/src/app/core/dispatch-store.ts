@@ -1,6 +1,6 @@
 import { computed, Injectable, signal } from '@angular/core';
-import type { DispatchState, IncidentInput, Recommendation, RecommendationInsight, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
-import { calculatePlanMetrics, candidateProblem, comparePlans, currentAssignment, passengerOnBoard } from '@rescueflow/contracts/plan-utils';
+import type { DispatchState, IncidentInput, NewVehicleInput, Recommendation, RecommendationInsight, VehicleSettings, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus } from '@rescueflow/contracts';
+import { calculatePlanMetrics, candidateProblem, comparePlans, currentAssignment, passengerOnBoard, STRATEGY_ORDER } from '@rescueflow/contracts/plan-utils';
 import type { DispatchGateway } from './dispatch-api';
 
 @Injectable({ providedIn:'root' })
@@ -38,7 +38,7 @@ export class DispatchStore {
   readonly activePlan = computed(() => this.state()?.active_plan ?? null);
   readonly recommendations = computed(() => {
     const s = this.state();
-    return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s)).slice(0,3) ?? [];
+    return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s)).sort((a,b)=>(STRATEGY_ORDER[a.strategy]??3)-(STRATEGY_ORDER[b.strategy]??3)).slice(0,3) ?? [];
   });
   readonly previewRecommendation = computed(() => this.recommendations().find(r => r.id === (this.hoveredRecommendationId() ?? this.selectedRecommendationId())) ?? null);
   readonly previewPlan = computed(() => this.previewRecommendation()?.proposed_plan ?? null);
@@ -147,6 +147,10 @@ export class DispatchStore {
     return success;
   }
   async generateInitialPlan() { return this.run(()=>this.gateway.generateInitialPlan()); }
+  async addVehicle(input:NewVehicleInput){if(!this.gateway.addVehicle)return false;this.clearPreview();const before=new Set(this.state()?.vehicles.map(v=>v.id));if(await this.run(()=>this.gateway.addVehicle!(input))){const added=this.state()?.vehicles.find(v=>!before.has(v.id));this.generationInfo.set('');this.noteFleetChange(`${added?.id??'Vozilo'} je dodano v floto.`);return true;}return false;}
+  async updateVehicle(id:string,input:VehicleSettings){if(!this.gateway.updateVehicle)return false;this.clearPreview();if(await this.run(()=>this.gateway.updateVehicle!(id,input))){this.generationInfo.set('');this.noteFleetChange(`${id}: oprema in vrste nalog so posodobljene.`);return true;}return false;}
+  async removeVehicle(id:string){if(!this.gateway.removeVehicle)return false;this.clearPreview();if(await this.run(()=>this.gateway.removeVehicle!(id))){if(this.selectedVehicleId()===id)this.selectedVehicleId.set(null);this.generationInfo.set('');this.noteFleetChange(`${id} je odstranjeno iz flote.`);return true;}return false;}
+  private noteFleetChange(message:string){const change=this.openIncidents().filter(i=>i.incident_type==='FLEET_CHANGE').at(-1);this.lastCreatedIncidentId.set(change?.id??null);this.alertsOverride.set(null);this.toast(`${message} Za prerazporeditev kliknite opozorilo »Sprememba flote«.`);}
   async restoreVehicle(id:string){this.clearPreview();if(await this.run(()=>this.gateway.restoreVehicle(id))){this.generationInfo.set('');this.toast(`${id}: okvara je odpravljena. Vozilo je znova na voljo za razporejanje.`);return true;}return false;}
   async advanceTime(to:string){
     const rewind=Date.parse(to)<Date.parse(this.state()?.simulated_time??to);this.clearPreview();

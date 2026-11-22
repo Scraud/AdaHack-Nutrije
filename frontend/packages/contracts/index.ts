@@ -9,21 +9,24 @@ export type SourceStatus = components['schemas']['SourceStatus'];
 export type RecommendationInsight = components['schemas']['Explanation'];
 export type BackendState = components['schemas']['State'];
 export type Equipment = 'STRETCHER' | 'WHEELCHAIR' | 'OXYGEN';
+export type VehicleTaskType = 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
+export interface VehicleSettings { capacity: number; equipment: Equipment[]; task_types: VehicleTaskType[] }
+export interface NewVehicleInput extends VehicleSettings { location: { lat: number; lon: number } }
 export type VehicleStatus = 'AVAILABLE' | 'EN_ROUTE' | 'TRANSPORTING' | 'SERVICE' | 'UNAVAILABLE' | 'BROKEN';
 export interface Location { lat: number; lon: number; name: string }
 export interface Vehicle {
   id: string; code: string; vehicle_type: string; status: VehicleStatus;
   current_lat: number; current_lon: number; location_name: string;
-  capacity: number; equipment: Equipment[]; available_at: string | null; shift_end: string | null;
+  capacity: number; equipment: Equipment[]; task_types: VehicleTaskType[]; available_at: string | null; shift_end: string | null;
 }
 export interface Facility extends Location { id: string; short_name: string; accepting: boolean }
 export interface TransportTask {
   id: string; task_type: 'PLANNED_TRANSPORT' | 'PRIORITY_TRANSPORT' | 'EQUIPMENT_DELIVERY';
   priority: Priority; status: string; origin: Location; destination: Location;
   passenger_count: number; required_equipment: Equipment[];
-  earliest_pickup: string; preferred_arrival: string; latest_arrival: string;
-  arrival_policy?: components['schemas']['Task']['arrival_policy'];
-  latest_pickup?: string | null; actual_pickup?: string | null; actual_arrival?: string | null;
+  // earliest_pickup is the desired pickup; latest_pickup follows from priority (null for red = ASAP).
+  earliest_pickup: string; latest_pickup: string | null;
+  actual_pickup?: string | null; actual_arrival?: string | null;
   cleaning_minutes?: number;
 }
 export interface Assignment {
@@ -43,7 +46,7 @@ export interface DispatchPlan {
   blocking_issues?: string[]; unassigned_reasons?: Record<string,string>;
   released_task_ids?: string[];
 }
-export type IncidentType = 'NEW_TASK' | 'VEHICLE_BREAKDOWN' | 'TRAFFIC_DELAY' | 'ROAD_CLOSURE' | 'VEHICLE_UNAVAILABLE' | 'WEATHER_DELAY' | 'FACILITY_CAPACITY_CHANGE';
+export type IncidentType = 'NEW_TASK' | 'VEHICLE_BREAKDOWN' | 'TRAFFIC_DELAY' | 'ROAD_CLOSURE' | 'VEHICLE_UNAVAILABLE' | 'WEATHER_DELAY' | 'FACILITY_CAPACITY_CHANGE' | 'FLEET_CHANGE';
 // Same traffic simulation parameters as main's IncidentCenter.traffic().
 export const ROAD_EVENT_DEFAULTS = {duration_minutes:90,delay_multiplier:2.3} as const;
 export interface Incident {

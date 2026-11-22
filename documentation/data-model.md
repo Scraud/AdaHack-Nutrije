@@ -36,9 +36,10 @@ task_types: list[TaskType] # PLANNED_TRANSPORT | PRIORITY_TRANSPORT | EQUIPMENT_
 available_at: int          # Earliest departure time (seconds)
 broken: bool               # True if vehicle has broken down
 unavailable: list[(start, end)]  # Scheduled unavailability windows
+retired: bool              # Removed from the fleet (soft delete); hidden from state/tracking, never planned
 ```
 
-A vehicle can be assigned tasks only if it has the required equipment, supports the task type, is not broken, and is not in an unavailability window during the task.
+A vehicle can be assigned tasks only if it has the required equipment, supports the task type, is not broken or retired, and is not in an unavailability window during the task. Vehicles are added, edited and removed through the fleet endpoints (see `api.md`).
 
 ---
 
@@ -66,10 +67,9 @@ pickup: Point           # Where to pick up the patient
 facility_id: str        # Which facility to deliver to
 passenger_count: int    # 1–8 passengers
 equipment: list[Equipment]  # Required vehicle equipment
-earliest_pickup: int    # Earliest the vehicle may arrive at pickup
-latest_pickup: int|None # Latest allowed pickup (None = no hard deadline)
-preferred_arrival: int  # Target delivery time (used for delay calculation)
-latest_arrival: int     # Hard deadline for delivery at facility
+earliest_pickup: int    # Desired pickup ("želeni prevzem"); the vehicle may not pick up earlier
+latest_pickup: int|None # Latest pickup ("najkasneje v vozilu"), always derived from priority:
+                        #   P2 = desired + 45 min, P3 = desired + 2 h, P1 = None (as soon as possible)
 pickup_service: int     # Time spent at pickup (default 240 s = 4 min)
 dropoff_service: int    # Time spent at facility (default 240 s)
 cleaning: int           # Vehicle cleaning time after dropoff (default 120 s)
@@ -77,7 +77,7 @@ actual_pickup: int|None # Set when simulated time advances past planned pickup
 actual_arrival: int|None # Set when simulated time advances past planned dropoff
 ```
 
-**Constraint:** `earliest_pickup <= preferred_arrival <= latest_arrival`
+**Rules:** `latest_pickup` is recomputed from `priority` on every load (`MAX_WAIT`), so older payloads that still contain `preferred_arrival`, `latest_arrival` or `arrival_policy` load fine; those fields are ignored. `Task.asap` is true for P1.
 
 A task's total vehicle occupation time is:
 ```
@@ -135,6 +135,7 @@ Incident types:
 | `WEATHER_DELAY` | Multiplies travel times for nodes within radius (legacy) |
 | `NEW_TASK` | Creates a new Task record |
 | `FACILITY_CAPACITY_CHANGE` | Updates `facility.quota` |
+| `FLEET_CHANGE` | Recorded when a vehicle is added, edited or removed; no travel effect, but opens the replan-and-decide flow |
 
 ---
 
@@ -143,8 +144,8 @@ Incident types:
 ```
 assigned: int               # Number of assigned tasks
 unassigned: dict[Priority, int]  # Unassigned count per priority
-late_tasks: int             # Tasks arriving after latest_arrival
-delay_seconds: int          # Total seconds past preferred_arrival (assigned tasks only)
+late_tasks: int             # Tasks picked up after their desired pickup
+delay_seconds: int          # Total waiting seconds after the desired pickup (assigned tasks)
 travel_seconds: int         # Total driving time
 distance_meters: int|None   # Total distance (OSRM only)
 vehicle_changes: int        # Tasks reassigned to a different vehicle vs previous plan

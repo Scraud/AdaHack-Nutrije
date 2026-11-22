@@ -12,8 +12,6 @@ from app.providers.roads import active_conditions, center_distance, road_network
 from app.services.state import active_plan, audit, entities, inputs, problem, timestamp
 
 
-ARRIVAL_MINUTES = {"P1": (0, None), "P2": (30, 60), "P3": (90, 120)}
-
 
 def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None):
     event = Incident(occurred_at=scope.now, **request.model_dump(
@@ -66,13 +64,9 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         if not reachable:
             raise problem(400, "NO_REACHABLE_FACILITY", "Od izbranega prevzema ni cestne poti do ustanove.")
         _, _, facility_id = min(reachable)
-        preferred, deadline = ARRIVAL_MINUTES[request.task.priority]
         task_id = f"N{scope.revision + 1:03}"
         try:
-            task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id,
-                        arrival_policy="ASAP" if deadline is None else "PRIORITY_WINDOW",
-                        earliest_pickup=earliest, preferred_arrival=min(HORIZON, earliest + preferred * 60),
-                        latest_arrival=HORIZON if deadline is None else min(HORIZON, earliest + deadline * 60),
+            task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,
                         **request.task.model_dump(exclude={"earliest_pickup"}))
         except ValidationError as exc:
             raise problem(400, "INVALID_TASK_TIME", exc.errors()[0]["msg"]) from exc
@@ -122,8 +116,16 @@ def resolve_incident(db: Session, scope: Scenario, incident_id: int, road_matrix
     if record is None or record.scenario_id != scope.id:
         raise problem(404, "INCIDENT_NOT_FOUND", "Motnja ne obstaja.")
     event = Incident.model_validate(record.payload)
+    if event.type == "FLEET_CHANGE":
+        if event.status == "RESOLVED":
+            raise problem(409, "INCIDENT_ALREADY_ENDED", "Sprememba flote je že zaključena.")
+        event.status, event.resolved_at = "RESOLVED", timestamp()
+        record.payload = event.model_dump(mode="json")
+        scope.revision += 1
+        audit(db, scope, "RESOLVE_INCIDENT", incident_id=event.id, simulated_time=scope.now)
+        return
     if event.type not in ("TRAFFIC_DELAY", "ROAD_CLOSURE"):
-        raise problem(400, "INCIDENT_NOT_RESOLVABLE", "Ročno lahko odstranite samo zastoj ali zaporo.")
+        raise problem(400, "INCIDENT_NOT_RESOLVABLE", "Ročno lahko odstranite samo zastoj, zaporo ali spremembo flote.")
     if event.ended_at is not None or (event.duration is not None and scope.now >= event.occurred_at + event.duration):
         raise problem(409, "INCIDENT_ALREADY_ENDED", "Motnja ni več aktivna.")
     event.ended_at = scope.now

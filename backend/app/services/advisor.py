@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import Baseline, Explanation, Flag, PlanView, TaskImpact
 from app.models import Plan, Recommendation, Scenario
-from app.planning.contracts import Assignment, Incident, PlanningSnapshot, Task
+from app.planning.contracts import Assignment, HORIZON, Incident, PlanningSnapshot, Task
 from app.planning.snapshot_builder import MatrixProvider, routes
 from app.providers.roads import active_conditions, road_network
 from app.services.state import baseline, inputs, problem, view_plan
@@ -27,7 +27,7 @@ ISSUE_NAMES = {
     "VEHICLE_UNAVAILABLE": "vozilo ni operativno",
     "NO_COMPATIBLE_VEHICLE": "ni vozila z ustrezno opremo",
     "UNREACHABLE_ROUTE": "relacija je nedosegljiva",
-    "HARD_TIME_WINDOW": "obveznega časovnega okna ni mogoče ohraniti",
+    "HARD_TIME_WINDOW": "najpoznejšega prevzema ni mogoče ohraniti",
     "INVALID_TRAVEL_TIME": "motnja je spremenila čas vožnje",
     "FACILITY_NOT_ACCEPTING": "ustanova ne sprejema prihodov",
     "FACILITY_CAPACITY": "kvota ustanove je porabljena",
@@ -35,8 +35,7 @@ ISSUE_NAMES = {
     "NOT_SCHEDULED_WITHIN_BUDGET": "izračun naloge ni umestil v razpored",
 }
 SEVERITY = {"HIGH": 0, "MEDIUM": 1, "INFO": 2}
-TIGHT_P1 = 600
-TIGHT = 300
+TIGHT = 600
 CASCADE_SLACK = 180
 CASCADE_MARGIN = 900
 BUNCHING_WINDOW = 300
@@ -44,7 +43,7 @@ LATE_STEP = 300
 MAX_ITEMS = 3
 MAX_WORDS = 10
 IDENTIFIER = re.compile(r"\b[TVF]\d{1,3}\b")
-METRIC_CHANGE = re.compile(r"\b(zamuda|rezerva|vožnja)\b\D{0,12}?([+−-])\s?\d", re.IGNORECASE)
+METRIC_CHANGE = re.compile(r"\b(zamuda|čakanje|rezerva|vožnja)\b\D{0,12}?([+−-])\s?\d", re.IGNORECASE)
 
 SYSTEM_PROMPT = """Si svetovalec dispečerju nenujnih reševalnih prevozov v Ljubljani.
 Optimizator je izračunal predlog spremembe razporeda. Odloča dispečer, ne ti.
@@ -60,7 +59,7 @@ Vrni:
 - "cons": največ 3 najpomembnejše slabosti ali tveganja potrditve predloga.
 
 Pravila:
-- Vsaka alineja ima največ 8 besed. Brez uvodov, brez celih stavkov, slog alinej, npr. "Zamuda +11 min".
+- Vsaka alineja ima največ 8 besed. Brez uvodov, brez celih stavkov, slog alinej, npr. "Čakanje +11 min".
 - Izhajaj iz "computed_pros" in "computed_cons": izberi najpomembnejše, lahko jih skrajšaš ali združiš.
 - Tveganja za naloge P1 so vedno med slabostmi, če obstajajo.
 - Uporabljaj SAMO podatke iz JSON. Ne izmišljuj si nalog, vozil, ustanov ali številk.
@@ -91,14 +90,11 @@ def signed(value: int, unit: str = "") -> str:
 
 
 def margin(task: Task, row: Assignment) -> int:
-    values = [task.arrival_deadline - row.planned_dropoff]
-    if task.latest_pickup is not None:
-        values.append(task.latest_pickup - row.planned_pickup)
-    return min(values)
+    return HORIZON if task.latest_pickup is None else task.latest_pickup - row.planned_pickup
 
 
 def delay(task: Task, row: Assignment) -> int:
-    return 0 if task.arrival_asap else max(0, row.planned_dropoff - task.preferred_arrival)
+    return max(0, row.planned_pickup - task.earliest_pickup)
 
 
 def recommendation_facts(db: Session, scope: Scenario, rec_id: str,
@@ -162,36 +158,38 @@ def analyse(rec_id: str, start_at: str, state: PlanningSnapshot, incidents: list
             task = tasks[after.task_id]
             slack = after.planned_pickup - after.deadhead - before.planned_end
             left = margin(task, after)
-            if slack < CASCADE_SLACK and left < CASCADE_MARGIN:
+            if slack < CASCADE_SLACK and (task.asap or left < CASCADE_MARGIN):
                 cascaded.add(task.id)
+                reserve = "čim prejšnji prevzem" if task.asap else f"do najpoznejšega prevzema le {minutes(left)} min"
                 flags.append(Flag(
-                    code="CASCADE", severity="HIGH" if task.priority == "P1" else "MEDIUM",
+                    code="CASCADE", severity="HIGH" if task.asap else "MEDIUM",
                     task_ids=[before.task_id, task.id], vehicle_ids=[vehicle_id],
-                    short=f"Zamuda {before.task_id} → {task.id} ({task.priority}), rezerva {minutes(left)} min",
-                    message=f"{vehicle_id}: zamuda pri {before.task_id} se neposredno prenese na {task.id} "
-                            f"({task.priority}), ki ima do roka le {minutes(left)} min rezerve.",
+                    short=f"Zamuda {before.task_id} → {task.id} ({task.priority})"
+                          + ("" if task.asap else f", rezerva {minutes(left)} min"),
+                    message=f"{vehicle_id}: zamuda pri {before.task_id} se neposredno prenese na prevzem {task.id} "
+                            f"({task.priority}, {reserve}).",
                 ))
 
     for row in upcoming:
         task = tasks[row.task_id]
         left = margin(task, row)
-        if task.id not in cascaded and left < (TIGHT_P1 if task.priority == "P1" else TIGHT):
-            flags.append(Flag(code="TIGHT_DEADLINE", severity="HIGH" if task.priority == "P1" else "MEDIUM",
+        if task.id not in cascaded and task.latest_pickup is not None and left < TIGHT:
+            flags.append(Flag(code="TIGHT_DEADLINE", severity="MEDIUM",
                               task_ids=[task.id], vehicle_ids=[row.vehicle_id],
                               short=f"{task.id} ({task.priority}) le {minutes(left)} min do roka",
-                              message=f"{task.id} ({task.priority}, {row.vehicle_id}) ima do obveznega roka "
-                                      f"le {minutes(left)} min rezerve."))
+                              message=f"{task.id} ({task.priority}, {row.vehicle_id}) bo prevzet le {minutes(left)} "
+                                      f"min pred najpoznejšim prevzemom {at(task.latest_pickup)}."))
         previous = old.get(task.id)
         if task.id in blocked_now:
             continue
         before_delay = delay(task, previous) if previous else 0
         after_delay = delay(task, row)
         if after_delay >= before_delay + LATE_STEP:
-            flags.append(Flag(code="LATER_ARRIVAL", severity="HIGH" if task.priority == "P1" else "MEDIUM",
+            flags.append(Flag(code="LATER_PICKUP", severity="HIGH" if task.asap else "MEDIUM",
                               task_ids=[task.id], vehicle_ids=[row.vehicle_id],
-                              short=f"{task.id} ({task.priority}) zamudi {minutes(after_delay)} min",
-                              message=f"{task.id} ({task.priority}) prispe {minutes(after_delay)} min za želenim "
-                                      f"časom {at(task.preferred_arrival)} (v aktivnem planu "
+                              short=f"{task.id} ({task.priority}) čaka {minutes(after_delay)} min",
+                              message=f"{task.id} ({task.priority}) bo prevzet {minutes(after_delay)} min po želenem "
+                                      f"prevzemu {at(task.earliest_pickup)} (v aktivnem planu "
                                       f"{minutes(before_delay)} min)."))
 
     arrivals: dict[str, list[Assignment]] = defaultdict(list)
@@ -242,7 +240,7 @@ def analyse(rec_id: str, start_at: str, state: PlanningSnapshot, incidents: list
         cons.append(f"Izvedenih nalog: {signed(gained)}")
     comparisons = []
     for label, old_value, new_value, higher_is_better in (
-        ("Zamuda", minutes(before.delay_seconds), minutes(after.delay_seconds), False),
+        ("Čakanje", minutes(before.delay_seconds), minutes(after.delay_seconds), False),
         ("Rezerva", minutes(before.min_buffer_seconds), minutes(after.min_buffer_seconds), True),
         ("Vožnja", minutes(before.travel_seconds), minutes(after.travel_seconds), False),
     ):
@@ -343,6 +341,8 @@ def disruptions(now: int, incidents: list[Incident]) -> list[str]:
             result.append(f"Vozilo {event.vehicle_id} ni na voljo")
         elif event.type == "NEW_TASK":
             result.append(f"Nova naloga {event.task_id}")
+        elif event.type == "FLEET_CHANGE" and event.status == "OPEN":
+            result.append(f"Sprememba flote: {event.description}")
         elif event.type == "FACILITY_CAPACITY_CHANGE":
             result.append(f"Nova kvota ustanove {event.facility_id}: {event.quota}")
     return result

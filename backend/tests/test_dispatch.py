@@ -9,7 +9,7 @@ from sqlalchemy import delete
 from app.db import Database
 from app.main import create_app
 from app.models import AssignmentRecord, IncidentRecord, TaskRecord, VehicleRecord
-from app.planning.contracts import Assignment, HORIZON
+from app.planning.contracts import Assignment
 from app.providers import osrm
 
 
@@ -49,7 +49,7 @@ def disruption(client):
     initial = post(client, "plans/generate")
     assert initial["active_plan"]["metrics"]["assigned"] == 20
     live = post(client, "demo/advance-time", {"to": 12000})
-    assert live["baseline"]["simulated_arrivals"] == 8
+    assert live["baseline"]["simulated_arrivals"] == 10
     broken = post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V3",
                                          "description": "Tehnična okvara V3", "priority": "P1"})
     assert any(issue["vehicle_id"] == "V3" for issue in broken["baseline"]["affected"])
@@ -269,7 +269,6 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
         "priority": "P1", "facility_id": "F3", "pickup": {"lat": 46.068, "lon": 14.542},
         "passenger_count": 8, "equipment": ["OXYGEN"], "earliest_pickup": 12900,
-        "preferred_arrival": 14500, "latest_arrival": 17500,
     }})
     new_id = state["incidents"][-1]["task_id"]
     assert {task["id"]: (task["priority"], task["facility_id"])
@@ -279,15 +278,14 @@ def test_dispatcher_supplies_priority_and_impossible_task_is_explained(demo):
     )
 
 
-def test_priority_task_uses_local_address_and_automatic_arrival_window(demo):
+def test_priority_task_uses_local_address_and_priority_pickup_window(demo):
     response = demo.get("/api/map/addresses", params={"query": "  zaloska cesta, 2 "})
     assert response.is_success
     [address] = response.json()
     assert address["name"] == "Zaloška cesta 2"
     now = 12000
     post(demo, "demo/advance-time", {"to": now})
-    for priority, preferred, latest in (("P1", now, HORIZON), ("P2", now + 1800, now + 3600),
-                                         ("P3", now + 5400, now + 7200)):
+    for priority, latest in (("P1", None), ("P2", now + 45 * 60), ("P3", now + 120 * 60)):
         state = post(demo, "incidents", {"type": "NEW_TASK", "task": {
             "pickup": {"lat": address["lat"], "lon": address["lon"]},
             "pickup_name": address["name"], "priority": priority,
@@ -295,8 +293,8 @@ def test_priority_task_uses_local_address_and_automatic_arrival_window(demo):
         event = state["incidents"][-1]
         task = next(task for task in state["tasks"] if task["id"] == event["task_id"])
         assert (task["pickup_name"], task["facility_id"]) == (address["name"], "F1")
-        assert task["arrival_policy"] == ("ASAP" if priority == "P1" else "PRIORITY_WINDOW")
-        assert (task["earliest_pickup"], task["preferred_arrival"], task["latest_arrival"]) == (now, preferred, latest)
+        assert (task["earliest_pickup"], task["latest_pickup"]) == (now, latest)
+        assert "preferred_arrival" not in task and "latest_arrival" not in task
 
 
 @pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])
@@ -320,8 +318,9 @@ def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_pass
     state, high = add_task("P1", 46.065, 14.535)
     with database.session(write=True) as db:
         if urgency == "legacy":
+            # Payloads stored before the priority rules still load, and red stays first.
             record = db.get(TaskRecord, (high, state["scenario_id"]))
-            record.payload = {**record.payload, "arrival_policy": None,
+            record.payload = {**record.payload, "arrival_policy": None, "latest_pickup": now + 60,
                               "preferred_arrival": now + 60, "latest_arrival": now + 60}
         elif urgency == "already_assigned":
             # Simulate an older accepted plan that put the urgent transport behind the low one.

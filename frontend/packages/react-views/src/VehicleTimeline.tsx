@@ -1,7 +1,7 @@
 import { useId, useState, type CSSProperties, type FocusEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { PRIORITY_LABELS } from '../../contracts';
-import { colorFor, equipmentLabel, formatTime, passengerOnBoard, preferredArrivalLabel, timelineStatus, timelineBounds } from '../../contracts/plan-utils';
+import { colorFor, equipmentLabel, formatTime, latestPickupLabel, passengerOnBoard, timelineStatus, timelineBounds } from '../../contracts/plan-utils';
 import type { DispatchViewProps } from './types';
 
 const taskStatuses = { active: 'V izvajanju', future: 'Načrtovano', completed: 'Opravljeno', failed: 'Neuspešno ali blokirano' };
@@ -85,13 +85,13 @@ export function VehicleTimeline(props: DispatchViewProps) {
                 const status = timelineStatus(props.state, assignment, props.isPreview);
                 const added = props.diff.added.has(id);
                 const changed = props.diff.changed.has(id);
-                const arrival = formatTime(assignment.planned_dropoff);
-                const label = [id, vehicle.code, task && PRIORITY_LABELS[task.priority], taskStatuses[status], `Napovedani prihod ${arrival}`].filter(Boolean).join(' · ');
+                const pickupTime = formatTime(assignment.planned_pickup);
+                const label = [id, vehicle.code, task && PRIORITY_LABELS[task.priority], taskStatuses[status], `Prevzem ${pickupTime}`].filter(Boolean).join(' · ');
                 return <button key={id} className={`timeline-task task-${status} ${added ? 'preview-added' : ''} ${changed ? 'preview-changed' : ''} ${props.selectedTaskId === id ? 'task-selected' : ''}`}
                   data-priority={task?.priority} data-task-id={id} aria-label={label} {...taskButtonEvents(id)}
                   style={{ left: `${position(assignment.planned_departure)}%`, width: `${Math.max(1, position(assignment.planned_end) - position(assignment.planned_departure))}%` }}>
                   <b className="phase-task-label">{status === 'failed' ? '! ' : added ? '+ ' : ''}{id}</b>
-                  <time className="timeline-arrival" dateTime={assignment.planned_dropoff}>{arrival}</time>
+                  <time className="timeline-arrival" dateTime={assignment.planned_pickup}>{pickupTime}</time>
                 </button>;
               })}
               <span className="now-line" style={{ left: `${now}%` }}/>
@@ -119,10 +119,10 @@ export function VehicleTimeline(props: DispatchViewProps) {
           <span data-priority={tooltipTask.priority}>{PRIORITY_LABELS[tooltipTask.priority]}</span></div>
         <strong>{tooltipTask.origin.name}</strong><p>do {tooltipTask.destination.name}</p>
         <dl className="timeline-tooltip-times">
-          <div><dt>Želeni prihod</dt><dd>{preferredArrivalLabel(tooltipTask)}</dd></div>
-          <div><dt>Napovedani prihod</dt><dd>{tooltipAssignment ? formatTime(tooltipAssignment.planned_dropoff) : 'Čaka na dodelitev'}</dd></div>
+          <div><dt>Želeni prevzem</dt><dd>{formatTime(tooltipTask.earliest_pickup)}</dd></div>
+          <div><dt>Najkasneje v vozilu</dt><dd>{latestPickupLabel(tooltipTask)}</dd></div>
+          <div><dt>Načrtovan prevzem</dt><dd>{tooltipAssignment ? formatTime(tooltipAssignment.planned_pickup) : 'Čaka na dodelitev'}</dd></div>
         </dl>
-        {tooltipAssignment && <p>Prevzem {formatTime(tooltipAssignment.planned_pickup)}</p>}
         {tooltipTask.required_equipment.length > 0 && <p>{tooltipTask.required_equipment.map(equipmentLabel).join(' · ')}</p>}
       </div>, tooltip.host,
     )}

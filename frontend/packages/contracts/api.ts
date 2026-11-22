@@ -174,6 +174,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vehicle Add */
+        post: operations["vehicle_add_api_vehicles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vehicles/{vehicle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Vehicle Update */
+        put: operations["vehicle_update_api_vehicles__vehicle_id__put"];
+        post?: never;
+        /** Vehicle Remove */
+        delete: operations["vehicle_remove_api_vehicles__vehicle_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plans": {
         parameters: {
             query?: never;
@@ -517,7 +552,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "VEHICLE_BREAKDOWN" | "VEHICLE_UNAVAILABLE" | "TRAFFIC_DELAY" | "ROAD_CLOSURE" | "NEW_TASK" | "WEATHER_DELAY" | "FACILITY_CAPACITY_CHANGE";
+            type: "VEHICLE_BREAKDOWN" | "VEHICLE_UNAVAILABLE" | "TRAFFIC_DELAY" | "ROAD_CLOSURE" | "NEW_TASK" | "WEATHER_DELAY" | "FACILITY_CAPACITY_CHANGE" | "FLEET_CHANGE";
             /**
              * Description
              * @default
@@ -609,7 +644,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "UNASSIGNED" | "RESOLVED" | "CREW_NOTICE" | "TIGHT_DEADLINE" | "LATER_ARRIVAL" | "CASCADE" | "FACILITY_BUNCHING" | "SHARED_DELAY_EXPOSURE";
+            code: "UNASSIGNED" | "RESOLVED" | "CREW_NOTICE" | "TIGHT_DEADLINE" | "LATER_PICKUP" | "CASCADE" | "FACILITY_BUNCHING" | "SHARED_DELAY_EXPOSURE";
             /**
              * Severity
              * @enum {string}
@@ -651,7 +686,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "VEHICLE_BREAKDOWN" | "VEHICLE_UNAVAILABLE" | "TRAFFIC_DELAY" | "ROAD_CLOSURE" | "NEW_TASK" | "WEATHER_DELAY" | "FACILITY_CAPACITY_CHANGE";
+            type: "VEHICLE_BREAKDOWN" | "VEHICLE_UNAVAILABLE" | "TRAFFIC_DELAY" | "ROAD_CLOSURE" | "NEW_TASK" | "WEATHER_DELAY" | "FACILITY_CAPACITY_CHANGE" | "FLEET_CHANGE";
             /**
              * Occurred At
              * @default 0
@@ -791,8 +826,16 @@ export interface components {
             equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
             /** Earliest Pickup */
             earliest_pickup?: number | null;
-            /** Latest Pickup */
-            latest_pickup?: number | null;
+        };
+        /** NewVehicle */
+        NewVehicle: {
+            /** Capacity */
+            capacity: number;
+            /** Equipment */
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            /** Task Types */
+            task_types: ("PLANNED_TRANSPORT" | "PRIORITY_TRANSPORT" | "EQUIPMENT_DELIVERY")[];
+            location: components["schemas"]["Point"];
         };
         /** PickupAddress */
         PickupAddress: {
@@ -1059,12 +1102,6 @@ export interface components {
             earliest_pickup: number;
             /** Latest Pickup */
             latest_pickup?: number | null;
-            /** Arrival Policy */
-            arrival_policy?: ("ASAP" | "PRIORITY_WINDOW") | null;
-            /** Preferred Arrival */
-            preferred_arrival: number;
-            /** Latest Arrival */
-            latest_arrival: number;
             /**
              * Pickup Service
              * @default 240
@@ -1174,6 +1211,15 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** VehicleSettings */
+        VehicleSettings: {
+            /** Capacity */
+            capacity: number;
+            /** Equipment */
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            /** Task Types */
+            task_types: ("PLANNED_TRANSPORT" | "PRIORITY_TRANSPORT" | "EQUIPMENT_DELIVERY")[];
+        };
         /** VehicleView */
         VehicleView: {
             /** Id */
@@ -1202,6 +1248,11 @@ export interface components {
             ][];
             /** Repositioned At */
             repositioned_at?: number | null;
+            /**
+             * Retired
+             * @default false
+             */
+            retired: boolean;
             /**
              * Status
              * @enum {string}
@@ -1450,6 +1501,105 @@ export interface operations {
         };
     };
     vehicle_restore_api_vehicles__vehicle_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vehicle_add_api_vehicles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewVehicle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vehicle_update_api_vehicles__vehicle_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VehicleSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vehicle_remove_api_vehicles__vehicle_id__delete: {
         parameters: {
             query?: never;
             header?: never;

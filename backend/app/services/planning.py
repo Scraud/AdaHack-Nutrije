@@ -16,6 +16,14 @@ from app.services.state import (
 )
 
 
+# Display order of alternatives; the fewest-changes option is always shown last.
+STRATEGY_ORDER = {"MIN_DELAY": 0, "MAX_BUFFER": 1, "MIN_CHANGES": 2}
+
+
+def ordered(items):
+    return sorted(items, key=lambda item: STRATEGY_ORDER.get(item.plan.strategy, len(STRATEGY_ORDER)))
+
+
 class PlanningService:
     def __init__(self, database: Database, budget: SolveBudget, road_matrix: MatrixProvider | None = None):
         self.database = database
@@ -47,7 +55,7 @@ class PlanningService:
                     Recommendation.base_revision == original.revision, Recommendation.status == "PROPOSED",
                 ).order_by(Recommendation.id)).all()
                 if proposed:
-                    items = [view_recommendation(db, original, rec) for rec in proposed]
+                    items = ordered(view_recommendation(db, original, rec) for rec in proposed)
                     return Recommendations(items=items, solver_statuses=[item.plan.solver_status for item in items],
                                            duration_ms=round((monotonic() - began) * 1000))
             snapshot, incidents, _ = inputs(db, original, base, self.road_matrix)
@@ -82,6 +90,7 @@ class PlanningService:
                                      proposed_plan_id=plan.id, base_revision=scope.revision, status="PROPOSED")
                 db.add(rec)
                 items.append(view_recommendation(db, scope, rec))
+            items = ordered(items)
             audit(db, scope, "GENERATE_RECOMMENDATIONS", recommendation_ids=[rec.id for rec in items])
             return Recommendations(items=items, solver_statuses=[candidate.status for candidate in candidates],
                                    duration_ms=round((monotonic() - began) * 1000))
@@ -90,4 +99,5 @@ class PlanningService:
 def recommendation_history(db, scope):
     rows = db.scalars(select(Recommendation).where(Recommendation.scenario_id == scope.id)
                       .order_by(Recommendation.base_revision.desc(), Recommendation.id))
-    return [view_recommendation(db, scope, rec) for rec in rows]
+    items = [view_recommendation(db, scope, rec) for rec in rows]
+    return sorted(items, key=lambda item: (-item.base_revision, STRATEGY_ORDER.get(item.plan.strategy, len(STRATEGY_ORDER))))

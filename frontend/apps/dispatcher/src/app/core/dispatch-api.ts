@@ -1,4 +1,4 @@
-import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight, NewVehicleInput, VehicleSettings } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
 import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
@@ -24,19 +24,26 @@ export interface DispatchGateway {
   resolveIncident?(id:string): Promise<DispatchState>;
   getSources?(refresh?:boolean): Promise<SourceStatus[]>;
   explain?(id:string): Promise<RecommendationInsight>;
+  addVehicle?(input:NewVehicleInput): Promise<DispatchState>;
+  updateVehicle?(id:string,input:VehicleSettings): Promise<DispatchState>;
+  removeVehicle?(id:string): Promise<DispatchState>;
 }
 
 export class HttpDispatchGateway implements DispatchGateway {
   readonly isDemo = false;
   constructor(private readonly baseUrl: string) {}
-  private async request<T>(path: string, body?: unknown, timeout = 30_000): Promise<T> {
+  private async request<T>(path: string, body?: unknown, timeout = 30_000, method?: 'PUT' | 'DELETE'): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
-      method: body === undefined ? 'GET' : 'POST', credentials:'same-origin',
+      method: method ?? (body === undefined ? 'GET' : 'POST'), credentials:'same-origin',
       headers: { Accept:'application/json', ...(body === undefined ? {} : { 'Content-Type':'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok) {
-      if (response.status === 409) throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
+      if (response.status === 409) {
+        const conflict = await response.json().catch(() => null);
+        if (conflict?.detail?.code === 'VEHICLE_IN_USE') throw new Error(conflict.detail.message);
+        throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
+      }
       let detail = '';
       try { const json = await response.json(); if (typeof json.detail === 'string') detail = json.detail; else if(typeof json.detail?.message==='string')detail=json.detail.message; else if(response.status===422)detail='Preverite obvezne podatke in časovna okna.'; } catch { /* Non-JSON upstream response. */ }
       throw new Error(detail || `Povezava z zaledjem ni uspela (HTTP ${response.status}).`);
@@ -51,6 +58,9 @@ export class HttpDispatchGateway implements DispatchGateway {
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
   restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}
+  addVehicle(input:NewVehicleInput){return this.mutate('/vehicles',input);}
+  async updateVehicle(id:string,input:VehicleSettings){await this.request(`/vehicles/${encodeURIComponent(id)}`,input,30_000,'PUT');return this.getState();}
+  async removeVehicle(id:string){await this.request(`/vehicles/${encodeURIComponent(id)}`,undefined,30_000,'DELETE');return this.getState();}
   getTracking(planId?:string){return this.request<TrackingFrame>(`/tracking${planId?'?plan_id='+encodeURIComponent(planId):''}`);}
   getRoads(){return this.request<RoadMap>('/map/roads');}
   findStreet(name:string){return this.request<RoadSegment>(`/map/roads/street?name=${encodeURIComponent(name.trim())}`);}
@@ -115,7 +125,7 @@ export class DemoDispatchGateway implements DispatchGateway {
   async createIncident(input: IncidentInput) {
     if (input.incident_type !== 'NEW_TASK') throw new Error('Vzorčni scenarij podpira novo prednostno nalogo. Ostale dogodke pripravi backend.');
     if (this.state.tasks.some(t => t.id === 'N021')) return this.copy();
-    this.state.tasks.push({ id:'N021', task_type:'PRIORITY_TRANSPORT', priority:'P1', status:'PENDING', origin:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, destination:{lat:46.0545,lon:14.5257,name:'UKC Ljubljana'}, passenger_count:1, required_equipment:['STRETCHER','OXYGEN'], earliest_pickup:demoTime('11:20'), preferred_arrival:demoTime('12:20'), latest_arrival:demoTime('13:15') });
+    this.state.tasks.push({ id:'N021', task_type:'PRIORITY_TRANSPORT', priority:'P1', status:'PENDING', origin:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, destination:{lat:46.0545,lon:14.5257,name:'UKC Ljubljana'}, passenger_count:1, required_equipment:['STRETCHER','OXYGEN'], earliest_pickup:demoTime('11:20'), latest_pickup:null });
     this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana prometna nesreča na Celovški cesti z visoko prioriteto.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
     this.state.active_plan!.unassigned_task_ids = ['N021'];
     this.state.state_revision++;

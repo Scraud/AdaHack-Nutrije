@@ -101,3 +101,11 @@ body{font-size:1rem}
 .rec-insight-head{display:flex;align-items:center;gap:6px;font-size:.6875rem;font-weight:600;letter-spacing:.02em;color:#3f9e85}
 .rec-insight .rec-benefit{color:#3f7f66;margin-top:6px}.rec-insight .rec-tradeoff{margin-top:6px}
 .rec-insight small{display:flex;align-items:center;gap:5px;margin-top:7px;font-size:.625rem;color:#9aaea7}
+.fleet-header-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.vehicle-manage{display:flex;gap:15px;justify-content:space-between;margin-top:9px}
+.vehicle-manage .text-button{font-size:.6875rem;color:#6f8f84;display:inline-flex;align-items:center;gap:5px}
+.vehicle-manage .vehicle-remove{color:#b5655c}
+.checkbox-group{border:0;margin:0;padding:0;min-width:0;flex-direction:row;flex-wrap:wrap;gap:9px 20px}
+.checkbox-group legend{padding:0;margin-bottom:9px;width:100%;color:#7c978b;font-size:.75rem}
+.checkbox-option{display:inline-flex;align-items:center;gap:8px;color:#4f6f62;font-size:.8125rem;cursor:pointer}
+.checkbox-option input{width:16px;height:16px;accent-color:#2f8f75;margin:0}

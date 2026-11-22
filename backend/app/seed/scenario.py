@@ -12,7 +12,7 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
     ]
     equipment: list[list[Equipment]] = [
         ["WHEELCHAIR"], ["STRETCHER"], ["STRETCHER", "OXYGEN"],
-        ["WHEELCHAIR", "STRETCHER", "OXYGEN"], ["WHEELCHAIR", "STRETCHER"],
+        ["WHEELCHAIR", "STRETCHER", "OXYGEN"], ["STRETCHER", "OXYGEN"],
     ]
     starts = [(46.046, 14.494), (46.067, 14.515), (46.078, 14.530), (46.044, 14.551), (46.054, 14.477)]
     vehicles = [
@@ -22,19 +22,22 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
         for i, (lat, lon) in enumerate(starts)
     ]
     tasks = []
-    windows = (22, 102, 221, 315, 432)
-    requirements: list[Equipment] = ["WHEELCHAIR", "STRETCHER", "OXYGEN", "STRETCHER"]
-    priorities: list[Priority] = ["P3", "P2", "P1", "P2"]
-    for wave, minute in enumerate(windows):
-        for lane, facility in enumerate(facilities):
-            i = wave * len(facilities) + lane
-            start = (minute + lane * 4) * 60
+    waves = (22, 140, 285, 430)
+    # Every wave asks for four oxygen transports within minutes, but only V3, V4 and V5 carry oxygen,
+    # so priority decides who waits: red at once, medium within 45 min, low within 2 hours.
+    # The fifth transport of a wave needs a wheelchair or stretcher and keeps V1 and V2 in use.
+    priorities: list[Priority] = ["P3", "P2", "P1", "P2", "P3"]
+    for wave, minute in enumerate(waves):
+        requirements: list[Equipment] = ["OXYGEN", "OXYGEN", "OXYGEN", "OXYGEN",
+                                         "STRETCHER" if wave % 2 else "WHEELCHAIR"]
+        for lane, priority in enumerate(priorities):
+            i = wave * len(priorities) + lane
+            facility = facilities[lane % len(facilities)]
             tasks.append(Task(
-                id=f"T{i + 1:02}", type="PLANNED_TRANSPORT", priority=priorities[lane],
-                pickup=Point(lat=facility.location.lat + (lane - 1) * .006 + wave * .001,
+                id=f"T{i + 1:02}", type="PLANNED_TRANSPORT", priority=priority,
+                pickup=Point(lat=facility.location.lat + (lane % 3 - 1) * .006 + wave * .001,
                              lon=facility.location.lon + (-1) ** lane * (.012 + wave * .002)),
                 facility_id=facility.id, passenger_count=2 if i % 7 == 0 else 1,
-                equipment=[requirements[lane]], earliest_pickup=start, latest_pickup=start + 1800,
-                preferred_arrival=start + 1080, latest_arrival=start + 3150,
+                equipment=[requirements[lane]], earliest_pickup=(minute + lane * 2) * 60,
             ))
     return vehicles, facilities, tasks

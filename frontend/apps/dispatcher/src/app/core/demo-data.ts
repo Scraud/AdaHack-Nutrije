@@ -1,4 +1,5 @@
-import type { Assignment, DispatchState, Recommendation } from '@rescueflow/contracts';
+import type { Assignment, DispatchState, Priority, Recommendation } from '@rescueflow/contracts';
+import { latestPickupFor } from '@rescueflow/contracts/plan-utils';
 
 export const demoTime = (time: string) => `2026-11-21T${String(Number(time.slice(0, 2)) - 1).padStart(2, '0')}:${time.slice(3)}:00Z`;
 const places = [
@@ -31,18 +32,19 @@ export function createDemoState(): DispatchState {
     const dropoff = new Date(endMs - 10 * 60_000).toISOString();
     const completed = endMs <= Date.parse(now);
     const active = !completed && Date.parse(demoTime(start)) <= Date.parse(now);
-    tasks.push({ id, task_type: 'PLANNED_TRANSPORT', priority: s === 2 ? 'P2' : 'P3', status: completed ? 'COMPLETED' : active ? 'PICKED_UP' : 'ASSIGNED', origin: places[(v + s + 4) % places.length], destination: places[(v + s + 1) % 4], passenger_count: 1, required_equipment: v === 1 || v === 3 ? ['WHEELCHAIR'] : ['STRETCHER'], earliest_pickup: demoTime(start), preferred_arrival: dropoff, latest_arrival: new Date(endMs + 45 * 60_000).toISOString() });
+    const priority: Priority = (['P2', 'P3', 'P1', 'P3'] as const)[s];
+    tasks.push({ id, task_type: 'PLANNED_TRANSPORT', priority, status: completed ? 'COMPLETED' : active ? 'PICKED_UP' : 'ASSIGNED', origin: places[(v + s + 4) % places.length], destination: places[(v + s + 1) % 4], passenger_count: 1, required_equipment: v === 1 || v === 3 ? ['WHEELCHAIR'] : ['STRETCHER'], earliest_pickup: demoTime(start), latest_pickup: latestPickupFor(priority, demoTime(start)) });
     assignments.push({ id: `a-${id}`, task_id: id, vehicle_id: `V${v + 1}`, sequence_order: s, planned_departure: demoTime(start), planned_pickup: pickup, planned_dropoff: dropoff, planned_end: demoTime(end), status: completed ? 'COMPLETED' : active ? 'IN_PROGRESS' : 'PLANNED', is_locked: completed || active });
   }
   return {
     scenario_id: 'ui-fixture-ljubljana', state_revision: 1, simulated_time: now, horizon_start: demoTime('08:00'), horizon_end: demoTime('18:00'), mode: 'DEMO',
     facilities: places.slice(0, 4).map((p, i) => ({ ...p, id: `F${i+1}`, short_name: ['ZD Center', 'UKC Ljubljana', 'ZD Šiška', 'ZD Vič'][i], accepting: true })),
     vehicles: [
-      { id:'V1', code:'V1', vehicle_type:'Reševalno vozilo', status:'TRANSPORTING', current_lat:46.0630, current_lon:14.5070, location_name:'Tivolska cesta', capacity:2, equipment:['STRETCHER','OXYGEN'], available_at:demoTime('11:45'), shift_end:demoTime('18:00') },
-      { id:'V2', code:'V2', vehicle_type:'Prevoz z vozičkom', status:'AVAILABLE', current_lat:46.0702, current_lon:14.5365, location_name:'Bežigrad', capacity:2, equipment:['WHEELCHAIR'], available_at:now, shift_end:demoTime('18:00') },
-      { id:'V3', code:'V3', vehicle_type:'Sanitetno vozilo', status:'TRANSPORTING', current_lat:46.0495, current_lon:14.5340, location_name:'Poljanska cesta', capacity:2, equipment:['STRETCHER','OXYGEN'], available_at:demoTime('12:10'), shift_end:demoTime('18:00') },
-      { id:'V4', code:'V4', vehicle_type:'Prevoz z vozičkom', status:'AVAILABLE', current_lat:46.0465, current_lon:14.4880, location_name:'Rožna dolina', capacity:3, equipment:['WHEELCHAIR','STRETCHER'], available_at:now, shift_end:demoTime('18:00') },
-      { id:'V5', code:'V5', vehicle_type:'Sanitetno vozilo', status:'EN_ROUTE', current_lat:46.0820, current_lon:14.5130, location_name:'Dunajska cesta', capacity:2, equipment:['STRETCHER','OXYGEN'], available_at:demoTime('11:50'), shift_end:demoTime('18:00') },
+      { id:'V1', code:'V1', vehicle_type:'Reševalno vozilo', status:'TRANSPORTING', current_lat:46.0630, current_lon:14.5070, location_name:'Tivolska cesta', capacity:2, equipment:['STRETCHER','OXYGEN'], available_at:demoTime('11:45'), shift_end:demoTime('18:00'), task_types:['PLANNED_TRANSPORT','PRIORITY_TRANSPORT','EQUIPMENT_DELIVERY'] },
+      { id:'V2', code:'V2', vehicle_type:'Prevoz z vozičkom', status:'AVAILABLE', current_lat:46.0702, current_lon:14.5365, location_name:'Bežigrad', capacity:2, equipment:['WHEELCHAIR'], available_at:now, shift_end:demoTime('18:00'), task_types:['PLANNED_TRANSPORT','PRIORITY_TRANSPORT','EQUIPMENT_DELIVERY'] },
+      { id:'V3', code:'V3', vehicle_type:'Sanitetno vozilo', status:'TRANSPORTING', current_lat:46.0495, current_lon:14.5340, location_name:'Poljanska cesta', capacity:2, equipment:['STRETCHER','OXYGEN'], available_at:demoTime('12:10'), shift_end:demoTime('18:00'), task_types:['PLANNED_TRANSPORT','PRIORITY_TRANSPORT','EQUIPMENT_DELIVERY'] },
+      { id:'V4', code:'V4', vehicle_type:'Prevoz z vozičkom', status:'AVAILABLE', current_lat:46.0465, current_lon:14.4880, location_name:'Rožna dolina', capacity:3, equipment:['WHEELCHAIR','STRETCHER'], available_at:now, shift_end:demoTime('18:00'), task_types:['PLANNED_TRANSPORT','PRIORITY_TRANSPORT','EQUIPMENT_DELIVERY'] },
+      { id:'V5', code:'V5', vehicle_type:'Sanitetno vozilo', status:'EN_ROUTE', current_lat:46.0820, current_lon:14.5130, location_name:'Dunajska cesta', capacity:2, equipment:['STRETCHER','OXYGEN'], available_at:demoTime('11:50'), shift_end:demoTime('18:00'), task_types:['PLANNED_TRANSPORT','PRIORITY_TRANSPORT','EQUIPMENT_DELIVERY'] },
     ],
     tasks, active_plan: { id:'plan-1', version:1, status:'ACTIVE', assignments, unassigned_task_ids:[] }, incidents:[], recommendations:[], decisions:[],
   };
@@ -61,6 +63,6 @@ export function createFixtureRecommendations(state: DispatchState, incidentId: s
       for (const key of ['planned_departure','planned_pickup','planned_dropoff','planned_end'] as const) follow[key] = new Date(Date.parse(follow[key])+45*60_000).toISOString();
       follow.sequence_order = 5;
     }
-    return { id:`fixture-rec-${i+1}`, incident_id:incidentId, base_plan_id:state.active_plan!.id, base_state_revision:state.state_revision, strategy, title, status:'PROPOSED', is_fixture:true, proposed_plan:plan, explanation:`Vzorčni prikaz: ${vehicle} prevzame nalogo N021. ${i===0 ? 'Dve prihodnji dodelitvi se spremenita.' : 'Obstoječe dodelitve ostanejo na svojih mestih.'}`, trade_off:['Več sprememb obstoječega razporeda.','Kasnejši prihod nove prednostne naloge.','Poznejši prevzem; razpoložljivost mora potrditi optimizator.'][i], feasibility_reasons:['Ilustrativen razpored za preverjanje UI.', 'Izvedljivost mora potrditi backend validator.'] };
+    return { id:`fixture-rec-${i+1}`, incident_id:incidentId, base_plan_id:state.active_plan!.id, base_state_revision:state.state_revision, strategy, title, status:'PROPOSED', is_fixture:true, proposed_plan:plan, explanation:`Vzorčni prikaz: ${vehicle} prevzame nalogo N021. ${i===0 ? 'Dve prihodnji dodelitvi se spremenita.' : 'Obstoječe dodelitve ostanejo na svojih mestih.'}`, trade_off:['Več sprememb obstoječega razporeda.','Kasnejši prevzem nove prednostne naloge.','Poznejši prevzem; razpoložljivost mora potrditi optimizator.'][i], feasibility_reasons:['Ilustrativen razpored za preverjanje UI.', 'Izvedljivost mora potrditi backend validator.'] };
   });
 }

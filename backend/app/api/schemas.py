@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.planning.contracts import (
     Assignment, Equipment, Facility, HORIZON, Incident, IncidentType, Issue, Metrics, Point, Priority, Strategy, Task,
-    Vehicle, Candidate,
+    TaskType, Vehicle, Candidate,
 )
 
 
@@ -16,7 +16,6 @@ class NewTask(BaseModel):
     passenger_count: int = Field(default=1, ge=1, le=8)
     equipment: list[Equipment] = Field(default_factory=list)
     earliest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
-    latest_pickup: int | None = Field(default=None, ge=0, le=HORIZON)
 
 
 class CreateIncident(BaseModel):
@@ -88,7 +87,7 @@ class Recommendations(BaseModel):
 
 
 class Flag(BaseModel):
-    code: Literal["UNASSIGNED", "RESOLVED", "CREW_NOTICE", "TIGHT_DEADLINE", "LATER_ARRIVAL", "CASCADE",
+    code: Literal["UNASSIGNED", "RESOLVED", "CREW_NOTICE", "TIGHT_DEADLINE", "LATER_PICKUP", "CASCADE",
                   "FACILITY_BUNCHING", "SHARED_DELAY_EXPOSURE"]
     severity: Literal["HIGH", "MEDIUM", "INFO"]
     message: str
@@ -125,6 +124,16 @@ class Baseline(BaseModel):
     affected: list[Issue]
     simulated_pickups: int
     simulated_arrivals: int
+
+
+class VehicleSettings(BaseModel):
+    capacity: int = Field(ge=1, le=8)
+    equipment: list[Equipment] = Field(default_factory=list)
+    task_types: list[TaskType] = Field(min_length=1)
+
+
+class NewVehicle(VehicleSettings):
+    location: Point
 
 
 class VehicleView(Vehicle):

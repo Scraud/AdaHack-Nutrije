@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.api.schemas import (
     Advance, DemoClock, Baseline, CreateIncident, Explanation, PickupAddress, PlanSummary, PlanView, RecommendationView,
-    Recommendations, Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State,
+    NewVehicle, Recommendations, Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State, VehicleSettings,
 )
 from app.db import Database
 from app.models import Plan, Scenario
@@ -21,6 +21,7 @@ from app.providers.osrm import RoadMatrix, RoadRoutingUnavailable
 from app.providers.roads import road_network
 from app.services.advisor import Advisor, recommendation_facts
 from app.services.decisions import decide
+from app.services.fleet import add_vehicle, remove_vehicle, update_vehicle
 from app.services.planning import PlanningService, recommendation_history
 from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident, set_demo_clock
 from app.services.state import problem, reset, scenario, view_plan, view_state
@@ -66,7 +67,7 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
     app = FastAPI(title="RescueFlow", version="0.1.0", lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=2048)
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:4200", "http://127.0.0.1:4200"],
-                       allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
+                       allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type"])
 
     @app.exception_handler(RoadRoutingUnavailable)
     async def road_routing_unavailable(_request: Request, _error: RoadRoutingUnavailable):
@@ -135,6 +136,30 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
         with database.session(write=True) as db:
             scope = scenario(db)
             restore_vehicle(db, scope, vehicle_id)
+            return view_state(db, scope, road_matrix)
+
+    @app.post("/api/vehicles")
+    def vehicle_add(request: NewVehicle) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            add_vehicle(db, scope, request)
+            return view_state(db, scope, road_matrix)
+
+    @app.put("/api/vehicles/{vehicle_id}")
+    def vehicle_update(vehicle_id: str, request: VehicleSettings) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            update_vehicle(db, scope, vehicle_id, request)
+            return view_state(db, scope, road_matrix)
+
+    @app.delete("/api/vehicles/{vehicle_id}")
+    def vehicle_remove(vehicle_id: str) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            remove_vehicle(db, scope, vehicle_id)
             return view_state(db, scope, road_matrix)
 
     @app.get("/api/plans")

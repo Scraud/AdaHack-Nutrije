@@ -98,7 +98,7 @@ Na časovnici je mogoče izbrati katerokoli uro demo dneva med 00:00 in 23:59, t
 
 Privzeto ima naloga enega potnika. Ena naloga lahko prepelje več potnikov z iste lokacije do istega cilja, če vozilo ustreza kapaciteti in opremi. Planer ne združuje ločenih nalog v skupno vožnjo: po prevzemu sledijo cilj, predaja in čiščenje, šele nato naslednja naloga. Test `test_group_capacity_and_sequential_transport_without_ride_pooling` preverja skupino dveh pri kapaciteti dve, zavrnitev skupine treh in neprekrivanje prevozov.
 
-P1 z `arrival_policy=ASAP` se optimizira pred običajnimi cilji in uteženo pokritostjo drugih nalog. P2/P3 imata manjšo prednost. Novi P1 lahko po izrecni potrditvi preusmeri vozilo, ki še ni prevzelo potnika manj nujne, nezaklenjene naloge. Prevzetega potnika ne prekine; ta del poti ostane zaščiten. To preverja `test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger`. Prioriteta je podatek dispečerja, ne avtomatska triaža; omejitve kapacitete, opreme in dosegljivosti še vedno veljajo.
+P1 (rdeča) je vedno čim prej in ima absolutno prednost: optimizira se pred pokritostjo in vsemi drugimi cilji. P2 mora biti v vozilu najkasneje 45 minut po želenem prevzemu, P3 najkasneje 2 uri po njem. Prihodov v ustanovo naloge ne določajo več. Novi P1 lahko po izrecni potrditvi preusmeri vozilo, ki še ni prevzelo potnika manj nujne, nezaklenjene naloge. Prevzetega potnika ne prekine; ta del poti ostane zaščiten. To preverja `test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger`. Prioriteta je podatek dispečerja, ne avtomatska triaža; omejitve kapacitete, opreme in dosegljivosti še vedno veljajo.
 
 ## Razširitev s pravimi podatki in prodajni pitch
 

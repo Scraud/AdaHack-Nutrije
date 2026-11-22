@@ -201,6 +201,8 @@ def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], l
     invalid = {issue.task_id for issue in validate_plan(state, rows)}
     result = []
     for vehicle in state.vehicles.values():
+        if vehicle.retired:
+            continue
         origin = vehicle.location
         relocated = vehicle.repositioned_at is not None
         upcoming = None

@@ -3,7 +3,7 @@ import { afterNextRender, Component, ElementRef, Injector, OnDestroy, OnInit, Vi
 import { FormsModule } from '@angular/forms';
 import type { IncidentType, Recommendation, RuntimeConfig } from '@rescueflow/contracts';
 import type { DispatchViewProps } from '@rescueflow/react-views/src';
-import { arrivalAsap, colorFor,equipmentLabel,formatTime,incidentStatus,preferredArrivalLabel,statusLabel,taskAwaitingConfirmation,timelineBounds } from '@rescueflow/contracts/plan-utils';
+import { colorFor,equipmentLabel,formatTime,incidentStatus,latestPickupLabel,pickupAsap,statusLabel,taskAwaitingConfirmation,timelineBounds } from '@rescueflow/contracts/plan-utils';
 import { createGateway } from './core/dispatch-api';
 import { DispatchStore } from './core/dispatch-store';
 import { IconComponent } from './shared/icon.component';
@@ -20,8 +20,8 @@ type Page='home'|'tasks'|'vehicles'|'incidents'|'analysis';
 @Component({selector:'app-root',standalone:true,imports:[FormsModule,IconComponent,ReactViewHost,IncidentsPageComponent,EventFormComponent,TasksPageComponent,VehiclesPageComponent,OperationsPanelComponent,KpiCardsComponent,AnalysisPageComponent],templateUrl:'./app.component.html',styleUrl:'./app.component.css'})
 export class AppComponent implements OnInit,OnDestroy {
   readonly priorityLabels = PRIORITY_LABELS;
-  readonly arrivalAsap = arrivalAsap;
-  readonly preferredArrival = preferredArrivalLabel;
+  readonly pickupAsap = pickupAsap;
+  readonly latestPickup = latestPickupLabel;
  readonly store=inject(DispatchStore);readonly page=signal<Page>('home');readonly taskId=signal<string|null>(null);readonly confirmation=signal<Recommendation|null>(null);readonly configurationError=signal('');
  @ViewChild('confirmationDialog')dialog?:ElementRef<HTMLDialogElement>;@ViewChild('detailDialog')details?:ElementRef<HTMLDialogElement>;@ViewChild('simulationDialog')simulation?:ElementRef<HTMLDialogElement>;@ViewChild(EventFormComponent)eventForm?:EventFormComponent;
  @ViewChild('incidentDialog')incidentDialog?:ElementRef<HTMLDialogElement>;

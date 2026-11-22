@@ -364,6 +364,43 @@ def test_demo_task_matches_a_manual_submission(demo):
         assert {**added_task, "id": demo_task["id"]} == demo_task
 
 
+def test_presentation_demo_recommends_ventilator_vehicle_then_detours(demo):
+    state = post(demo, "demo/oxygen")
+    assert [v["id"] for v in state["vehicles"] if "VENTILATOR" in v["equipment"]] == ["V1"]
+    assert state["vehicles"][0]["id"] == "V1"
+    [low] = state["tasks"]
+    assert low["priority"] == "P3" and low["equipment"] == ["VENTILATOR"] and low["actual_pickup"] is None
+    original = state["active_plan"]["id"]
+    frame = demo.get("/api/tracking").json()
+    assert frame["playback"] == {"playing": True, "speed": 10}
+    tracked = next(v for v in frame["vehicles"] if v["id"] == "V1")
+    assert tracked["status"] == "TO_PICKUP" and tracked["task_id"] == low["id"]
+
+    state = post(demo, "demo/advance-time", {"to": state["active_plan"]["assignments"][0]["planned_pickup"]})
+    assert state["incidents"][-1]["source"] == "PRESENTATION_EMERGENCY"
+    [approach] = state["active_plan"]["assignments"]
+    assert state["now"] == approach["planned_departure"] + 150 < approach["planned_pickup"]
+    tracked = next(v for v in demo.get("/api/tracking").json()["vehicles"] if v["id"] == "V1")
+    high = state["incidents"][-1]["task_id"]
+    [recommendation] = replan(demo, state)
+    [first, second] = recommendation["plan"]["assignments"]
+    assert (first["task_id"], second["task_id"]) == (high, low["id"])
+    assert first["vehicle_id"] == second["vehicle_id"] == "V1"
+    assert first["planned_departure"] == state["now"]
+    preview = demo.get("/api/tracking", params={"plan_id": recommendation["plan"]["id"]}).json()
+    redirected = next(v for v in preview["vehicles"] if v["id"] == "V1")
+    assert redirected["task_id"] == high and redirected["location"] == tracked["location"]
+    assert demo.get("/api/state").json()["active_plan"]["id"] == original
+    post(demo, f"recommendations/{recommendation['id']}/accept")
+    state = post(demo, "demo/advance-time", {"to": first["planned_pickup"]})
+    assert state["incidents"][-1]["source"] == "PRESENTATION_CLOSURE"
+    assert state["active_plan"]["id"] == recommendation["plan"]["id"]
+    updated = next(row for row in state["active_plan"]["assignments"] if row["task_id"] == high)
+    assert updated["reroute"]["leg"] == "PICKUP"
+    after = next(v for v in demo.get("/api/tracking").json()["vehicles"] if v["id"] == "V1")
+    assert after["status"] == "TO_PICKUP" and after["task_id"] == high and after["to_pickup"]
+
+
 @pytest.mark.parametrize("urgency", ["new", "legacy", "already_assigned"])
 def test_high_priority_can_redirect_approaching_vehicle_but_keeps_picked_up_passenger(demo, tmp_path, urgency):
     database = Database(tmp_path / "dispatch.sqlite")

@@ -6,9 +6,10 @@ from app.planning.snapshot_builder import travel_snapshot
 from app.planning.task_creation import facility_nodes, priority_transport
 
 DEMO_START = "2026-11-21T07:00:00Z"
+PRESENTATION_LOW = "DEMO-LOW"
 
 
-def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
+def demo_fleet() -> tuple[list[Vehicle], list[Facility]]:
     facilities = [
         Facility(id="F1", name="Center Trnovski most", location=Point(lat=46.038, lon=14.503), quota=12),
         Facility(id="F2", name="Center Zeleni gaj", location=Point(lat=46.066, lon=14.476), quota=12),
@@ -26,6 +27,11 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
                 task_types=["PLANNED_TRANSPORT", "PRIORITY_TRANSPORT", "EQUIPMENT_DELIVERY"])
         for i, (lat, lon) in enumerate(starts)
     ]
+    return vehicles, facilities
+
+
+def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
+    vehicles, facilities = demo_fleet()
     requests: list[tuple[str, NewTask, int]] = []
     waves = (22, 140, 285, 430)
     # Every wave asks for four oxygen transports within minutes, but only V3, V4 and V5 carry oxygen,
@@ -46,6 +52,22 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
                 pickup_name="Izbrana točka na zemljevidu", passenger_count=2 if i % 7 == 0 else 1,
                 equipment=[requirements[lane]], earliest_pickup=earliest,
             ), earliest))
+    return vehicles, facilities, demo_tasks(requests, facilities)
+
+
+def oxygen_demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
+    vehicles, facilities = demo_fleet()
+    presentation_ids = {"V1": "V3", "V3": "V1"}
+    for vehicle in vehicles:
+        vehicle.id = presentation_ids.get(vehicle.id, vehicle.id)
+        if vehicle.id == "V1":
+            vehicle.equipment.append("VENTILATOR")
+    low = NewTask(priority="P3", pickup=Point(lat=46.038, lon=14.554),
+                  pickup_name="Prevzem na jugovzhodu Ljubljane", equipment=["VENTILATOR"])
+    return vehicles, facilities, demo_tasks([(PRESENTATION_LOW, low, 300)], facilities)
+
+
+def demo_tasks(requests: list[tuple[str, NewTask, int]], facilities: list[Facility]) -> list[Task]:
     nodes = tuple(Node(task_id, "PICKUP", request.pickup) for task_id, request, _ in requests)
     travel = travel_snapshot(nodes + facility_nodes(facilities), 0, [], None)
     booked: Counter[str] = Counter()
@@ -56,4 +78,4 @@ def demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
             raise ValueError(f"Demo pickup {task_id} has no route to a facility")
         tasks.append(task)
         booked[task.facility_id] += 1
-    return vehicles, facilities, tasks
+    return tasks

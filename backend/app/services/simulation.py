@@ -3,20 +3,40 @@ from math import ceil
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import CreateIncident
+from app.api.schemas import CreateIncident, NewTask
 from app.models import AssignmentRecord, FacilityRecord, IncidentRecord, Scenario, SnapshotRecord, TaskRecord, VehicleRecord
-from app.planning.contracts import Facility, HORIZON, Incident, Node, Point, Reroute, Task, Vehicle
+from app.planning.contracts import Facility, HORIZON, Incident, Node, Point, Reroute, SolveBudget, Task, Vehicle
+from app.planning.cp_sat_planner import CpSatPlanner
 from app.planning.snapshot_builder import MatrixProvider, after_repositioning, routes, travel_snapshot
 from app.planning.task_creation import facility_nodes, priority_transport
 from app.planning.validator import validate_plan
 from app.providers.roads import active_conditions, center_distance, road_network
-from app.services.state import active_plan, audit, entities, inputs, problem, timestamp
+from app.seed.scenario import PRESENTATION_LOW, oxygen_demo_data
+from app.services.state import active_plan, audit, entities, inputs, persist_snapshot, problem, reset, save_plan, snapshot_payload, timestamp
+
+
+def prepare_oxygen_demo(db: Session, budget: SolveBudget, road_matrix: MatrixProvider | None) -> Scenario:
+    scope = reset(db, oxygen_demo_data())
+    snapshot, incidents, _ = inputs(db, scope, None, road_matrix)
+    result = CpSatPlanner().solve(snapshot, "MIN_DELAY", budget)
+    if not result.plan or result.plan.blocking or len(result.plan.assignments) != 1:
+        raise problem(503, "DEMO_PLAN_UNAVAILABLE", "Začetnega plana za predstavitev ni bilo mogoče pripraviti.")
+    [assignment] = result.plan.assignments
+    if assignment.planned_pickup - assignment.planned_departure < 2:
+        raise problem(503, "DEMO_APPROACH_UNAVAILABLE", "Za predstavitev ni dovolj dolge poti do prvega prevzema.")
+    snapshot_id, payload = snapshot_payload(snapshot, incidents)
+    persist_snapshot(db, snapshot_id, payload)
+    plan = save_plan(db, scope, result.plan, snapshot_id, initial=True)
+    audit(db, scope, "INITIAL_PLAN", plan_id=plan.id)
+    advance(db, scope, assignment.planned_departure + 1, road_matrix)
+    return scope
 
 
 
-def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None):
+def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None,
+                 *, source: str = "SIMULATED"):
     horizon = max([HORIZON, *(task.planning_horizon or HORIZON for task in entities(db, scope, TaskRecord, Task))])
-    event = Incident(occurred_at=scope.now, **request.model_dump(
+    event = Incident(occurred_at=scope.now, source=source, **request.model_dump(
         exclude={"task"}, exclude_none=True,
     ))
     if event.type in ("VEHICLE_BREAKDOWN", "VEHICLE_UNAVAILABLE"):
@@ -250,11 +270,25 @@ def set_demo_clock(db: Session, scope: Scenario, until: int, road_matrix: Matrix
 
 
 def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvider | None = None, *,
-            record_audit: bool = True):
+            record_audit: bool = True) -> bool:
     if until <= scope.now:
         raise problem(400, "TIME_MUST_ADVANCE", "Simulirani čas se lahko premika samo naprej.")
     plan = active_plan(db, scope)
-    snapshot, _, assignments = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
+    snapshot, incidents, assignments = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
+    stage = None
+    if PRESENTATION_LOW in snapshot.tasks:
+        emergency = next((event for event in incidents if event.source == "PRESENTATION_EMERGENCY"), None)
+        if emergency is None:
+            row = snapshot.previous[PRESENTATION_LOW]
+            arrival = min(row.planned_pickup - 1, row.planned_departure + 150)
+            if until >= arrival:
+                until, stage = max(scope.now, arrival), "EMERGENCY"
+        elif emergency.status == "RESOLVED" and not any(event.source == "PRESENTATION_CLOSURE" for event in incidents):
+            row = snapshot.previous.get(emergency.task_id)
+            if row and scope.now < row.planned_pickup:
+                closure = row.planned_departure + max(1, min(80, (row.planned_pickup - row.planned_departure) // 4))
+                if scope.now < closure <= until:
+                    until, stage = closure, "CLOSURE"
     blocked = {issue.task_id for issue in validate_plan(snapshot, assignments)}
     for route in routes(assignments).values():
         route_blocked = False
@@ -279,3 +313,43 @@ def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvide
     activate_due(db, scope)
     if record_audit:
         audit(db, scope, "ADVANCE_TIME", simulated_time=until, blocked_tasks=sorted(blocked))
+    if stage == "EMERGENCY":
+        add_incident(db, scope, CreateIncident(type="NEW_TASK",
+            description=f"Pacient z visoko prioriteto potrebuje prenosni respirator. {row.vehicle_id} je na poti k pacientu z nizko prioriteto.",
+            task=NewTask(priority="P1", pickup=Point(lat=46.084, lon=14.525),
+                         pickup_name="Prevzem na severu Ljubljane", equipment=["VENTILATOR"])),
+            road_matrix, source="PRESENTATION_EMERGENCY")
+        return True
+    if stage == "CLOSURE":
+        _presentation_closure(db, scope, plan, emergency.task_id, road_matrix)
+    return False
+
+
+def _presentation_closure(db: Session, scope: Scenario, plan, task_id: str, road_matrix: MatrixProvider | None):
+    from app.services.tracking import demo_positions, planned_path
+
+    state, incidents, rows = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
+    saved = db.get(SnapshotRecord, plan.snapshot_id).payload
+    tracked = next((vehicle for vehicle in demo_positions(state, incidents, rows, planned_path(saved, road_matrix),
+                    saved.get("now", 0)) if vehicle.task_id == task_id and vehicle.status == "TO_PICKUP"), None)
+    if tracked is None:
+        return
+    roads = road_network()
+    conditions = active_conditions(scope.now, incidents)
+    target = state.tasks[task_id].pickup
+    original = roads.route(tracked.location, target, roads.effects(conditions))
+    if original is None:
+        return
+    visited = set()
+    for point in original[1][2:-1]:
+        segment = roads.nearest(*point)
+        if segment is None or segment.id in visited:
+            continue
+        visited.add(segment.id)
+        effects = roads.effects([*conditions, Incident(type="ROAD_CLOSURE", road_id=segment.id)])
+        detour = roads.route(tracked.location, target, effects)
+        if detour and detour[1] != original[1]:
+            add_incident(db, scope, CreateIncident(type="ROAD_CLOSURE", road_id=segment.id, duration=1800,
+                         description=f"Zapora na poti {tracked.id} do pacienta: {segment.name}. Vozilo je samodejno preusmerjeno."),
+                         road_matrix, source="PRESENTATION_CLOSURE")
+            return

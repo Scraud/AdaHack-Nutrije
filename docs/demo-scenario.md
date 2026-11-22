@@ -1,5 +1,13 @@
 # Demo scenarij
 
+## Predstavitev preusmeritve in obvoza
+
+1. Kliknite **Demo** ob oznaki **Simulacija** in potrdite zagon. Pri hitrosti **10×** se V1, edino vozilo s prenosnim respiratorjem, pelje k pacientu z nizko prioriteto.
+2. Med vožnjo se samodejno pojavi opozorilo za pacienta z visoko prioriteto, ki potrebuje isto opremo. Simulacija se ustavi na mestu, kjer mora dispečer sprejeti odločitev. Kliknite opozorilo za izračun predloga.
+3. Izberite in potrdite predlog. V1 najprej odpelje k visoki nalogi in simulacija se nadaljuje. Na novi poti se pojavi zapora, zato vozilo samodejno izbere obvoz.
+
+## Splošni demo
+
 1. Kliknite **Ponastavi demo** in potrdite. Pri 08:00 je v demu 5 vozil, 20 nalog in 4 fiktivne ustanove. Vzorčne naloge uporabljajo ista pravila kot ročno dodane prednostne naloge, vključno s samodejno izbiro ustanove.
 2. Kliknite **Generiraj začetni plan** in preverite verzijo v1, tabelo in časovnico.
 3. Nastavite uro na **11:20** in kliknite **Premakni**. Prve opravljene vožnje ostanejo v časovnici.

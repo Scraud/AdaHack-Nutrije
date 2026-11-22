@@ -23,7 +23,7 @@ from app.services.advisor import Advisor, recommendation_facts
 from app.services.decisions import decide
 from app.services.fleet import add_vehicle, remove_vehicle, update_vehicle
 from app.services.planning import PlanningService, recommendation_history
-from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident, set_demo_clock
+from app.services.simulation import add_incident, advance, prepare_oxygen_demo, restore_vehicle, resolve_incident, set_demo_clock
 from app.services.scheduling import create_scheduled_task
 from app.services.state import problem, reset, scenario, timestamp, view_plan, view_state
 from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
@@ -101,6 +101,16 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget(),
             scope = scenario(db)
             advance(db, scope, request.to, road_matrix)
             return view_state(db, scope, road_matrix)
+
+    @app.post("/api/demo/oxygen")
+    def demo_oxygen() -> State:
+        tracking.pause()
+        if tracking.gps_key:
+            raise problem(409, "GPS_ENABLED", "Za predstavitev uporabite simulirano sledenje vozil.")
+        with database.session(write=True) as db:
+            state = view_state(db, prepare_oxygen_demo(db, budget, road_matrix), road_matrix)
+        tracking.control(Playback(playing=True, speed=10))
+        return state
 
     @app.post("/api/tasks")
     def create_task(request: CreateScheduledTask) -> State:

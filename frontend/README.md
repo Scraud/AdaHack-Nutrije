@@ -22,7 +22,7 @@ npm.cmd start
 
 Odprite **http://127.0.0.1:4200**. Za razvoj uporabite Node 22.12+ v veji 22 ali združljiv Node 24. Ob prvem zagonu kliknite **Pripravi demo 11:20**: backend izračuna začetni plan in premakne simulacijo. Nato izberite **Simuliraj dogodek**, preglejte podatke in dodajte dogodek. Predloge primerjajte s kazalcem oziroma tipkovnico, enega pripnite in izrecno potrdite.
 
-Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1:8080. Docker v tej izvedbi ni bil preverjen.
+Iz korena je na voljo tudi `docker compose up --build` in UI na http://127.0.0.1:8080. Dockerfile, nginx in Compose konfiguracija so ohranjeni iz `main`. Preverjeni so Compose konfiguracija, gradnja frontend Docker slike, nginx ter HTTP dostop do strani, JavaScript paketa in `config.json`. Celoten Compose deployment z backendom v tem preverjanju ni bil zagnan.
 
 ## Strani
 

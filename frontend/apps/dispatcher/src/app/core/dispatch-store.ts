@@ -36,7 +36,7 @@ export class DispatchStore {
   readonly activePlan = computed(() => this.state()?.active_plan ?? null);
   readonly recommendations = computed(() => {
     const s = this.state();
-    return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s.tasks)).slice(0,3) ?? [];
+    return s?.recommendations.filter(r => r.status==='PROPOSED' && r.base_plan_id===s.active_plan?.id && r.base_state_revision===s.state_revision && (this.gateway.isDemo ? r.is_fixture : !r.is_fixture && (r.solver_status==='FEASIBLE' || r.solver_status==='OPTIMAL')) && !!r.proposed_plan && !candidateProblem(s.active_plan,r.proposed_plan,s)).slice(0,3) ?? [];
   });
   readonly previewRecommendation = computed(() => this.recommendations().find(r => r.id === (this.hoveredRecommendationId() ?? this.selectedRecommendationId())) ?? null);
   readonly previewPlan = computed(() => this.previewRecommendation()?.proposed_plan ?? null);

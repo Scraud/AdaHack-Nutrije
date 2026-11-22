@@ -3,34 +3,51 @@ from math import ceil
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import CreateIncident, NewTask
+from app.api.schemas import CreateEquipmentRecovery, CreateIncident, NewTask
 from app.models import AssignmentRecord, FacilityRecord, IncidentRecord, Scenario, SnapshotRecord, TaskRecord, VehicleRecord
-from app.planning.contracts import Facility, HORIZON, Incident, Node, Point, Reroute, SolveBudget, Task, Vehicle
+from app.planning.contracts import Assignment, Facility, HORIZON, Incident, Node, Point, Reroute, SolveBudget, Task, Vehicle
 from app.planning.cp_sat_planner import CpSatPlanner
 from app.planning.snapshot_builder import MatrixProvider, after_repositioning, routes, travel_snapshot
 from app.planning.task_creation import facility_nodes, priority_transport
 from app.planning.validator import validate_plan
 from app.providers.roads import active_conditions, center_distance, road_network
-from app.seed.scenario import PRESENTATION_LOW, oxygen_demo_data
+from app.seed.scenario import (
+    BREAKDOWN_AT, BREAKDOWN_OXYGEN, BREAKDOWN_VEHICLE, BREAKDOWN_WHEELCHAIR, PRESENTATION_LOW,
+    breakdown_demo_data, oxygen_demo_data,
+)
+from app.services.equipment_recovery import create_equipment_recovery, vehicle_position
 from app.services.state import active_plan, audit, entities, inputs, persist_snapshot, problem, reset, save_plan, snapshot_payload, timestamp
 
 
-def prepare_oxygen_demo(db: Session, budget: SolveBudget, road_matrix: MatrixProvider | None) -> Scenario:
-    scope = reset(db, oxygen_demo_data())
+def prepare_presentation_plan(db: Session, data: tuple[list[Vehicle], list[Facility], list[Task]],
+                              budget: SolveBudget, road_matrix: MatrixProvider | None) -> tuple[Scenario, list[Assignment]]:
+    scope = reset(db, data)
     snapshot, incidents, _ = inputs(db, scope, None, road_matrix)
     result = CpSatPlanner().solve(snapshot, "MIN_DELAY", budget)
-    if not result.plan or result.plan.blocking or len(result.plan.assignments) != 1:
+    if not result.plan or result.plan.blocking or result.plan.unassigned:
         raise problem(503, "DEMO_PLAN_UNAVAILABLE", "Začetnega plana za predstavitev ni bilo mogoče pripraviti.")
-    [assignment] = result.plan.assignments
-    if assignment.planned_pickup - assignment.planned_departure < 2:
-        raise problem(503, "DEMO_APPROACH_UNAVAILABLE", "Za predstavitev ni dovolj dolge poti do prvega prevzema.")
     snapshot_id, payload = snapshot_payload(snapshot, incidents)
     persist_snapshot(db, snapshot_id, payload)
     plan = save_plan(db, scope, result.plan, snapshot_id, initial=True)
     audit(db, scope, "INITIAL_PLAN", plan_id=plan.id)
+    return scope, result.plan.assignments
+
+
+def prepare_oxygen_demo(db: Session, budget: SolveBudget, road_matrix: MatrixProvider | None) -> Scenario:
+    scope, assignments = prepare_presentation_plan(db, oxygen_demo_data(), budget, road_matrix)
+    [assignment] = assignments
+    if assignment.planned_pickup - assignment.planned_departure < 2:
+        raise problem(503, "DEMO_APPROACH_UNAVAILABLE", "Za predstavitev ni dovolj dolge poti do prvega prevzema.")
     advance(db, scope, assignment.planned_departure + 1, road_matrix)
     return scope
 
+
+def prepare_breakdown_demo(db: Session, budget: SolveBudget, road_matrix: MatrixProvider | None) -> Scenario:
+    scope, assignments = prepare_presentation_plan(db, breakdown_demo_data(), budget, road_matrix)
+    planned = {row.task_id for row in assignments if row.vehicle_id == BREAKDOWN_VEHICLE}
+    if planned != {BREAKDOWN_OXYGEN, BREAKDOWN_WHEELCHAIR}:
+        raise problem(503, "DEMO_PLAN_UNAVAILABLE", "Začetni plan za prikaz okvare ni izvedljiv.")
+    return scope
 
 
 def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None,
@@ -47,7 +64,6 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         if event.type == "VEHICLE_BREAKDOWN":
             if vehicle.broken:
                 raise problem(409, "VEHICLE_ALREADY_BROKEN", "Okvara vozila je že zabeležena.")
-            from app.services.equipment_recovery import vehicle_position
             event.location = vehicle_position(db, scope, vehicle.id, road_matrix)
             vehicle.broken = True
         else:
@@ -278,7 +294,14 @@ def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvide
     plan = active_plan(db, scope)
     snapshot, incidents, assignments = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
     stage = None
-    if PRESENTATION_LOW in snapshot.tasks:
+    if BREAKDOWN_OXYGEN in snapshot.tasks:
+        breakdown = next((event for event in incidents if event.source == "PRESENTATION_BREAKDOWN"), None)
+        if breakdown and breakdown.status == "OPEN":
+            return True
+        vehicle = snapshot.vehicles[BREAKDOWN_VEHICLE]
+        if breakdown is None and not (vehicle.broken or vehicle.retired) and scope.now < BREAKDOWN_AT <= until:
+            until, stage = BREAKDOWN_AT, "BREAKDOWN"
+    elif PRESENTATION_LOW in snapshot.tasks:
         emergency = next((event for event in incidents if event.source == "PRESENTATION_EMERGENCY"), None)
         if emergency is None:
             row = snapshot.previous[PRESENTATION_LOW]
@@ -324,6 +347,13 @@ def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvide
         return True
     if stage == "CLOSURE":
         _presentation_closure(db, scope, plan, emergency.task_id, road_matrix)
+    if stage == "BREAKDOWN":
+        add_incident(db, scope, CreateIncident(type="VEHICLE_BREAKDOWN", vehicle_id=BREAKDOWN_VEHICLE,
+            priority="P1", description="V1 se je pokvaril. Prerazporedite njegova dva prevoza in prevzem kisikove opreme."),
+            road_matrix, source="PRESENTATION_BREAKDOWN")
+        create_equipment_recovery(db, scope, BREAKDOWN_VEHICLE, CreateEquipmentRecovery(
+            priority="P1", equipment=["OXYGEN"], facility_id="F1"), road_matrix, attach_to_breakdown=True)
+        return True
     return False
 
 

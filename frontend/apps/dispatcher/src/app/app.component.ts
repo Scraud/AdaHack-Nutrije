@@ -32,6 +32,19 @@ export class AppComponent implements OnInit,OnDestroy {
  readonly pageTitle=computed(()=>({home:'Operativni pregled',tasks:'Prevozne naloge',vehicles:'Vozila in razpoložljivost',incidents:'Dogodki in odločitve',analysis:'Analiza in napovedi'}[this.page()]));
  readonly date=computed(()=>new Intl.DateTimeFormat('sl-SI',{day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Ljubljana'}).format(new Date(this.store.state()?.simulated_time??'2026-11-21')));
  readonly viewProps=computed<DispatchViewProps|null>(()=>{const state=this.store.state();return state?{state,tracking:this.store.displayedTracking(),roads:this.store.roads(),pickingRoad:this.store.pickingRoad(),roadPreview:this.store.roadTarget(),onPickRoad:location=>void this.store.pickRoad(location),plan:this.store.displayedPlan(),basePlan:this.store.activePlan(),diff:this.store.diff(),selectedVehicleId:this.store.selectedVehicleId(),selectedTaskId:this.store.selectedTaskId(),isPreview:!!this.store.previewPlan(),onSelectVehicle:id=>this.store.selectVehicle(id),onSelectTask:id=>this.inspectTask(id)}:null;});
+ readonly reviewTimelineProps = computed<DispatchViewProps | null>(() => {
+   const props = this.viewProps(), incident = this.store.selectedIncident();
+   if (!props || !incident || !this.store.manualEditing() || this.store.busy()) return props;
+   return {...props, manualTimeline: {
+     earliest: Math.max(Date.parse(incident.occurred_at), Date.parse(props.state.simulated_time)),
+     availableSlots: taskId => this.store.manualSlots(taskId),
+     move: (taskId, vehicleId, pickup) => void this.store.moveManual(taskId, vehicleId, pickup),
+   }};
+ });
+ async startManualReview() {
+   await this.store.startManual();
+   if (this.store.manualEditing()) document.getElementById('incident-timeline')?.scrollIntoView({block: 'nearest'});
+ }
  readonly timelineRange=computed(()=>{const state=this.store.state();if(!state)return '';const {start,end}=timelineBounds(state);const label=(value:number)=>new Intl.DateTimeFormat('sl-SI',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Ljubljana'}).format(value);return end-start>24*3600_000?label(start)+'–'+label(end):formatTime(new Date(start).toISOString())+'–'+formatTime(new Date(end).toISOString());});
  readonly selectedTask=computed(()=>[...this.store.state()?.tasks??[],...this.store.state()?.future_tasks??[]].find(t=>t.id===this.taskId()));readonly selectedAssignment=computed(()=>this.store.displayedPlan()?.assignments.find(a=>a.task_id===this.taskId()));readonly affectedVehicles=computed(()=>[...this.store.diff().vehicle_ids].join(', ')||'—');
  private readonly hashChange=()=>this.readHash();
@@ -40,7 +53,7 @@ export class AppComponent implements OnInit,OnDestroy {
  ngOnDestroy(){window.removeEventListener('hashchange',this.hashChange);this.store.dispose();}
  private readHash(){const hash=window.location.hash.slice(1),value=hash==='overview'?'home':hash==='fleet'?'vehicles':hash;this.page.set(this.pages.some(p=>p.id===value)?value as Page:'home');}
  navigate(page:Page){this.page.set(page);window.location.hash=page;}
- inspectIncident(id:string){const incident=this.store.state()?.incidents.find(i=>i.id===id);if(incident&&this.store.isRoadIncident(incident)){this.store.showRoadNotice(incident);return;}this.store.inspectIncident(id);if(this.presentationEmergencyId()===id)void this.store.generate(id);afterNextRender(()=>{const dialog=this.incidentDialog?.nativeElement;if(dialog&&!dialog.open)dialog.showModal();},{injector:this.injector});}
+ inspectIncident(id:string){const incident=this.store.state()?.incidents.find(i=>i.id===id);if(incident&&this.store.isRoadIncident(incident)){this.store.showRoadNotice(incident);return;}this.store.inspectIncident(id);if(this.presentationDecisionId()===id)void this.store.generate(id);afterNextRender(()=>{const dialog=this.incidentDialog?.nativeElement;if(dialog&&!dialog.open)dialog.showModal();},{injector:this.injector});}
  async regeneratePlan(){
    await this.store.regeneratePlan();
  }
@@ -56,7 +69,21 @@ export class AppComponent implements OnInit,OnDestroy {
  }
  showConfirmation(rec:Recommendation){this.store.pin(rec.id);this.confirmation.set(rec);this.dialog?.nativeElement.showModal();}
  closeConfirmation(){this.dialog?.nativeElement.close();this.confirmation.set(null);}
- async accept(){const rec=this.confirmation();if(!rec)return;const emergencyId=this.presentationEmergencyId();const resumeDemo=emergencyId!=null&&rec.incident_ids?.includes(emergencyId);if(await this.store.accept(rec)){this.closeConfirmation();this.closeIncidentReview();if(resumeDemo)await this.store.setPlayback(true,10);}}
+ async accept(){
+   const rec=this.confirmation(), eventId=this.presentationDecisionId();
+   if(!rec||!await this.store.accept(rec))return;
+   this.closeConfirmation();
+   this.closeIncidentReview();
+   if(eventId&&rec.incident_ids?.includes(eventId))await this.store.setPlayback(true,10);
+ }
+ async confirmManualSolution(){
+   const eventId=this.presentationDecisionId();
+   const resumeDemo=eventId!==null&&eventId===this.store.selectedIncidentId();
+   if(await this.store.selectManual()&&resumeDemo){
+     this.closeIncidentReview();
+     await this.store.setPlayback(true,10);
+   }
+ }
  canRecoverEquipment(id:string){const vehicle=this.store.state()?.vehicles.find(v=>v.id===id);return !!this.store.gateway.recoverEquipment&&vehicle?.status==='BROKEN'&&!!vehicle.equipment.length;}
  openEquipmentRecovery(id:string){this.closeIncidentReview();this.eventForm?.openEquipment(id);}
  openSimulation(){this.simulation?.nativeElement.showModal();}
@@ -66,15 +93,37 @@ export class AppComponent implements OnInit,OnDestroy {
      && !state.backend?.incidents.some(event => event.source === 'PRESENTATION_EMERGENCY');
  });
  readonly oxygenDemoVehicle = computed(() => this.store.state()?.vehicles.find(vehicle => vehicle.equipment.includes('VENTILATOR'))?.code);
- private readonly presentationEmergencyId = computed(() => {
+ private readonly presentationDecisionId = computed(() => {
    const incident = this.store.state()?.backend?.incidents.find(
-     event => event.source === 'PRESENTATION_EMERGENCY' && event.status === 'OPEN');
+     event => (event.source === 'PRESENTATION_EMERGENCY' || event.source === 'PRESENTATION_BREAKDOWN')
+       && event.status === 'OPEN');
    return incident ? String(incident.id) : null;
  });
- readonly oxygenDemoAwaitingDecision = computed(() => this.presentationEmergencyId() !== null);
- async startOxygenDemo(){
-   if (!window.confirm('Zaženem predstavitveni demo? Zamenjal bo trenutno simulacijo.')) return;
-   if (await this.store.prepareOxygenDemo()) this.navigate('home');
+ readonly presentationAwaitingDecision = computed(() => this.presentationDecisionId() !== null);
+ readonly breakdownDemoSummary = computed(() => {
+   const state = this.store.state();
+   if (!state?.tasks.some(task => task.id === 'DEMO2-OXYGEN')) return null;
+   const incident = state.backend?.incidents.find(event => event.source === 'PRESENTATION_BREAKDOWN');
+   if (!incident) return {title: 'Demo 2 · tri vozila na zemljevidu',
+     detail: 'V1 ima načrtovana dva prevoza. V2 in V3 opravljata svoje naloge.'};
+   const recovery = state.tasks.find(task => task.id === incident.task_id);
+   const assignments = state.active_plan?.assignments ?? [];
+   const collector = assignments.find(row => row.task_id === recovery?.id)?.vehicle_id;
+   if (!collector) return {title: 'V1 se je pokvaril',
+     detail: 'Odprite opozorilo in razporedite oba prevoza ter prevzem kisikove opreme.'};
+   const reassignments = assignments.filter(row => ['DEMO2-OXYGEN', 'DEMO2-WHEELCHAIR'].includes(row.task_id)
+     && row.vehicle_id !== String(incident.vehicle_id));
+   const drivers = [...new Set(reassignments.map(row => row.vehicle_id))].sort();
+   const title = recovery?.actual_arrival ? `${collector} je dostavil kisikovo opremo`
+     : recovery?.actual_pickup ? `${collector} prevaža kisikovo opremo` : `${collector} prevzema kisikovo opremo`;
+   const detail = reassignments.length === 2 ? `Prevoza vozila V1 sta prevzela ${drivers.join(' in ')}.`
+     : `Prerazporejenih prevozov vozila V1: ${reassignments.length} od 2.`;
+   return {title, detail};
+ });
+ async startPresentationDemo(kind: 'oxygen' | 'breakdown'){
+   const title = kind === 'oxygen' ? 'Demo 1' : 'Demo 2';
+   if (!window.confirm(`Zaženem ${title}? Zamenjal bo trenutno simulacijo.`)) return;
+   if (await this.store.preparePresentationDemo(kind)) this.navigate('home');
  }
  openEvent(type:IncidentType='NEW_TASK',vehicle?:string){this.simulation?.nativeElement.close();this.eventForm?.open(type,vehicle);}
  async taskCreated(result:{taskId:string;incidentId:string|null}){

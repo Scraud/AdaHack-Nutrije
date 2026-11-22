@@ -2,9 +2,15 @@
 
 ## Predstavitev preusmeritve in obvoza
 
-1. Kliknite **Demo** ob oznaki **Simulacija** in potrdite zagon. Pri hitrosti **10×** se V1, edino vozilo s prenosnim respiratorjem, pelje k pacientu z nizko prioriteto.
+1. Kliknite **Demo 1** ob oznaki **Simulacija** in potrdite zagon. Pri hitrosti **10×** se V1, edino vozilo s prenosnim respiratorjem, pelje k pacientu z nizko prioriteto.
 2. Med vožnjo se samodejno pojavi opozorilo za pacienta z visoko prioriteto, ki potrebuje isto opremo. Simulacija se ustavi na mestu, kjer mora dispečer sprejeti odločitev. Kliknite opozorilo za izračun predloga.
 3. Izberite in potrdite predlog. V1 najprej odpelje k visoki nalogi in simulacija se nadaljuje. Na novi poti se pojavi zapora, zato vozilo samodejno izbere obvoz.
+
+## Predstavitev okvare in prevzema opreme
+
+1. Kliknite **Demo 2** in potrdite zagon. Na zemljevidu so V1, V2 in V3. V1 ima načrtovana dva prevoza, V2 in V3 pa imata vsak svojo nalogo.
+2. Po približno 15 sekundah pri hitrosti **10×** se V1 pokvari pred odhodom na prvi prevoz. Simulacija se ustavi in v istem opozorilu se prikaže še naloga za prevzem kisikove opreme na mestu okvare.
+3. Odprite opozorilo in potrdite predlog ali uporabite **Lastno rešitev**. V predlaganem razporedu V2 prevzame opremo in prevoz s kisikom, V3 pa prevoz z vozičkom. Simulacija se po potrditvi nadaljuje, stanje prevzema in dostave opreme pa se prikazuje nad zemljevidom.
 
 ## Splošni demo
 

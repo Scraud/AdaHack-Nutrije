@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/demo/breakdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Demo Breakdown */
+        post: operations["demo_breakdown_api_demo_breakdown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks": {
         parameters: {
             query?: never;
@@ -134,6 +151,57 @@ export interface paths {
         put?: never;
         /** Create Incident */
         post: operations["create_incident_api_incidents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Slots */
+        post: operations["manual_slots_api_incidents__incident_id__manual_slots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Preview */
+        post: operations["manual_preview_api_incidents__incident_id__manual_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-solution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Solution */
+        post: operations["manual_solution_api_incidents__incident_id__manual_solution_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -574,6 +642,15 @@ export interface components {
             /** Planned Arrival */
             readonly planned_arrival: number;
         };
+        /** AssignmentMove */
+        AssignmentMove: {
+            /** Task Id */
+            task_id: string;
+            /** Vehicle Id */
+            vehicle_id: string;
+            /** Planned Pickup */
+            planned_pickup: number;
+        };
         /** Baseline */
         Baseline: {
             metrics: components["schemas"]["Metrics"];
@@ -853,6 +930,35 @@ export interface components {
             /** Vehicle Id */
             vehicle_id?: string | null;
         };
+        /** ManualDraft */
+        ManualDraft: {
+            /** Base Plan Id */
+            base_plan_id: string;
+            /** Expected State Revision */
+            expected_state_revision: number;
+            /** Moves */
+            moves: components["schemas"]["AssignmentMove"][];
+        };
+        /** ManualSlot */
+        ManualSlot: {
+            /** Vehicle Id */
+            vehicle_id: string;
+            /** First Pickup */
+            first_pickup: number;
+            /** Last Pickup */
+            last_pickup: number;
+        };
+        /** ManualSlotsRequest */
+        ManualSlotsRequest: {
+            /** Base Plan Id */
+            base_plan_id: string;
+            /** Expected State Revision */
+            expected_state_revision: number;
+            /** Moves */
+            moves: components["schemas"]["AssignmentMove"][];
+            /** Task Id */
+            task_id: string;
+        };
         /** Metrics */
         Metrics: {
             /**
@@ -962,11 +1068,8 @@ export interface components {
         };
         /** PlanView */
         PlanView: {
-            /**
-             * Strategy
-             * @enum {string}
-             */
-            strategy: "MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER";
+            /** Strategy */
+            strategy: ("MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER") | "MANUAL";
             /** Assignments */
             assignments: components["schemas"]["Assignment"][];
             /** Unassigned */
@@ -1529,6 +1632,26 @@ export interface operations {
             };
         };
     };
+    demo_breakdown_api_demo_breakdown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+        };
+    };
     create_task_api_tasks_post: {
         parameters: {
             query?: never;
@@ -1572,6 +1695,111 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateIncident"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_slots_api_incidents__incident_id__manual_slots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSlotsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualSlot"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_preview_api_incidents__incident_id__manual_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualDraft"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_solution_api_incidents__incident_id__manual_solution_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualDraft"];
             };
         };
         responses: {

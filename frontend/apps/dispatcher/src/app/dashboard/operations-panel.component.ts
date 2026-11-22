@@ -9,6 +9,8 @@ import { IconComponent } from '../shared/icon.component';
 export class OperationsPanelComponent {
   readonly priorityLabels = PRIORITY_LABELS;
  @Input()mode:'alerts'|'solutions'='alerts';@Output()inspect=new EventEmitter<string>();
+ @Output()editManual=new EventEmitter<void>();
+ @Output()confirmManual=new EventEmitter<void>();
  readonly store=inject(DispatchStore);@Output()confirm=new EventEmitter<Recommendation>();@Output()simulate=new EventEmitter<void>();time=formatTime;status=incidentStatus;readonly sort=signal('priority');readonly showResolved=signal(false);
  readonly alerts=computed(()=>[...new Map((this.store.state()?.incidents??[]).map(i=>[i.id,i])).values()].filter(i=>!this.store.isRoadIncident(i)).filter(i=>this.showResolved()||i.status!=='RESOLVED'||i.id===this.store.selectedIncidentId()).sort((a,b)=>this.sort()==='priority'?a.priority.localeCompare(b.priority)||Date.parse(b.occurred_at)-Date.parse(a.occurred_at):this.sort()==='oldest'?Date.parse(a.occurred_at)-Date.parse(b.occurred_at):Date.parse(b.occurred_at)-Date.parse(a.occurred_at)));
  matches(rec:Recommendation){const id=this.store.selectedIncidentId();return !id||rec.incident_id===id||!!rec.incident_ids?.includes(id);}
@@ -29,4 +31,9 @@ export class OperationsPanelComponent {
  changedTasks(rec:Recommendation){return [...this.diff(rec).added,...this.diff(rec).changed,...this.diff(rec).removed].slice(0,8);}
  changeText(rec:Recommendation,id:string){const old=this.store.activePlan()?.assignments.find(a=>a.task_id===id),next=rec.proposed_plan.assignments.find(a=>a.task_id===id);return !next?'Odstranjeno iz razporeda':`${old?old.vehicle_id+' → ':''}${next.vehicle_id} · ${formatTime(next.planned_pickup)}`;}
  recTitle(id:string){return this.store.state()?.recommendations.find(r=>r.id===id)?.title??id;}
+ manualDelay(id:string){
+   const before=this.store.activePlan()?.assignments.find(row=>row.task_id===id);
+   const after=this.store.manualPreview()?.assignments.find(row=>row.task_id===id);
+   return before&&after?Math.round((Date.parse(after.planned_pickup)-Date.parse(before.planned_pickup))/60_000):0;
+ }
 }

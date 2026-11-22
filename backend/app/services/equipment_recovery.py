@@ -24,7 +24,8 @@ def vehicle_position(db: Session, scope: Scenario, vehicle_id: str,
 
 
 def create_equipment_recovery(db: Session, scope: Scenario, vehicle_id: str,
-                              request: CreateEquipmentRecovery, road_matrix: MatrixProvider | None = None):
+                              request: CreateEquipmentRecovery, road_matrix: MatrixProvider | None = None, *,
+                              attach_to_breakdown: bool = False):
     record = db.get(VehicleRecord, (vehicle_id, scope.id))
     if record is None or record.payload.get("retired"):
         raise problem(404, "VEHICLE_NOT_FOUND", "Vozilo ne obstaja.")
@@ -55,14 +56,20 @@ def create_equipment_recovery(db: Session, scope: Scenario, vehicle_id: str,
                 earliest_pickup=max(0, scope.now), pickup_service=120, dropoff_service=120, cleaning=0,
                 planning_horizon=max([HORIZON, *(t.planning_horizon or HORIZON for t in tasks)]))
     db.add(TaskRecord(id=task.id, scenario_id=scope.id, payload=task.model_dump(mode="json")))
-    event = Incident(type="NEW_TASK", source="EQUIPMENT_RECOVERY", task_id=task.id, location=location,
-                     occurred_at=scope.now, priority=request.priority,
-                     description=request.description or f"Prevzem opreme iz {vehicle_id} → {facility.name}.")
-    incident_record = IncidentRecord(scenario_id=scope.id, payload=event.model_dump(mode="json"))
-    db.add(incident_record)
-    db.flush()
-    event.id = incident_record.id
-    incident_record.payload = event.model_dump(mode="json")
+    if attach_to_breakdown:
+        incident_record = db.get(IncidentRecord, breakdown.id)
+        incident_record.payload = {**incident_record.payload, "task_id": task.id}
+        incident_id = breakdown.id
+    else:
+        event = Incident(type="NEW_TASK", source="EQUIPMENT_RECOVERY", task_id=task.id, location=location,
+                         occurred_at=scope.now, priority=request.priority,
+                         description=request.description or f"Prevzem opreme iz {vehicle_id} → {facility.name}.")
+        incident_record = IncidentRecord(scenario_id=scope.id, payload=event.model_dump(mode="json"))
+        db.add(incident_record)
+        db.flush()
+        event.id = incident_record.id
+        incident_record.payload = event.model_dump(mode="json")
+        incident_id = event.id
     scope.revision += 1
     audit(db, scope, "EQUIPMENT_RECOVERY_REQUESTED", vehicle_id=vehicle_id, task_id=task.id,
-          equipment=cargo, incident_id=event.id, source_incident_id=breakdown.id)
+          equipment=cargo, incident_id=incident_id, source_incident_id=breakdown.id)

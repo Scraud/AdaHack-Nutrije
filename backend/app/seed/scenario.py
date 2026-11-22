@@ -7,6 +7,10 @@ from app.planning.task_creation import facility_nodes, priority_transport
 
 DEMO_START = "2026-11-21T07:00:00Z"
 PRESENTATION_LOW = "DEMO-LOW"
+BREAKDOWN_VEHICLE = "V1"
+BREAKDOWN_AT = 150
+BREAKDOWN_OXYGEN = "DEMO2-OXYGEN"
+BREAKDOWN_WHEELCHAIR = "DEMO2-WHEELCHAIR"
 
 
 def demo_fleet() -> tuple[list[Vehicle], list[Facility]]:
@@ -65,6 +69,30 @@ def oxygen_demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
     low = NewTask(priority="P3", pickup=Point(lat=46.038, lon=14.554),
                   pickup_name="Prevzem na jugovzhodu Ljubljane", equipment=["VENTILATOR"])
     return vehicles, facilities, demo_tasks([(PRESENTATION_LOW, low, 300)], facilities)
+
+
+def breakdown_demo_data() -> tuple[list[Vehicle], list[Facility], list[Task]]:
+    _, facilities = demo_fleet()
+    vehicles = [
+        Vehicle(id=BREAKDOWN_VEHICLE, equipment=["OXYGEN", "WHEELCHAIR"], capacity=1,
+                location=Point(lat=46.046, lon=14.494), available_at=BREAKDOWN_AT + 30,
+                task_types=["PRIORITY_TRANSPORT", "EQUIPMENT_DELIVERY"]),
+        Vehicle(id="V2", equipment=["OXYGEN"], capacity=1, location=Point(lat=46.078, lon=14.530),
+                task_types=["PRIORITY_TRANSPORT", "EQUIPMENT_DELIVERY"]),
+        Vehicle(id="V3", equipment=["WHEELCHAIR"], capacity=1, location=Point(lat=46.044, lon=14.537),
+                task_types=["PRIORITY_TRANSPORT"]),
+    ]
+    requests = [
+        (BREAKDOWN_OXYGEN, NewTask(priority="P2", equipment=["OXYGEN"],
+            pickup=Point(lat=46.045, lon=14.496), pickup_name="Prevzem pri Trnovem"), 300),
+        (BREAKDOWN_WHEELCHAIR, NewTask(priority="P2", equipment=["WHEELCHAIR"],
+            pickup=Point(lat=46.041, lon=14.501), pickup_name="Prevzem pri Trnovskem mostu"), 1260),
+        ("DEMO2-SEVER", NewTask(priority="P2", equipment=["OXYGEN"],
+            pickup=Point(lat=46.075, lon=14.528), pickup_name="Prevzem na severu Ljubljane"), 180),
+        ("DEMO2-VZHOD", NewTask(priority="P2", equipment=["WHEELCHAIR"],
+            pickup=Point(lat=46.046, lon=14.538), pickup_name="Prevzem na vzhodu Ljubljane"), 180),
+    ]
+    return vehicles, facilities, demo_tasks(requests, facilities)
 
 
 def demo_tasks(requests: list[tuple[str, NewTask, int]], facilities: list[Facility]) -> list[Task]:

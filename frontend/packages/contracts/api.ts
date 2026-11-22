@@ -89,6 +89,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/demo/oxygen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Demo Oxygen */
+        post: operations["demo_oxygen_api_demo_oxygen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks": {
         parameters: {
             query?: never;
@@ -622,7 +639,7 @@ export interface components {
              */
             passenger_count: number;
             /** Equipment */
-            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
             /**
              * Description
              * @default
@@ -871,7 +888,7 @@ export interface components {
              */
             passenger_count: number;
             /** Equipment */
-            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
             /** Earliest Pickup */
             earliest_pickup?: number | null;
         };
@@ -880,7 +897,7 @@ export interface components {
             /** Capacity */
             capacity: number;
             /** Equipment */
-            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
             /** Task Types */
             task_types: ("PLANNED_TRANSPORT" | "PRIORITY_TRANSPORT" | "EQUIPMENT_DELIVERY")[];
             location: components["schemas"]["Point"];
@@ -952,7 +969,7 @@ export interface components {
              * @default 60
              * @enum {integer}
              */
-            speed: 30 | 60 | 300;
+            speed: 10 | 30 | 60 | 300;
         };
         /** Point */
         Point: {
@@ -1163,7 +1180,7 @@ export interface components {
             /** Passenger Count */
             passenger_count: number;
             /** Equipment */
-            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
             /** Earliest Pickup */
             earliest_pickup: number;
             /** Latest Pickup */
@@ -1284,7 +1301,7 @@ export interface components {
             /** Capacity */
             capacity: number;
             /** Equipment */
-            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
             /** Task Types */
             task_types: ("PLANNED_TRANSPORT" | "PRIORITY_TRANSPORT" | "EQUIPMENT_DELIVERY")[];
         };
@@ -1296,7 +1313,7 @@ export interface components {
             /** Capacity */
             capacity: number;
             /** Equipment */
-            equipment: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            equipment: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN" | "VENTILATOR")[];
             /** Task Types */
             task_types: ("PLANNED_TRANSPORT" | "PRIORITY_TRANSPORT" | "EQUIPMENT_DELIVERY")[];
             /**
@@ -1447,6 +1464,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_oxygen_api_demo_oxygen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
                 };
             };
         };

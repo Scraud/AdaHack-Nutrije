@@ -8,7 +8,7 @@ from app.models import IncidentRecord, Scenario, VehicleRecord
 from app.planning.contracts import Incident, Vehicle
 from app.services.state import active_plan, assignments, audit, problem
 
-EQUIPMENT_NAMES = {"STRETCHER": "nosila", "WHEELCHAIR": "voziček", "OXYGEN": "kisik"}
+EQUIPMENT_NAMES = {"STRETCHER": "nosila", "WHEELCHAIR": "voziček", "OXYGEN": "kisik", "VENTILATOR": "prenosni respirator"}
 
 
 def _settings(request: VehicleSettings) -> dict:

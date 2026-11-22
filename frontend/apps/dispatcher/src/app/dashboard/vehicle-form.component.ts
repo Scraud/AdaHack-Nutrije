@@ -5,7 +5,7 @@ import { equipmentLabel, taskTypeLabel } from '@rescueflow/contracts/plan-utils'
 import { DispatchStore } from '../core/dispatch-store';
 import { IconComponent } from '../shared/icon.component';
 
-const EQUIPMENT: Equipment[] = ['STRETCHER', 'WHEELCHAIR', 'OXYGEN'];
+const EQUIPMENT: Equipment[] = ['STRETCHER', 'WHEELCHAIR', 'OXYGEN', 'VENTILATOR'];
 const TASK_TYPES: VehicleTaskType[] = ['PLANNED_TRANSPORT', 'PRIORITY_TRANSPORT', 'EQUIPMENT_DELIVERY'];
 
 @Component({selector:'app-vehicle-form',standalone:true,imports:[FormsModule,IconComponent],template:`

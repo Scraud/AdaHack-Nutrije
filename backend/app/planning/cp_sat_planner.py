@@ -4,7 +4,7 @@ from time import monotonic
 from ortools.sat.python import cp_model as cp
 
 from app.planning.contracts import (
-    Assignment, Candidate, HORIZON, PlanCandidate, PlanningSnapshot, SolveBudget, Strategy,
+    Assignment, Candidate, PlanCandidate, PlanningSnapshot, SolveBudget, Strategy,
 )
 from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, transport_distance
 from app.planning.validator import validate_plan
@@ -72,7 +72,7 @@ class ScheduleModel:
         self.choices: dict[tuple[str, str], cp.IntVar] = {}
         self.arcs: dict[Arc, tuple[cp.IntVar, int]] = {}
         self.present: dict[str, cp.IntVar] = {}
-        self.min_buffer = self.model.new_int_var(0, HORIZON, "min_buffer")
+        self.min_buffer = self.model.new_int_var(0, self.state.horizon, "min_buffer")
         self._terms: Terms | None = None
         self.overruns: list[tuple[str, cp.IntVar]] = []
         self._add_tasks()
@@ -91,7 +91,7 @@ class ScheduleModel:
             # P1 waiting time from the desired pickup; unscheduled pickups sit at their lower bound and count as zero.
             urgent.append(times.pickup - times.lower + present * (times.lower - task.earliest_pickup))
             urgent_count.append(present)
-        urgent_weight = HORIZON * len(urgent) + 1
+        urgent_weight = self.state.horizon * len(urgent) + 1
         self.urgent = sum(urgent) - urgent_weight * sum(urgent_count) if urgent else None
         self.overrun = sum(OVERRUN_WEIGHT[priority] * over for priority, over in self.overruns) if self.overruns else None
 
@@ -106,19 +106,19 @@ class ScheduleModel:
                 continue
             to_dropoff = task.pickup_service + loaded
             to_end = to_dropoff + task.dropoff_service + task.cleaning
-            # With soft windows only the end of the day is a hard limit and the latest pickup is priced as overrun.
-            upper = HORIZON - to_end
+            # With soft windows only the planning horizon is a hard limit and the latest pickup is priced as overrun.
+            upper = self.state.horizon - to_end
             if task.latest_pickup is not None and not self.soft_windows:
                 upper = min(upper, task.latest_pickup)
             lower = max(task.earliest_pickup, self.state.now)
             if upper < lower and fixed is None:
-                self.window_dropped += lower <= HORIZON - to_end
+                self.window_dropped += lower <= self.state.horizon - to_end
                 continue
             model = self.model
             if fixed:
                 lower = upper = fixed.planned_pickup
             times = Times(
-                model.new_int_var(self.state.now, HORIZON, f"departure_{key}"),
+                model.new_int_var(self.state.now, self.state.horizon, f"departure_{key}"),
                 model.new_int_var(lower, upper, f"pickup_{key}"),
                 model.new_int_var(lower, upper, f"latest_{key}"),
                 loaded, to_dropoff, to_end, lower, upper,
@@ -131,7 +131,7 @@ class ScheduleModel:
                 model.add(times.departure == fixed.planned_departure)
             else:
                 if task.latest_pickup is not None and self.soft_windows:
-                    over = model.new_int_var(0, HORIZON, f"over_{key}")
+                    over = model.new_int_var(0, self.state.horizon, f"over_{key}")
                     model.add(over >= times.pickup - task.latest_pickup).only_enforce_if(present)
                     model.add(over == 0).only_enforce_if(~present)
                     # Buffer is measured against the window, or against the pickup once the window is exceeded.
@@ -248,7 +248,7 @@ class ScheduleModel:
             self.model.add(shortfall >= BUFFER_TARGET - (times.latest - times.pickup)).only_enforce_if(present)
             shortfalls.append(shortfall)
             if not task.asap:
-                delay = self.model.new_int_var(0, HORIZON, f"delay_{key}")
+                delay = self.model.new_int_var(0, self.state.horizon, f"delay_{key}")
                 self.model.add(delay >= times.pickup - task.earliest_pickup).only_enforce_if(present)
                 self.model.add(delay == 0).only_enforce_if(~present)
                 delays.append((task.priority, delay))
@@ -266,7 +266,7 @@ class ScheduleModel:
                 same_predecessor = self.arcs.get((old.vehicle_id, None, key))
             if same_predecessor is not None:
                 predecessor_changes.append(1 - same_predecessor[0])
-            shift = self.model.new_int_var(0, HORIZON, f"shift_{key}")
+            shift = self.model.new_int_var(0, self.state.horizon, f"shift_{key}")
             self.model.add(shift >= times.pickup - old.planned_pickup).only_enforce_if(present)
             self.model.add(shift >= old.planned_pickup - times.pickup).only_enforce_if(present)
             self.model.add(shift == 0).only_enforce_if(~present)

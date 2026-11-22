@@ -89,6 +89,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Task */
+        post: operations["create_task_api_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/incidents": {
         parameters: {
             query?: never;
@@ -151,6 +168,57 @@ export interface paths {
         put?: never;
         /** Initial Plan */
         post: operations["initial_plan_api_plans_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plans/manual-move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Move */
+        post: operations["manual_move_api_plans_manual_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Preview */
+        post: operations["manual_preview_api_incidents__incident_id__manual_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}/manual-solution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manual Solution */
+        post: operations["manual_solution_api_incidents__incident_id__manual_solution_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -523,6 +591,15 @@ export interface components {
             /** Planned Arrival */
             readonly planned_arrival: number;
         };
+        /** AssignmentMove */
+        AssignmentMove: {
+            /** Task Id */
+            task_id: string;
+            /** Vehicle Id */
+            vehicle_id: string;
+            /** Planned Pickup */
+            planned_pickup: number;
+        };
         /** Baseline */
         Baseline: {
             metrics: components["schemas"]["Metrics"];
@@ -580,6 +657,37 @@ export interface components {
             /** Quota */
             quota?: number | null;
             task?: components["schemas"]["NewTask"] | null;
+        };
+        /** CreateScheduledTask */
+        CreateScheduledTask: {
+            /**
+             * Scheduled At
+             * Format: date-time
+             */
+            scheduled_at: string;
+            pickup: components["schemas"]["Point"];
+            /** Pickup Name */
+            pickup_name: string;
+            /** Facility Id */
+            facility_id: string;
+            /**
+             * Priority
+             * @default P3
+             * @enum {string}
+             */
+            priority: "P1" | "P2" | "P3";
+            /**
+             * Passenger Count
+             * @default 1
+             */
+            passenger_count: number;
+            /** Equipment */
+            equipment?: ("WHEELCHAIR" | "STRETCHER" | "OXYGEN")[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /** DemoClock */
         DemoClock: {
@@ -753,6 +861,28 @@ export interface components {
             /** Vehicle Id */
             vehicle_id?: string | null;
         };
+        /** ManualMove */
+        ManualMove: {
+            /** Task Id */
+            task_id: string;
+            /** Vehicle Id */
+            vehicle_id: string;
+            /** Planned Pickup */
+            planned_pickup: number;
+            /** Base Plan Id */
+            base_plan_id: string;
+            /** Expected State Revision */
+            expected_state_revision: number;
+        };
+        /** ManualSolution */
+        ManualSolution: {
+            /** Base Plan Id */
+            base_plan_id: string;
+            /** Expected State Revision */
+            expected_state_revision: number;
+            /** Moves */
+            moves: components["schemas"]["AssignmentMove"][];
+        };
         /** Metrics */
         Metrics: {
             /**
@@ -862,11 +992,8 @@ export interface components {
         };
         /** PlanView */
         PlanView: {
-            /**
-             * Strategy
-             * @enum {string}
-             */
-            strategy: "MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER";
+            /** Strategy */
+            strategy: ("MIN_DELAY" | "MIN_CHANGES" | "MAX_BUFFER") | "MANUAL";
             /** Assignments */
             assignments: components["schemas"]["Assignment"][];
             /** Unassigned */
@@ -1022,6 +1149,22 @@ export interface components {
                 number
             ][][];
         };
+        /** ScheduledTaskView */
+        ScheduledTaskView: {
+            /** Id */
+            id: string;
+            /**
+             * Scheduled At
+             * Format: date-time
+             */
+            scheduled_at: string;
+            task: components["schemas"]["Task"];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
         /** SourceStatus */
         SourceStatus: {
             /** Id */
@@ -1070,6 +1213,8 @@ export interface components {
             facilities: components["schemas"]["Facility"][];
             /** Tasks */
             tasks: components["schemas"]["Task"][];
+            /** Scheduled Tasks */
+            scheduled_tasks?: components["schemas"]["ScheduledTaskView"][];
             /** Incidents */
             incidents: components["schemas"]["Incident"][];
             active_plan: components["schemas"]["PlanView"] | null;
@@ -1117,6 +1262,8 @@ export interface components {
              * @default 120
              */
             cleaning: number;
+            /** Planning Horizon */
+            planning_horizon?: number | null;
             /** Actual Pickup */
             actual_pickup?: number | null;
             /** Actual Arrival */
@@ -1383,6 +1530,39 @@ export interface operations {
             };
         };
     };
+    create_task_api_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScheduledTask"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_incident_api_incidents_post: {
         parameters: {
             query?: never;
@@ -1496,6 +1676,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["State"];
+                };
+            };
+        };
+    };
+    manual_move_api_plans_manual_move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualMove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_preview_api_incidents__incident_id__manual_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSolution"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_solution_api_incidents__incident_id__manual_solution_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSolution"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

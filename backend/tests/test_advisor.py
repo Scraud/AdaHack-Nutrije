@@ -1,10 +1,13 @@
 import json
+from types import SimpleNamespace
 
 import httpx
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.services.advisor import Advisor
+from app.services.advisor import delay_exposure
+from app.planning.contracts import Assignment, Incident, Point
 from tests.test_dispatch import disruption, post, replan
 
 
@@ -42,9 +45,29 @@ def test_flags_vehicles_sharing_a_traffic_jam(tmp_path):
         state = post(client, "incidents", {"type": "VEHICLE_BREAKDOWN", "vehicle_id": "V3"})
         result = explanation(client, replan(client, state)[0]["id"])
         exposure = [flag for flag in result["flags"] if flag["code"] == "SHARED_DELAY_EXPOSURE"]
-        assert len(exposure) == 1 and len(exposure[0]["vehicle_ids"]) >= 2
+        assert len(exposure) == 1 and exposure[0]["vehicle_ids"]
+        assert exposure[0]["severity"] == ("MEDIUM" if len(exposure[0]["vehicle_ids"]) >= 2 else "INFO")
         assert "V3" not in exposure[0]["vehicle_ids"]
         assert "Severna obvoznica" in exposure[0]["message"]
+
+
+def test_shared_delay_flags_only_vehicles_with_remaining_travel(monkeypatch):
+    point = Point(lat=46.05, lon=14.5)
+    segment = SimpleNamespace(name="Test road")
+    roads = SimpleNamespace(effects=lambda _: {}, segment=lambda _: segment,
+                            segment_edges=lambda _: {"jam"}, path_edges=lambda *_: {"jam"})
+    monkeypatch.setattr("app.services.advisor.road_network", lambda: roads)
+    state = SimpleNamespace(now=100, vehicles={v: SimpleNamespace(location=point) for v in ["V1", "V2", "V3"]},
+                            tasks={t: SimpleNamespace(pickup=point, facility_id="F1") for t in ["T1", "T2", "T3"]},
+                            facilities={"F1": SimpleNamespace(location=point)})
+    rows = [Assignment(task_id=f"T{i}", vehicle_id=f"V{i}", planned_departure=0,
+                       planned_pickup=200, planned_dropoff=300, planned_end=400, deadhead=0,
+                       status="COMPLETED" if i == 3 else "PLANNED") for i in [1, 2, 3]]
+    flags = delay_exposure(state, [Incident(type="TRAFFIC_DELAY", road_id="test")], rows)
+    assert len(flags) == 1
+    assert flags[0].vehicle_ids == ["V1", "V2"]
+    assert flags[0].task_ids == ["T1", "T2"]
+    assert flags[0].severity == "MEDIUM"
 
 
 def test_ollama_narrative_drops_ungrounded_lines(tmp_path):

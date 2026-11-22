@@ -8,7 +8,7 @@ import type { Vehicle } from '@rescueflow/contracts';
 @Component({selector:'app-vehicles-page',standalone:true,imports:[IconComponent,VehicleFormComponent],template:`
 <section class="panel"><div class="page-panel-header"><div><h2>Operativna flota <span class="count-badge">{{store.state()?.vehicles?.length}}</span></h2><p>Lokacije, oprema in razpoložljivost za naslednji prevoz.</p></div><div class="fleet-header-actions"><span class="all-clear"><app-icon name="radio" [size]="15"/>{{store.gateway.isDemo?'Vzorčni položaji':'Položaji iz simulacijskega API'}}</span>@if(store.gateway.addVehicle){<button class="button primary" (click)="form.open()" [disabled]="store.busy()"><app-icon name="ambulance" [size]="16"/>Dodaj vozilo</button>}</div></div>
 <div class="fleet-page-grid">@for(v of store.state()?.vehicles;track v.id){<article class="fleet-large-card vehicle-operational-card" [class.selected]="store.selectedVehicleId()===v.id" [class.is-broken]="v.status==='BROKEN'">
-<button class="vehicle-card-heading" (click)="store.selectVehicle(v.id)" [attr.aria-pressed]="store.selectedVehicleId()===v.id"><span class="vehicle-symbol" [style.--vehicle-color]="color(v.id)"><app-icon name="ambulance" [size]="24"/></span><b>{{v.code}}</b><span class="status-badge" [class.available]="v.status==='AVAILABLE'" [class.unavailable]="v.status==='BROKEN'||v.status==='UNAVAILABLE'">{{status(v.status)}}</span></button>
+<button class="vehicle-card-heading" (click)="store.selectVehicle(v.id)" [attr.aria-pressed]="store.selectedVehicleId()===v.id"><span class="vehicle-symbol" [style.--vehicle-color]="color(v.id)"><app-icon name="ambulance" [size]="24"/></span><b>{{v.code}}</b><span class="status-badge" [class.available]="v.status==='AVAILABLE'" [class.unavailable]="v.status==='BROKEN'||v.status==='UNAVAILABLE'">{{vehicleStatus(v.id,v.status)}}</span></button>
 <h3>{{v.vehicle_type}}</h3><p><app-icon name="pin" [size]="15"/>{{v.location_name}}</p><div class="equipment-list">@for(eq of v.equipment;track eq){<span>{{equipment(eq)}}</span>}</div>
 <dl class="vehicle-stats"><div><dt>Zasedenost</dt><dd>{{occupancy(v.id)}} / {{v.capacity}}</dd></div><div><dt>Prosto ob</dt><dd>{{time(v.available_at)}}</dd></div><div><dt>Opravljeno</dt><dd>{{completed(v.id)}}</dd></div><div><dt>Preostalo</dt><dd>{{store.upcoming(v.id).length}}</dd></div></dl>
 <dl class="vehicle-service-stats"><div><dt>Povpr. čiščenje · plan</dt><dd>{{minutes(serviceStats(v.id).average_cleaning_minutes)}}</dd></div><div><dt>Naslednji odhod</dt><dd>{{v.status==='BROKEN'?'Po odpravi okvare':time(serviceStats(v.id).next_departure)}}</dd></div></dl>
@@ -19,10 +19,11 @@ import type { Vehicle } from '@rescueflow/contracts';
 `})
 export class VehiclesPageComponent {
  readonly store=inject(DispatchStore);@Output()event=new EventEmitter<{type:IncidentType;vehicle:string}>();@Output()inspect=new EventEmitter<string>();color=colorFor;equipment=equipmentLabel;time=formatTime;status=statusLabel;
+ vehicleStatus(id:string,status:string){return !['BROKEN','UNAVAILABLE'].includes(status)&&this.store.tracking()?.vehicles.find(v=>v.id===id)?.status==='WAITING'?'V čakanju':this.status(status);}
  completed(id:string){return this.store.activePlan()?.assignments.filter(a=>a.vehicle_id===id&&a.status==='COMPLETED').length??0;}
  occupancy(id:string){if(!this.store.state()||!passengerOnBoard(this.store.state()!,id))return 0;const a=this.store.currentAssignment(id);return this.store.state()?.tasks.find(t=>t.id===a?.task_id)?.passenger_count??0;}
  taskName(id:string){return this.store.state()?.tasks.find(t=>t.id===id)?.destination.name??id;}
- eta(id:string){return vehicleEta(this.store.state()!,id);}
+ eta(id:string){return vehicleEta(this.store.state()!,id,this.store.tracking());}
  serviceStats(id:string){return vehicleServiceStats(this.store.state()!,id);}
  onTransport(v:Vehicle){return v.status==='EN_ROUTE'||v.status==='TRANSPORTING'||v.status==='SERVICE';}
  remove(v:Vehicle){if(confirm(`Odstranim vozilo ${v.code} iz flote? Njegove načrtovane naloge bo treba prerazporediti.`))void this.store.removeVehicle(v.id);}

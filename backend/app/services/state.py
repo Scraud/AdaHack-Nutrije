@@ -175,10 +175,12 @@ def baseline(state: PlanningSnapshot, rows: list[Assignment]) -> Baseline:
 
 
 def view_state(db: Session, scope: Scenario, road_matrix: MatrixProvider | None = None) -> State:
+    from app.services.scheduling import future_tasks
+
     plan = active_plan(db, scope)
     state, incidents, rows = inputs(db, scope, plan, road_matrix, preserve_active_timing=True)
     return State(scenario_id=scope.id, revision=scope.revision, start_at=scope.start_at, now=scope.now,
-                 travel_source=state.travel.source,
+                 travel_source=state.travel.source, horizon=state.horizon, scheduled_tasks=future_tasks(db, scope),
                  vehicles=vehicle_views(state, rows), tasks=list(state.tasks.values()),
                  facilities=list(state.facilities.values()), incidents=incidents,
                  active_plan=view_plan(db, plan) if plan else None, baseline=baseline(state, rows))

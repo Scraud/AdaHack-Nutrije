@@ -7,6 +7,7 @@ export function DispatchMap(props: DispatchViewProps) {
   if(!state)return <div className="main-dispatch-map"><p className="main-map-message">Zemljevid potrebuje povezavo z backendom.</p></div>;
   return <div className="main-dispatch-map">
     <MainDispatchMap state={state} roads={props.roads??null} frame={props.tracking??null}
+      planTaskIds={props.plan?.assignments.map(assignment=>assignment.task_id)??[]}
       onSelect={props.onSelectTask} pickingRoad={!!props.pickingRoad}
       roadPreview={props.roadPreview??null} onPick={props.onPickRoad??(()=>undefined)}
       pickingLocation={!!props.pickingLocation} locationPreview={props.locationPreview??null}/>

@@ -1,7 +1,7 @@
 from collections import Counter
 from statistics import median
 
-from app.planning.contracts import Assignment, Change, HORIZON, Issue, Metrics, PlanningSnapshot
+from app.planning.contracts import Assignment, Change, Issue, Metrics, PlanningSnapshot
 from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, routes, transport_distance
 
 
@@ -21,7 +21,9 @@ def explain(snapshot: PlanningSnapshot, task_id: str, assignments: list[Assignme
         code = "VEHICLE_UNAVAILABLE"
     elif loaded is None:
         code = "UNREACHABLE_ROUTE"
-    elif max(snapshot.now, task.earliest_pickup) > HORIZON - loaded - task.pickup_service - task.dropoff_service - task.cleaning:
+    elif max(snapshot.now, task.earliest_pickup) > (
+        snapshot.horizon - loaded - task.pickup_service - task.dropoff_service - task.cleaning
+    ):
         code = "HARD_TIME_WINDOW"
     else:
         code = "NOT_SCHEDULED_WITHIN_BUDGET"
@@ -77,8 +79,8 @@ def metrics(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> tuple[
             result.travel_seconds += row.deadhead + row.planned_dropoff - row.planned_pickup - task.pickup_service
             if row.status != "PLANNED":
                 continue
-            latest = min(task.latest_pickup if task.latest_pickup is not None else HORIZON,
-                         HORIZON - (row.planned_end - row.planned_pickup))
+            latest = min(task.latest_pickup if task.latest_pickup is not None else snapshot.horizon,
+                         snapshot.horizon - (row.planned_end - row.planned_pickup))
             if later:
                 next_row, next_pickup = later
                 leg = snapshot.travel.seconds(delivery(task.id), pickup(next_row.task_id))
@@ -148,7 +150,7 @@ def project_existing(snapshot: PlanningSnapshot, assignments: list[Assignment]) 
                 report("VEHICLE_UNAVAILABLE")
                 continue
             if (
-                end > HORIZON
+                end > snapshot.horizon
                 or (row.is_locked and (depart, take, arrive, end) !=
                     (row.planned_departure, row.planned_pickup, row.planned_dropoff, row.planned_end))
             ):

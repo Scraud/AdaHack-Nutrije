@@ -1,6 +1,5 @@
 from collections import Counter
 from math import ceil
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +14,7 @@ from app.services.state import active_plan, audit, entities, inputs, problem, ti
 
 
 def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_matrix: MatrixProvider | None = None):
+    horizon = max([HORIZON, *(task.planning_horizon or HORIZON for task in entities(db, scope, TaskRecord, Task))])
     event = Incident(occurred_at=scope.now, **request.model_dump(
         exclude={"task"}, exclude_none=True,
     ))
@@ -28,7 +28,7 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
                 raise problem(409, "VEHICLE_ALREADY_BROKEN", "Okvara vozila je že zabeležena.")
             vehicle.broken = True
         else:
-            vehicle.unavailable.append((scope.now, min(HORIZON, scope.now + (event.duration or 1800))))
+            vehicle.unavailable.append((scope.now, min(horizon, scope.now + (event.duration or 1800))))
         record.payload = vehicle.model_dump(mode="json")
     elif event.type in ("TRAFFIC_DELAY", "ROAD_CLOSURE"):
         roads = road_network()
@@ -55,6 +55,8 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         earliest = request.task.earliest_pickup if request.task.earliest_pickup is not None else scope.now
         if scope.now > earliest:
             raise problem(400, "PICKUP_IN_PAST", "Prevzema ni mogoče naročiti v preteklosti.")
+        if not 0 <= earliest <= horizon:
+            raise problem(400, "INVALID_TASK_TIME", "Prevzem mora biti znotraj delovnega časa.")
         facilities = entities(db, scope, FacilityRecord, Facility)
         incidents = entities(db, scope, IncidentRecord, Incident)
         booked = Counter(task.facility_id for task in entities(db, scope, TaskRecord, Task))
@@ -69,11 +71,8 @@ def add_incident(db: Session, scope: Scenario, request: CreateIncident, road_mat
         open_facilities = {f.id for f in facilities if f.accepting and booked[f.id] < f.quota}
         _, _, facility_id = min((item for item in reachable if item[2] in open_facilities), default=min(reachable))
         task_id = f"N{scope.revision + 1:03}"
-        try:
-            task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,
-                        **request.task.model_dump(exclude={"earliest_pickup"}))
-        except ValidationError as exc:
-            raise problem(400, "INVALID_TASK_TIME", exc.errors()[0]["msg"]) from exc
+        task = Task(id=task_id, type="PRIORITY_TRANSPORT", facility_id=facility_id, earliest_pickup=earliest,
+                    **request.task.model_dump(exclude={"earliest_pickup"}))
         db.add(TaskRecord(id=task.id, scenario_id=scope.id, payload=task.model_dump(mode="json")))
         event.task_id = task.id
         event.priority = task.priority
@@ -282,5 +281,7 @@ def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvide
             db.get(AssignmentRecord, (plan.id, row.task_id)).payload = row.model_dump(mode="json")
     scope.now = until
     scope.revision += 1
+    from app.services.scheduling import activate_due
+    activate_due(db, scope)
     if record_audit:
         audit(db, scope, "ADVANCE_TIME", simulated_time=until, blocked_tasks=sorted(blocked))

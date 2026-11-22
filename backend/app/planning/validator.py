@@ -1,6 +1,6 @@
 from collections import Counter
 
-from app.planning.contracts import Assignment, HORIZON, Issue, PlanningSnapshot
+from app.planning.contracts import Assignment, Issue, PlanningSnapshot
 from app.planning.snapshot_builder import compatible, delivery, facility_remaining, pickup, routes
 
 
@@ -54,7 +54,7 @@ def validate_plan(snapshot: PlanningSnapshot, assignments: list[Assignment]) -> 
                   or row.planned_dropoff != row.planned_pickup + task.pickup_service + loaded):
                 fail("INVALID_TRAVEL_TIME")
             if (row.planned_departure < available or row.planned_pickup < task.earliest_pickup
-                or row.planned_end > HORIZON
+                or row.planned_end > snapshot.horizon
                 or row.planned_end != row.planned_dropoff + task.dropoff_service + task.cleaning
                 or any(row.planned_departure < end and begin < row.planned_end
                        for begin, end in vehicle.unavailable)):

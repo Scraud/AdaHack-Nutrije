@@ -1,11 +1,14 @@
-import type { DispatchState, IncidentInput, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight, NewVehicleInput, VehicleSettings } from '@rescueflow/contracts';
+import type { DispatchState, IncidentInput, ManualMove, RuntimeConfig, TrackingFrame, RoadMap, RoadSegment, Playback, SourceStatus, Location, RecommendationInsight, NewVehicleInput, VehicleSettings } from '@rescueflow/contracts';
 import { createDemoState, createFixtureRecommendations, demoTime } from './demo-data';
-import { adaptBackendState, type BackendState, type BackendRecommendation } from './backend-adapter';
+import { adaptBackendState, adaptPlan, type BackendState, type BackendRecommendation } from './backend-adapter';
 import type { components } from '@rescueflow/contracts/api';
 import { ROAD_EVENT_DEFAULTS } from '@rescueflow/contracts';
 
+export type ManualSolution = components['schemas']['ManualSolution'];
+
 export interface DispatchGateway {
   readonly isDemo: boolean;
+  createTask?(input:import('@rescueflow/contracts').ScheduledTaskInput):Promise<DispatchState>;
   getState(): Promise<DispatchState>;
   generateInitialPlan(): Promise<DispatchState>;
   advanceTime(to: string): Promise<DispatchState>;
@@ -14,6 +17,9 @@ export interface DispatchGateway {
   generateRecommendations(incidentId: string, state: DispatchState): Promise<DispatchState>;
   accept(id: string, state: DispatchState, reason?: string): Promise<DispatchState>;
   reject(id: string, state: DispatchState): Promise<DispatchState>;
+  previewManual?(incidentId: string, request: ManualSolution, state: BackendState): Promise<ReturnType<typeof adaptPlan>>;
+  selectManual?(incidentId: string, request: ManualSolution): Promise<DispatchState>;
+  moveAssignment?(request: ManualMove): Promise<DispatchState>;
   reset(): Promise<DispatchState>;
   getTracking?(planId?:string): Promise<TrackingFrame>;
   getRoads?(): Promise<RoadMap>;
@@ -41,7 +47,8 @@ export class HttpDispatchGateway implements DispatchGateway {
     if (!response.ok) {
       if (response.status === 409) {
         const conflict = await response.json().catch(() => null);
-        if (conflict?.detail?.code === 'VEHICLE_IN_USE') throw new Error(conflict.detail.message);
+        if (['VEHICLE_IN_USE','MANUAL_MOVE_INVALID','STALE_STATE'].includes(conflict?.detail?.code) &&
+            typeof conflict.detail.message === 'string') throw new Error(conflict.detail.message);
         throw new Error('Stanje se je spremenilo. Osvežite podatke in ponovno izračunajte predloge.');
       }
       let detail = '';
@@ -57,6 +64,7 @@ export class HttpDispatchGateway implements DispatchGateway {
   }
   private async mutate(path: string, body: unknown) { await this.request(path, body); return this.getState(); }
   generateInitialPlan() { return this.mutate('/plans/generate', {}); }
+  createTask(input:import('@rescueflow/contracts').ScheduledTaskInput){return this.mutate('/tasks',input);}
   restoreVehicle(id:string){return this.mutate(`/vehicles/${encodeURIComponent(id)}/restore`,{});}
   addVehicle(input:NewVehicleInput){return this.mutate('/vehicles',input);}
   async updateVehicle(id:string,input:VehicleSettings){await this.request(`/vehicles/${encodeURIComponent(id)}`,input,30_000,'PUT');return this.getState();}
@@ -106,6 +114,13 @@ export class HttpDispatchGateway implements DispatchGateway {
   }
   accept(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/accept`, {}); }
   reject(id: string, _state: DispatchState) { return this.mutate(`/recommendations/${encodeURIComponent(id)}/reject`, { reason:'Predlog zavrnjen v dispečerskem vmesniku.' }); }
+  async previewManual(id: string, request: ManualSolution, state: BackendState) {
+    return adaptPlan(await this.request<components['schemas']['PlanView']>(`/incidents/${encodeURIComponent(id)}/manual-preview`, request), state);
+  }
+  selectManual(id: string, request: ManualSolution) {
+    return this.mutate(`/incidents/${encodeURIComponent(id)}/manual-solution`, request);
+  }
+  moveAssignment(request: ManualMove) { return this.mutate('/plans/manual-move', request); }
   reset() { return this.mutate('/demo/reset', {}); }
 }
 
@@ -126,7 +141,7 @@ export class DemoDispatchGateway implements DispatchGateway {
     if (input.incident_type !== 'NEW_TASK') throw new Error('Vzorčni scenarij podpira novo prednostno nalogo. Ostale dogodke pripravi backend.');
     if (this.state.tasks.some(t => t.id === 'N021')) return this.copy();
     this.state.tasks.push({ id:'N021', task_type:'PRIORITY_TRANSPORT', priority:'P1', status:'PENDING', origin:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, destination:{lat:46.0545,lon:14.5257,name:'UKC Ljubljana'}, passenger_count:1, required_equipment:['STRETCHER','OXYGEN'], earliest_pickup:demoTime('11:20'), latest_pickup:null });
-    this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana prometna nesreča na Celovški cesti z visoko prioriteto.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
+    this.state.incidents.push({ id:'incident-1', incident_type:'NEW_TASK', title:'Nova prednostna naloga', description:'Simulirana nesreča na Celovški cesti z visoko prioriteto.', priority:'P1', status:'OPEN', occurred_at:this.state.simulated_time, location:{lat:46.0618,lon:14.5016,name:'Celovška cesta · Tivoli'}, affected_vehicle_ids:[], affected_task_ids:['N021'] });
     this.state.active_plan!.unassigned_task_ids = ['N021'];
     this.state.state_revision++;
     return this.copy();

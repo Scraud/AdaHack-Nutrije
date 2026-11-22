@@ -3,12 +3,13 @@ import L from 'leaflet';
 import type { RoadMap, RoadSegment, BackendState as State, TrackingFrame } from '../../contracts';
 import { measure, pointAt, progress, remaining } from './route-motion';
 import type { Coordinate, Leg } from './route-motion';
+import { trackingEtaLabel, facilityCapacity } from '../../contracts/plan-utils';
 
 const colors: Record<string, string> = {
   V1: '#1e5ec1', V2: '#00846e', V3: '#7d42bc', V4: '#a76a05', V5: '#ac397d',
 };
 const statuses: Record<string, string> = {
-  WAITING: 'Čaka', TO_PICKUP: 'Na poti do pacienta', AT_PICKUP: 'Prevzem pacienta',
+  WAITING: 'V čakanju', TO_PICKUP: 'Na poti do pacienta', AT_PICKUP: 'Prevzem pacienta',
   TO_HOSPITAL: 'Na poti v ustanovo', AT_HOSPITAL: 'Pri ustanovi', STOPPED: 'Ustavljeno', GPS: 'Lokacija GPS',
 };
 const roadColors = ['#a3afbc', '#b6c0ca', '#c3ccd5', '#d5dde4'];
@@ -82,10 +83,11 @@ function tooltip(label: string) {
   return element;
 }
 
-export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPreview, onPick, pickingLocation, locationPreview }: {
+export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPreview, onPick, pickingLocation, locationPreview, planTaskIds }: {
   state: State; roads: RoadMap | null; frame: TrackingFrame | null; onSelect: (id: string) => void;
   pickingRoad: boolean; roadPreview: RoadSegment | null; onPick: (location: Coordinate) => void;
   pickingLocation: boolean; locationPreview: { lat: number; lon: number; name: string } | null;
+  planTaskIds?:string[];
 }) {
   const element = useRef<HTMLDivElement>(null);
   const layers = useRef<{
@@ -202,14 +204,23 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
       .map(vehicle => vehicle.task_id));
     const pickups = state.tasks.filter(task => !pickingLocation && (shownTasks.has(task.id) || !state.active_plan)
       && task.actual_pickup == null && task.actual_arrival == null && !pickedUpTasks.has(task.id));
-    const sites = JSON.stringify([state.scenario_id, pickingLocation, state.facilities, pickups.map(task => task.id)]);
+    const capacities=state.facilities.map(site=>({site,capacity:facilityCapacity(site,state.tasks,
+      planTaskIds??state.active_plan?.assignments.map(assignment=>assignment.task_id)??[])}));
+    const sites = JSON.stringify([state.scenario_id, pickingLocation, capacities, pickups.map(task => task.id)]);
     if (sites !== siteKey.current) {
       siteKey.current = sites;
       map.sites.clearLayers();
-      for (const site of state.facilities) {
-        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48), title: site.name, alt: site.name,
+      for (const {site,capacity} of capacities) {
+        const status=capacity.full?'Polno':!site.accepting?'Ne sprejema':'';
+        const badge=document.createElement('span');badge.className='map-eta facility-capacity-label';badge.textContent=status;badge.hidden=!status;
+        const description=`${site.name} · Zasedeno: ${capacity.used} / Prosto: ${capacity.free}${!site.accepting?' · Sprejem zaprt':''}`;
+        const label=document.createElement('span');label.className='facility-capacity-tooltip';
+        const name=document.createElement('strong');name.textContent=site.name;
+        const counts=document.createElement('span');counts.textContent=`Zasedeno: ${capacity.used} / Prosto: ${capacity.free}`;
+        label.append(name,counts);
+        L.marker([site.location.lat, site.location.lon], { icon: icon('🏥', '', 'facility-pin', 48, undefined, badge), title: description, alt: description,
           interactive: !pickingLocation, keyboard: !pickingLocation })
-          .bindTooltip(tooltip(site.name)).addTo(map.sites);
+          .bindTooltip(label,{direction:'top',offset:[0,-25]}).addTo(map.sites);
       }
       for (const task of pickups) {
         const title = task.pickup_name ?? `Prevzem ${task.id}`;
@@ -236,7 +247,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
         for (const [leg, distance, dotted] of [[approach, approachDistance, false],
           [delivery, deliveryDistance, true]] as const) {
           if (leg.path.length < 2) continue;
-          const style = { pane: 'vehicle-paths', opacity: vehicle.status === 'STOPPED' ? .45 : .95, lineCap: 'round' as const };
+          const style = { pane: 'vehicle-paths', fill:false, opacity: vehicle.status === 'STOPPED' ? .45 : .95, lineCap: 'round' as const };
           const weight = dotted ? 4 : 3.5;
           const path = remaining(leg, distance);
           const casing = L.polyline(path, { ...style, color: '#fff', weight: weight + 3, interactive: false,
@@ -303,9 +314,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
         vehicleMarkers.current.set(vehicle.id, entry);
       }
       const { marker, eta } = entry;
-      const countdown = vehicle.eta
-        ? `${vehicle.eta.destination === 'PICKUP' ? 'Do pacienta' : 'Do ustanove'} · ${Math.ceil(vehicle.eta.seconds / 60)} min`
-        : '';
+      const countdown = trackingEtaLabel(vehicle);
       if (eta.textContent !== countdown) eta.textContent = countdown;
       eta.hidden = !countdown;
       const age = vehicle.stale ? ' · zastarela lokacija' : '';
@@ -369,7 +378,7 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
       };
       animationFrame.current = requestAnimationFrame(animate);
     }
-  }, [state, roads, frame, onSelect, pickingLocation]);
+  }, [state, roads, frame, onSelect, pickingLocation, planTaskIds]);
 
   return <div ref={element} className="dispatch-map" aria-label="Zemljevid cest in reševalnih vozil" />;
 }

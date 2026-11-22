@@ -42,3 +42,9 @@
   > .map-legend {position: static; inset: auto; width: 100%; max-width: none; flex-shrink: 0; border: 0; border-radius: 0; background: #fff; font-size: .73rem;}
 }
 .main-map-message {position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 700; max-width: 80%; padding: 8px 12px; border: 1px solid #d4dee8; border-radius: 7px; background: #fff; color: #38516a; font-size: 12px; pointer-events: none;}
+.facility-pin .facility-capacity-label{background:#fff0ee;border-color:#d36d65;color:#b32424;font-weight:800;box-shadow:0 2px 7px #a52e2924}
+.facility-capacity-tooltip{display:grid;gap:5px;line-height:1.4}.facility-capacity-tooltip strong{font-size:13px}.facility-capacity-tooltip small{font-size:11px;color:#6d7f88}
+
+.main-dispatch-map .route-to-hospital,.main-dispatch-map .route-to-pickup{fill:none!important;outline:none;filter:none}
+.main-dispatch-map .dispatch-map canvas:focus,.main-dispatch-map .dispatch-map .leaflet-interactive:focus{outline:none;box-shadow:none}
+.main-dispatch-map .dispatch-map:focus-visible{outline:2px solid #008c80;outline-offset:-2px}

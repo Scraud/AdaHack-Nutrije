@@ -3,7 +3,9 @@ import type { DispatchPlan, DispatchState, Incident, Recommendation } from '@res
 import { incidentType } from '@rescueflow/contracts/plan-utils';
 type Schema=components['schemas'];
 export type BackendState=Omit<Schema['State'],'incidents'> & {incidents:(Schema['Incident'] & {description?:string;priority?:'P1'|'P2'|'P3';status?:'OPEN'|'RESOLVED';selected_recommendation_id?:string|null})[]};
-export type BackendRecommendation=Schema['RecommendationView'] & {incident_ids?:number[]};
+export type BackendRecommendation=Omit<Schema['RecommendationView'],'plan'> & {
+  plan:Schema['PlanView'] & {strategy:Recommendation['strategy']};incident_ids?:number[];
+};
 const labels:Record<string,string>={MANUAL_COORDINATION:'Začeti prevoz zahteva ročno koordinacijo.',LOCKED_EXECUTION_BLOCKED:'Zaščitena dodelitev je blokirana.',HARD_TIME_WINDOW:'Kršeno obvezno časovno okno.',NO_COMPATIBLE_VEHICLE:'Ni vozila z ustrezno opremo in kapaciteto.',VEHICLE_UNAVAILABLE:'Vozilo ni operativno.',UNREACHABLE_ROUTE:'Pot ni dosegljiva.',INVALID_TRAVEL_TIME:'Motnja je podaljšala vožnjo.',FACILITY_CAPACITY:'Simulirana kvota ustanove je porabljena.',FACILITY_NOT_ACCEPTING:'Ustanova ne sprejema.',NOT_SCHEDULED_WITHIN_BUDGET:'Naloga v časovnem proračunu ni bila razporejena.'};
 const strategies={MIN_DELAY:{title:'Najmanj zamud',trade:'Prednost imajo želeni prevzemi; možnih je več sprememb razporeda.'},MIN_CHANGES:{title:'Najmanj sprememb',trade:'Ohranja obstoječe dodelitve; lahko pomeni daljše zamude.'},MAX_BUFFER:{title:'Največ časovne rezerve',trade:'Ohranja prostor za naslednje motnje; lahko spremeni več dodelitev.'}};
 export const at=(start:string,seconds:number)=>new Date(Date.parse(start)+seconds*1000).toISOString();
@@ -41,21 +43,22 @@ export function adaptBackendState(raw:BackendState,items:BackendRecommendation[]
   const incidents:Incident[]=raw.incidents.map(i=>{
     const task=raw.tasks.find(t=>t.id===i.task_id),vehicle=raw.vehicles.find(v=>v.id===i.vehicle_id),point=i.location??task?.pickup??vehicle?.location;
     const affected=[...new Set([...(i.task_id?[i.task_id]:[]),...raw.baseline.affected.filter(issue=>i.vehicle_id&&issue.vehicle_id===i.vehicle_id).map(issue=>issue.task_id)])];
-    return {id:String(i.id),incident_type:i.type,title:incidentType(i.type),priority:task?.priority??i.priority??'P2',
-      description:i.description||`${incidentType(i.type)}${i.vehicle_id?` · ${i.vehicle_id}`:''}${i.task_id?` · ${i.task_id}`:''}.`,
+    return {id:String(i.id),incident_type:i.type,title:i.source==='SCHEDULED_TASK'?'Nova prevozna naloga':incidentType(i.type),priority:task?.priority??i.priority??'P2',
+      description:i.description?.replace(/prometna nesreča/gi,'nesreča')||`${incidentType(i.type)}${i.vehicle_id?` · ${i.vehicle_id}`:''}${i.task_id?` · ${i.task_id}`:''}.`,
       status:i.ended_at!=null||(i.duration!=null&&raw.now>=i.occurred_at+i.duration)||i.status==='RESOLVED'?'RESOLVED':recommendations.some(r=>r.incident_ids?.includes(String(i.id))&&r.status==='PROPOSED'&&r.base_state_revision===raw.revision)?'AWAITING_DECISION':'OPEN',
       occurred_at:at(raw.start_at,i.occurred_at),location:{lat:point?.lat??0,lon:point?.lon??0,name:point?task?.pickup_name??coordinate(point):'Lokacija ni podana'},has_location:!!point,
       affected_vehicle_ids:i.vehicle_id?[i.vehicle_id]:[],affected_task_ids:affected,selected_recommendation_id:i.selected_recommendation_id??undefined,
       duration_minutes:i.duration?i.duration/60:undefined,delay_multiplier:['WEATHER_DELAY','TRAFFIC_DELAY'].includes(i.type)?i.multiplier:undefined};
   });
-  return {backend:raw,scenario_id:raw.scenario_id,state_revision:raw.revision,mode:raw.mode,simulated_time:at(raw.start_at,raw.now),horizon_start:raw.start_at,horizon_end:at(raw.start_at,raw.horizon),
-    vehicles:raw.vehicles.map(v=>({id:v.id,code:v.id,vehicle_type:v.equipment.includes('STRETCHER')?'Sanitetno vozilo':'Prevoz z vozičkom',status:v.status,current_lat:v.location.lat,current_lon:v.location.lon,location_name:coordinate(v.location),capacity:v.capacity,equipment:v.equipment,task_types:v.task_types,available_at:v.next_available===null?null:at(raw.start_at,v.next_available),shift_end:null})),
-    facilities:raw.facilities.map(f=>({id:f.id,name:f.name,short_name:f.name,...f.location,accepting:f.accepting})),
-    tasks:raw.tasks.map(t=>{
+  const adaptTask=((t:Schema['Task'])=>{
       const facility=raw.facilities.find(f=>f.id===t.facility_id);if(!facility)throw new Error(`Manjka cilj naloge ${t.id}.`);
       const a=raw.active_plan?.assignments.find(a=>a.task_id===t.id);
       return {id:t.id,task_type:t.type,priority:t.priority,status:a?.status==='COMPLETED'?'COMPLETED':a?.status==='IN_PROGRESS'?(t.actual_pickup!=null&&t.actual_arrival==null?'PICKED_UP':'EN_ROUTE_TO_PICKUP'):a?'ASSIGNED':'PENDING',origin:{...t.pickup,name:t.pickup_name??`Prevzem ${t.id} · ${coordinate(t.pickup)}`},destination:{...facility.location,name:facility.name},passenger_count:t.passenger_count,cleaning_minutes:t.cleaning/60,required_equipment:t.equipment??[],earliest_pickup:at(raw.start_at,t.earliest_pickup),latest_pickup:t.latest_pickup==null?null:at(raw.start_at,t.latest_pickup),actual_pickup:t.actual_pickup==null?null:at(raw.start_at,t.actual_pickup),actual_arrival:t.actual_arrival==null?null:at(raw.start_at,t.actual_arrival)};
-    }),active_plan:active,incidents,recommendations,
+    }) ;
+  return {backend:raw,scenario_id:raw.scenario_id,state_revision:raw.revision,mode:raw.mode,simulated_time:at(raw.start_at,raw.now),horizon_start:raw.start_at,horizon_end:at(raw.start_at,raw.horizon),
+    vehicles:raw.vehicles.map(v=>({id:v.id,code:v.id,vehicle_type:v.equipment.includes('STRETCHER')?'Sanitetno vozilo':'Prevoz z vozičkom',status:v.status,current_lat:v.location.lat,current_lon:v.location.lon,location_name:'Ljubljana',capacity:v.capacity,equipment:v.equipment,task_types:v.task_types,available_at:v.next_available===null?null:at(raw.start_at,v.next_available),shift_end:null})),
+    facilities:raw.facilities.map(f=>({id:f.id,name:f.name,short_name:f.name,...f.location,accepting:f.accepting})),
+    tasks:raw.tasks.map(adaptTask),future_tasks:(raw.scheduled_tasks??[]).map(entry=>({...adaptTask(entry.task),status:'FUTURE',planning_status:'FUTURE' as const})),active_plan:active,incidents,recommendations,
     decisions:items.filter(r=>r.decided_at&&(r.status==='ACCEPTED'||r.status==='REJECTED')).map(r=>({id:`decision:${r.id}`,recommendation_id:r.id,action:r.status as 'ACCEPTED'|'REJECTED',reason:r.decision_reason||'Odločitev je zapisana v zaledju.',decided_at:r.decided_at!,actor:'Dispečer'})),
     affected_task_ids:[...new Set(raw.baseline.affected.map(i=>i.task_id))],issues:raw.baseline.affected.map(i=>({...i,message:issueText(i)})),history:history.map(p=>({id:p.id,version:p.version,status:p.status,created_at:p.created_at,strategy:p.strategy}))};
 }

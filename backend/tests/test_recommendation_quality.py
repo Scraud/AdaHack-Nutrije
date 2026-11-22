@@ -37,7 +37,15 @@ def test_no_mass_reshuffle_for_a_tiny_gain(tmp_path):
                      if row["vehicle_id"] == "V5" and row["status"] == "PLANNED")
         items = replan(client, state)
         assert items
-        assert all(item["plan"]["metrics"]["vehicle_changes"] <= forced + 2 for item in items)
+        stable = min((item["plan"] for item in items), key=lambda plan: plan["metrics"]["vehicle_changes"])
+        assert stable["metrics"]["vehicle_changes"] <= forced + 2
+        stable_score = score(state, stable)
+        for item in items:
+            plan = item["plan"]
+            if plan["metrics"]["vehicle_changes"] > forced + 2:
+                own = score(state, plan)
+                # Extra moves need a measurable gain over the stable alternative.
+                assert any(own[axis] < stable_score[axis] - TOLERANCE[axis] for axis in (0, 1, 3))
 
 
 def test_alternatives_are_distinct_and_not_dominated(tmp_path):

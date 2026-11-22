@@ -13,13 +13,6 @@ Coordinate = tuple[float, float]
 Effects = tuple[frozenset[tuple[int, int]], tuple[tuple[tuple[int, int], float], ...]]
 EXTRACT = Path(__file__).with_name("data") / "ljubljana.json.gz"
 LONGITUDE_FACTOR = cos(radians(46))
-SEGMENT_TARGETS = (
-    ("smartinska", "Šmartinska cesta", (46.0666, 14.5458)),
-    ("dunajska", "Dunajska cesta", (46.077, 14.514)),
-    ("celovska", "Celovška cesta", (46.073, 14.478)),
-    ("zaloska", "Zaloška cesta", (46.054, 14.550)),
-    ("trzaska", "Tržaška cesta", (46.039, 14.476)),
-)
 
 
 def center_distance(a: Coordinate, b: Coordinate) -> float:
@@ -34,7 +27,7 @@ def edge_key(a: int, b: int) -> tuple[int, int]:
 class Segment:
     id: str
     name: str
-    vertices: tuple[int, ...]
+    chains: tuple[tuple[int, ...], ...]
 
 
 class RoadNetwork:
@@ -44,8 +37,11 @@ class RoadNetwork:
         self.points = [tuple(point) for point in extract["points"]]
         self.edges: list[list[tuple[int, float, float]]] = [[] for _ in self.points]
         self.ways = extract["ways"]
+        neighbors = [set() for _ in self.points]
         for _, _, _, direction, speed, nodes in self.ways:
             for a, b in zip(nodes, nodes[1:]):
+                neighbors[a].add(b)
+                neighbors[b].add(a)
                 kilometers = center_distance(self.points[a], self.points[b]) * 111.2
                 seconds = kilometers * 3600 / speed
                 meters = kilometers * 1000
@@ -53,18 +49,73 @@ class RoadNetwork:
                     self.edges[a].append((b, seconds, meters))
                 if direction <= 0:
                     self.edges[b].append((a, seconds, meters))
-        self.segments = {}
-        for key, name, center in SEGMENT_TARGETS:
-            matches = [(center_distance(self.points[node], center), index, nodes)
-                       for _, _, street, _, _, nodes in self.ways if street == name
-                       for index, node in enumerate(nodes)]
-            if matches:
-                _, index, nodes = min(matches)
-                lower, upper = max(0, index - 2), min(len(nodes), index + 3)
-                self.segments[key] = Segment(key, name, tuple(nodes[lower:upper]))
+        self.neighbors = neighbors
+        self.street_names = tuple(sorted({way[2] for way in self.ways if way[2]}))
 
     def segment_json(self, segment: Segment) -> dict:
-        return {"id": segment.id, "name": segment.name, "path": [self.points[i] for i in segment.vertices]}
+        return {"id": segment.id, "name": segment.name,
+                "paths": [[self.points[i] for i in chain] for chain in segment.chains]}
+
+    @lru_cache(maxsize=1024)
+    def segment(self, road_id: str) -> Segment | None:
+        prefix, _, name = road_id.partition(":")
+        if prefix == "street" and name in self.street_names:
+            chains = tuple(tuple(way[5]) for way in self.ways if way[2] == name and len(way[5]) > 1)
+            return Segment(road_id, name, chains) if chains else None
+        if prefix != "way":
+            return None
+        try:
+            way_index_text, edge_index_text = name.split(":", 1)
+            way_index, edge_index = int(way_index_text), int(edge_index_text)
+            if way_index < 0:
+                return None
+            way = self.ways[way_index]
+        except (ValueError, IndexError):
+            return None
+        nodes = way[5]
+        if edge_index < 0 or edge_index >= len(nodes) - 1:
+            return None
+        lower = edge_index
+        while lower > 0 and len(self.neighbors[nodes[lower]]) == 2:
+            lower -= 1
+        upper = edge_index + 1
+        while upper < len(nodes) - 1 and len(self.neighbors[nodes[upper]]) == 2:
+            upper += 1
+        chain = tuple(nodes[lower:upper + 1])
+        return Segment(road_id, way[2] or "Neimenovana cesta", (chain,))
+
+    def streets(self) -> list[str]:
+        return list(self.street_names)
+
+    def nearest(self, lat: float, lon: float) -> Segment | None:
+        south, west, north, east = self.bounds
+        if not (south <= lat <= north and west <= lon <= east):
+            return None
+        scale = 111_200
+        cosine = cos(radians(lat))
+        closest_named: tuple[float, int, int] | None = None
+        closest_any: tuple[float, int, int] | None = None
+        for way_index, way in enumerate(self.ways):
+            nodes = way[5]
+            for edge_index, (a, b) in enumerate(zip(nodes, nodes[1:])):
+                start, end = self.points[a], self.points[b]
+                dx = (end[1] - start[1]) * scale * cosine
+                dy = (end[0] - start[0]) * scale
+                px = (lon - start[1]) * scale * cosine
+                py = (lat - start[0]) * scale
+                squared_length = dx * dx + dy * dy
+                fraction = max(0, min(1, (px * dx + py * dy) / squared_length)) if squared_length else 0
+                offset = ((px - dx * fraction) ** 2 + (py - dy * fraction) ** 2) ** .5
+                candidate = (offset, way_index, edge_index)
+                if closest_any is None or offset < closest_any[0]:
+                    closest_any = candidate
+                if way[2] and (closest_named is None or offset < closest_named[0]):
+                    closest_named = candidate
+        nearest = closest_named if closest_named and closest_named[0] <= 500 else closest_any
+        if nearest is None:
+            return None
+        _, way_index, edge_index = nearest
+        return self.segment(f"way:{way_index}:{edge_index}")
 
     @lru_cache(maxsize=1)
     def basemap(self) -> bytes:
@@ -73,7 +124,7 @@ class RoadNetwork:
             paths[rank].append([self.points[node] for node in nodes])
         return json.dumps({"bounds": self.bounds, "layers": [
             {"rank": rank, "paths": lines} for rank, lines in paths.items()
-        ], "segments": [self.segment_json(segment) for segment in self.segments.values()],
+        ], "streets": self.streets(),
             "timestamp": self.timestamp}, separators=(",", ":")).encode()
 
     @lru_cache(maxsize=160)
@@ -89,15 +140,16 @@ class RoadNetwork:
         closed = set()
         delays: dict[tuple[int, int], float] = {}
         for event in incidents:
-            segment = self.segments.get(event.road_id) if event.road_id else None
+            segment = self.segment(event.road_id) if event.road_id else None
             if not segment:
                 continue
-            for a, b in zip(segment.vertices, segment.vertices[1:]):
-                key = edge_key(a, b)
-                if event.type == "ROAD_CLOSURE":
-                    closed.add(key)
-                elif event.type == "TRAFFIC_DELAY":
-                    delays[key] = delays.get(key, 1.0) * event.multiplier
+            for chain in segment.chains:
+                for a, b in zip(chain, chain[1:]):
+                    key = edge_key(a, b)
+                    if event.type == "ROAD_CLOSURE":
+                        closed.add(key)
+                    elif event.type == "TRAFFIC_DELAY":
+                        delays[key] = delays.get(key, 1.0) * event.multiplier
         return frozenset(closed), tuple(sorted(delays.items()))
 
     @lru_cache(maxsize=36)
@@ -136,6 +188,26 @@ class RoadNetwork:
             target = previous[target]
             path.append(self.points[target])
         return list(reversed(path))
+
+    def route(self, origin: Coordinate, target: Point, effects: Effects) -> tuple[int, list[Coordinate]] | None:
+        start = self.snap(origin)
+        end = self.snap((target.lat, target.lon))
+        if start is None or end is None:
+            return None
+        costs, previous, _ = self._search(start, effects)
+        if costs[end] == float("inf"):
+            return None
+        path = [self.points[end]]
+        while end != start:
+            end = previous[end]
+            path.append(self.points[end])
+        path.reverse()
+        if path[0] != origin:
+            path.insert(0, origin)
+        destination = (target.lat, target.lon)
+        if path[-1] != destination:
+            path.append(destination)
+        return ceil(costs[self.snap((target.lat, target.lon))]), path
 
     def snapshot(self, nodes: tuple[Node, ...], incidents: list[Incident]) -> TravelSnapshot:
         effects = self.effects(incidents)
@@ -186,4 +258,5 @@ def road_network() -> RoadNetwork:
 
 def active_conditions(now: int, incidents: list[Incident]) -> list[Incident]:
     return [event for event in incidents if event.type in ("ROAD_CLOSURE", "TRAFFIC_DELAY", "WEATHER_DELAY")
-            and event.occurred_at <= now and (event.duration is None or now < event.occurred_at + event.duration)]
+            and event.occurred_at <= now and (event.ended_at is None or now < event.ended_at)
+            and (event.duration is None or now < event.occurred_at + event.duration)]

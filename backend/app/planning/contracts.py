@@ -65,6 +65,13 @@ class Task(BaseModel):
         return self
 
 
+class Reroute(BaseModel):
+    at: int = Field(ge=0, le=HORIZON)
+    start: int = Field(ge=0, le=HORIZON)
+    origin: Point | None = None
+    leg: Literal["PICKUP", "HOSPITAL"] | None = None
+
+
 class Assignment(BaseModel):
     task_id: str
     vehicle_id: str
@@ -76,6 +83,7 @@ class Assignment(BaseModel):
     status: Literal["PLANNED", "IN_PROGRESS", "COMPLETED"] = "PLANNED"
     is_locked: bool = False
     distance_meters: int | None = Field(default=None, ge=0)
+    reroute: Reroute | None = None
 
     @computed_field
     @property
@@ -87,6 +95,7 @@ class Incident(BaseModel):
     id: int = 0
     type: IncidentType
     occurred_at: int = 0
+    ended_at: int | None = Field(default=None, ge=0, le=HORIZON)
     duration: int | None = Field(default=None, gt=0, le=HORIZON)
     vehicle_id: str | None = None
     facility_id: str | None = None

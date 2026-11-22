@@ -113,7 +113,9 @@
                 </div>
               }
             </div>
-            <react-view kind="map" [state]="state" [roads]="store.roads()" [tracking]="store.tracking()" (selectTask)="focusTask($event)" />
+            <react-view kind="map" [state]="state" [roads]="store.roads()" [tracking]="store.tracking()"
+              [pickingRoad]="store.pickingRoad()" [roadPreview]="store.roadTarget()"
+              (pickLocation)="store.pickRoad($event)" (selectTask)="focusTask($event)" />
             @if (store.trackingOffline()) {
               <p class="map-notice" role="status">Povezava s sledenjem je prekinjena. Prikazane so zadnje prejete lokacije.</p>
             } @else if (store.tracking()?.mode === 'GPS' && !store.tracking()?.vehicles?.length) {

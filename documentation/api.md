@@ -40,7 +40,7 @@ Advances simulated time to `to` (must be > current `now`). Marks assignments as 
 ## Incidents
 
 ### `POST /api/incidents` body: `CreateIncident` → `State`
-Records an incident. Pauses playback. Returns updated state.
+Records an incident. Pauses playback. Returns updated state. For `TRAFFIC_DELAY` and `ROAD_CLOSURE` the backend immediately recomputes detours for simulated vehicles of the active plan (see [tracking.md](tracking.md#automatic-detours)).
 
 **`CreateIncident` fields:**
 
@@ -49,12 +49,15 @@ Records an incident. Pauses playback. Returns updated state.
 | `type` | always | See incident types in [data-model.md](data-model.md) |
 | `vehicle_id` | VEHICLE_BREAKDOWN, VEHICLE_UNAVAILABLE | Target vehicle |
 | `duration` | VEHICLE_UNAVAILABLE, TRAFFIC_DELAY, ROAD_CLOSURE | Duration in seconds |
-| `road_id` | TRAFFIC_DELAY, ROAD_CLOSURE | Named segment id (from `/api/map/roads`) |
+| `road_id` | TRAFFIC_DELAY, ROAD_CLOSURE | Road segment id: `street:<name>` (whole street) or `way:<way>:<edge>` (part of a way between intersections), from `/api/map/roads/street` or `/api/map/roads/nearest` |
 | `multiplier` | TRAFFIC_DELAY | Travel time multiplier (1.0–5.0) |
 | `facility_id` | FACILITY_CAPACITY_CHANGE | Target facility |
 | `quota` | FACILITY_CAPACITY_CHANGE | New quota value |
-| `location` | WEATHER_DELAY, NEW_TASK | GPS point |
+| `location` | WEATHER_DELAY, NEW_TASK; optional for TRAFFIC_DELAY, ROAD_CLOSURE | GPS point; for road events without `road_id` the nearest road segment is used |
 | `task` | NEW_TASK | `NewTask` object |
+
+### `POST /api/incidents/{incident_id}/resolve` → `State`
+Manually ends an active `TRAFFIC_DELAY` or `ROAD_CLOSURE` (sets `ended_at = now`). Pauses playback and recomputes detours, so vehicles return to the fastest route.
 
 ---
 
@@ -109,10 +112,18 @@ Forces a refresh of all external sources. Throttled to once per 60 seconds.
 Returns road geometry for the Ljubljana area, including:
 - `bounds` — `[south, west, north, east]`
 - `layers` — road polylines grouped by rank (rank 0 = motorways, rank 3 = residential)
-- `segments` — named road segments that can be targeted by incidents
+- `streets` — sorted list of all street names in the network (used for the incident search field)
 - `timestamp` — OSM data timestamp
 
 Heavily cached (`Cache-Control: public, max-age=3600`). The response is returned as a pre-serialised JSON blob (never deserialised on the backend).
+
+### `GET /api/map/roads/street?name=<street>` → `RoadSegment`
+Resolves a street name to the segment `street:<name>` covering all ways with that name. `404 ROAD_NOT_FOUND` for unknown names.
+
+### `GET /api/map/roads/nearest?lat=<lat>&lon=<lon>` → `RoadSegment`
+Returns the road part nearest to a clicked map point (`way:<way>:<edge>`, bounded by the nearest intersections). `404 ROAD_NOT_FOUND` if no road is close enough.
+
+**`RoadSegment` fields:** `id`, `name`, `paths` (list of polylines `[[lat, lon], ...]`).
 
 ---
 
@@ -131,7 +142,7 @@ Current vehicle positions, statuses, and route paths. Polled every second by the
 | `mode` | `DEMO` or `GPS` |
 | `playback` | `{ playing: bool, speed: 30|60|300 }` |
 | `vehicles` | List of `TrackedVehicle` |
-| `incidents` | Active road closures/delays for map overlay |
+| `incidents` | Active road closures/delays for map overlay (`RoadEvent`: `id`, `road_id`, `type`, `name`, `paths`) |
 
 **`TrackedVehicle` fields:**
 
@@ -143,6 +154,7 @@ Current vehicle positions, statuses, and route paths. Polled every second by the
 | `task_id` | Currently active task |
 | `to_pickup` | Full route geometry to pickup `[[lat, lon], ...]` |
 | `to_hospital` | Full route geometry to facility `[[lat, lon], ...]` |
+| `eta` | `{ destination: PICKUP\|HOSPITAL, seconds }` — time until the next stop |
 | `recorded_at` | For GPS mode: timestamp of last fix |
 | `stale` | For GPS mode: true if fix is >15 s old |
 
@@ -169,7 +181,10 @@ Records a real GPS fix. Only available when `RESCUEFLOW_GPS_KEY` is configured.
 | `VEHICLE_NOT_FOUND` | 404 | Vehicle id does not exist |
 | `FACILITY_NOT_FOUND` | 404 | Facility id does not exist |
 | `ROAD_NOT_FOUND` | 404 | Road segment id does not exist |
-| `ROAD_REQUIRED` | 400 | Road closure/delay needs a road_id |
+| `ROAD_REQUIRED` | 400 | Road closure/delay needs a road_id or location |
+| `INCIDENT_NOT_FOUND` | 404 | Incident id does not exist |
+| `INCIDENT_NOT_RESOLVABLE` | 400 | Only traffic delays and road closures can be resolved manually |
+| `INCIDENT_ALREADY_ENDED` | 409 | Incident is no longer active |
 | `TASK_REQUIRED` | 400 | NEW_TASK incident needs a task object |
 | `PICKUP_IN_PAST` | 400 | Task pickup time is before current simulated time |
 | `INVALID_TASK_TIME` | 400 | Task time window is inconsistent |

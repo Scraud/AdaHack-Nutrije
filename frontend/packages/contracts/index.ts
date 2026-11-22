@@ -13,6 +13,7 @@ export type NewTask = Schema['NewTask'];
 export type Point = Schema['Point'];
 export type Condition = Schema['SourceStatus'];
 export type RoadMap = Schema['RoadMap'];
+export type RoadSegment = Schema['RoadSegment'];
 export type TrackingFrame = Schema['TrackingFrame'];
 export type Playback = Schema['Playback'];
 

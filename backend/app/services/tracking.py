@@ -51,6 +51,8 @@ class RoadEvent(BaseModel):
     id: int
     road_id: str
     type: Literal["TRAFFIC_DELAY", "ROAD_CLOSURE"]
+    name: str
+    paths: list[list[Coordinate]]
 
 
 class TrackingFrame(BaseModel):
@@ -160,15 +162,23 @@ class Tracking:
                 if saved.get("provider") == "OSRM" and self.road_matrix is not None:
                     path = self.road_matrix.path
                 vehicles = demo_positions(state, incidents, rows, path, planned_at)
-            overlays = [RoadEvent(id=event.id, road_id=event.road_id, type=event.type)
-                        for event in active_conditions(scope.now, incidents)
-                        if event.road_id and event.type in ("TRAFFIC_DELAY", "ROAD_CLOSURE")]
+            overlays = []
+            for event in active_conditions(scope.now, incidents):
+                if not event.road_id or event.type not in ("TRAFFIC_DELAY", "ROAD_CLOSURE"):
+                    continue
+                segment = road_network().segment(event.road_id)
+                if segment:
+                    overlays.append(RoadEvent(id=event.id, road_id=event.road_id, type=event.type,
+                                              name=segment.name,
+                                              paths=[[road_network().points[node] for node in chain]
+                                                     for chain in segment.chains]))
             return TrackingFrame(scenario_id=scope.id, now=scope.now, revision=scope.revision,
                                  mode="GPS" if self.gps_key else "DEMO", playback=playback,
                                  vehicles=vehicles, incidents=overlays)
 
 
-def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], list[Coordinate]], planned_at: int):
+def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], list[Coordinate]], planned_at: int,
+                   *, respect_blocking: bool = True):
     by_vehicle = routes(rows)
     blocked = {issue.task_id for issue in state.blocking}
     invalid = {issue.task_id for issue in validate_plan(state, rows)}
@@ -189,10 +199,25 @@ def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], l
             continue
         task = state.tasks[upcoming.task_id]
         destination = state.facilities[task.facility_id].location
-        approach = road_path(origin, task.pickup)
-        delivery = road_path(task.pickup, destination)
+        reroute = upcoming.reroute
+        if reroute:
+            roads = road_network()
+            effects = roads.effects(active_conditions(reroute.at, incidents))
+            detour_path = partial(roads.road_path, effects=effects)
+            if reroute.leg == "PICKUP":
+                approach = detour_path(reroute.origin or origin, task.pickup)
+                delivery = detour_path(task.pickup, destination)
+            elif reroute.leg == "HOSPITAL":
+                approach = road_path(origin, task.pickup)
+                delivery = detour_path(reroute.origin or task.pickup, destination)
+            else:
+                approach = road_path(origin, task.pickup)
+                delivery = road_path(task.pickup, destination)
+        else:
+            approach = road_path(origin, task.pickup)
+            delivery = road_path(task.pickup, destination)
         at = state.now
-        stopped = vehicle.broken or task.id in blocked
+        stopped = respect_blocking and (vehicle.broken or task.id in blocked)
         if stopped:
             causes = [event.occurred_at for event in incidents if
                       (event.type in ("VEHICLE_BREAKDOWN", "VEHICLE_UNAVAILABLE") and event.vehicle_id == vehicle.id)
@@ -200,19 +225,25 @@ def demo_positions(state, incidents, rows, road_path: Callable[[Point, Point], l
                       and event.occurred_at >= planned_at]
             at = min(at, max(upcoming.planned_departure, min(causes, default=at)))
         pickup_end = upcoming.planned_pickup + task.pickup_service
-        if at < upcoming.planned_departure:
+        approach_start = (reroute.start if reroute and reroute.leg == "PICKUP"
+                          else upcoming.planned_departure)
+        hospital_start = (max(pickup_end, reroute.start) if reroute and reroute.leg == "HOSPITAL"
+                          else pickup_end)
+        if at < approach_start:
             status = "WAITING"
         elif at < upcoming.planned_pickup:
             status = "TO_PICKUP"
-            location = position_on_path(approach, (at - upcoming.planned_departure) /
-                                        (upcoming.planned_pickup - upcoming.planned_departure), origin)
-        elif at < pickup_end:
+            location = position_on_path(approach, (at - approach_start) /
+                                        (upcoming.planned_pickup - approach_start),
+                                        reroute.origin if reroute and reroute.leg == "PICKUP" else origin)
+        elif at < hospital_start:
             status = "AT_PICKUP"
             location = position_on_path(delivery, 0, task.pickup)
         elif at < upcoming.planned_dropoff:
             status = "TO_HOSPITAL"
-            location = position_on_path(delivery, (at - pickup_end) /
-                                        (upcoming.planned_dropoff - pickup_end), task.pickup)
+            location = position_on_path(delivery, (at - hospital_start) /
+                                        (upcoming.planned_dropoff - hospital_start),
+                                        reroute.origin if reroute and reroute.leg == "HOSPITAL" else task.pickup)
         else:
             status = "AT_HOSPITAL"
             location = position_on_path(delivery, 1, destination)

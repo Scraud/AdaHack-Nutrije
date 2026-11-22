@@ -89,15 +89,16 @@ def build_snapshot(now: int, vehicles: list[Vehicle], tasks: list[Task], facilit
             approach = None
             if assignment.status == "IN_PROGRESS" and task.actual_pickup is None:
                 approach = travel.seconds(anchor.node, pickup(task.id))
+            reroute_leg = assignment.reroute.leg if assignment.reroute else None
             approaching = assignment.status == "IN_PROGRESS" and task.actual_pickup is None
             failure = (vehicle.broken
                        or any(assignment.planned_departure < end and begin < assignment.planned_end
                               for begin, end in vehicle.unavailable)
-                       or (approaching and (approach is None or
+                       or (approaching and reroute_leg != "PICKUP" and (approach is None or
                            assignment.planned_departure + approach > assignment.planned_pickup))
                        or (task.actual_arrival is None and (
-                           loaded is None or assignment.planned_pickup + task.pickup_service + loaded
-                           > assignment.planned_dropoff
+                           (reroute_leg != "HOSPITAL" and (loaded is None or
+                            assignment.planned_pickup + task.pickup_service + loaded > assignment.planned_dropoff))
                            or not facility.accepting)))
             if failure:
                 code = "MANUAL_COORDINATION" if assignment.status == "IN_PROGRESS" and task.actual_pickup is not None else "LOCKED_EXECUTION_BLOCKED"

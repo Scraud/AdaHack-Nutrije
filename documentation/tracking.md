@@ -39,11 +39,12 @@ Called whenever the frontend polls `GET /api/tracking`. For each vehicle:
 
 1. **Find the upcoming assignment** — scan the vehicle's route chronologically. Skip COMPLETED assignments (the vehicle's location becomes the facility it last dropped off at). Take the first non-completed, non-future assignment.
 
-2. **Determine effective time** — if the vehicle is broken or its task is blocked (road closure, etc.), find the earliest incident that caused the block and freeze the vehicle's position at that moment.
+2. **Determine effective time** — if the vehicle is broken or its task is blocked (e.g. no detour exists), find the earliest incident that caused the block and freeze the vehicle's position at that moment. Road closures with a valid detour do **not** stop the vehicle (see [Automatic Detours](#automatic-detours)).
 
 3. **Compute route legs:**
    - `approach` = road path from vehicle's current location to task pickup
    - `delivery` = road path from pickup to destination facility
+   - If the assignment has `reroute`, the rerouted leg is drawn from `reroute.origin` under the conditions active at `reroute.at`, and its progress starts at `reroute.start` (`leg = PICKUP` → approach, `leg = HOSPITAL` → delivery).
 
 4. **Interpolate position on the path** using `position_on_path(path, progress, fallback)`:
    - Calculates cumulative Euclidean length of path segments.
@@ -78,7 +79,30 @@ The path geometry is obtained via a `road_path` callable that is passed into `de
 - If the active plan was solved with OSRM (`provider == "OSRM"`) and OSRM is still available → `self.road_matrix.path`
 - Otherwise → `roads.road_path(a, b, effects=roads.effects(active_conditions(...)))`
 
-The road effects (closures/delays) used for path drawing are those that were active **when the plan was generated**, not the current ones. This ensures the visualised path matches the planned route.
+The road effects (closures/delays) used for path drawing are those that were active **when the plan was generated**, not the current ones. This ensures the visualised path matches the planned route. The exception are rerouted legs, which use the conditions from the moment of the detour.
+
+---
+
+## Automatic Detours
+
+`simulation.reroute()` runs after a `TRAFFIC_DELAY` / `ROAD_CLOSURE` is added (`add_incident`) or resolved (`resolve_incident`):
+
+1. Computes each vehicle's current position with `demo_positions(..., respect_blocking=False)`.
+2. For the IN_PROGRESS assignment: routes from the current position to the pickup (`leg = PICKUP`) or, after pickup, to the facility (`leg = HOSPITAL`) with `RoadNetwork.route()` under the current conditions, and updates `planned_pickup` / `planned_dropoff` / `planned_end`, `deadhead` and `distance_meters`.
+3. Re-times the following PLANNED assignments of the same vehicle (departure from the previous facility, new travel times).
+4. Stores the detour in `Assignment.reroute = {at, start, origin, leg}` and writes an `AUTO_DETOUR` audit entry.
+
+The vehicle and task order chosen by the dispatcher are never changed; an accepted recommendation still overrides everything. If no detour exists, the assignment stays unchanged and is reported as blocked for manual coordination. `snapshot_builder` skips the approach/loaded travel check for the rerouted leg, because its times already come from the detour.
+
+---
+
+## Frontend Animation and Map Behaviour
+
+- `packages/react-views/src/route-motion.ts` measures the route legs, projects the vehicle onto them and computes its progress per status.
+- `dispatch-map.tsx` animates the marker along the route between the 1 s frames (`requestAnimationFrame`, duration = measured frame interval clamped to 250–1600 ms) and shortens the polylines so the already-driven part disappears. Vehicles without a path (GPS) are interpolated linearly. A changed route makes the marker jump instead of animating.
+- The pickup pin is hidden once the patient has been picked up (`TO_HOSPITAL`, `AT_HOSPITAL` or `actual_arrival` set).
+
+Details: [docs/vehicle-motion.md](../docs/vehicle-motion.md).
 
 ---
 

@@ -24,7 +24,7 @@ The solver works exclusively with frozen, validated Pydantic/dataclass objects �
 - `Vehicle` — id, location, capacity, equipment list, task_types, available_at, broken, unavailable windows
 - `Task` — id, type (PLANNED_TRANSPORT / PRIORITY_TRANSPORT / EQUIPMENT_DELIVERY), priority (P1/P2/P3), pickup location, facility_id, passenger_count, equipment, time windows (earliest_pickup, latest_pickup, preferred_arrival, latest_arrival), service durations
 - `Facility` — id, name, location, quota (capacity remaining), accepting flag
-- `Assignment` — task_id, vehicle_id, planned_departure, planned_pickup, planned_dropoff, planned_end, deadhead (travel to pickup in seconds), status, distance_meters
+- `Assignment` — task_id, vehicle_id, planned_departure, planned_pickup, planned_dropoff, planned_end, deadhead (travel to pickup in seconds), status, distance_meters, reroute (automatic detour after a road event)
 - `TravelSnapshot` — a frozen N×N matrix of travel durations (and optionally distances) between all nodes (vehicle starts, pickups, deliveries)
 - `PlanningSnapshot` — the complete input to the solver: now, vehicles, tasks, facilities, previous assignments, frozen assignments, anchors, travel matrix, blocking issues
 

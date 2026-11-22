@@ -105,7 +105,9 @@ Wraps the CP-SAT solver with concurrency control (a `BoundedSemaphore(1)` ensure
 
 ## Service: `simulation.py`
 
-- `add_incident(db, scope, request)` — records a dispatcher-triggered event (breakdown, road closure, new task, etc.) and mutates the relevant entity (vehicle, facility).
+- `add_incident(db, scope, request)` — records a dispatcher-triggered event (breakdown, road closure, new task, etc.) and mutates the relevant entity (vehicle, facility). Road events are validated against `RoadNetwork.segment()`; a `location` without `road_id` is resolved to the nearest road.
+- `resolve_incident(db, scope, incident_id)` — manually ends an active delay/closure by setting `ended_at`.
+- `reroute(db, scope, road_matrix)` — after adding or resolving a road event, recomputes detours and timings for the active plan without changing vehicle assignments (see [tracking.md](tracking.md#automatic-detours)).
 - `advance(db, scope, until)` — fast-forwards simulated time: marks assignments as IN_PROGRESS or COMPLETED based on their planned timestamps relative to `until`.
 
 ---

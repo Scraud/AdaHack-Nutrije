@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/incidents/{incident_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove Incident */
+        post: operations["remove_incident_api_incidents__incident_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plans/generate": {
         parameters: {
             query?: never;
@@ -276,6 +293,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/map/roads/street": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Road Street */
+        get: operations["road_street_api_map_roads_street_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/roads/nearest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Nearest Road */
+        get: operations["nearest_road_api_map_roads_nearest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tracking": {
         parameters: {
             query?: never;
@@ -365,6 +416,7 @@ export interface components {
             is_locked: boolean;
             /** Distance Meters */
             distance_meters?: number | null;
+            reroute?: components["schemas"]["Reroute"] | null;
             /** Planned Arrival */
             readonly planned_arrival: number;
         };
@@ -473,6 +525,8 @@ export interface components {
              * @default 0
              */
             occurred_at: number;
+            /** Ended At */
+            ended_at?: number | null;
             /** Duration */
             duration?: number | null;
             /** Vehicle Id */
@@ -696,6 +750,16 @@ export interface components {
             /** Expected State Revision */
             expected_state_revision: number;
         };
+        /** Reroute */
+        Reroute: {
+            /** At */
+            at: number;
+            /** Start */
+            start: number;
+            origin?: components["schemas"]["Point"] | null;
+            /** Leg */
+            leg?: ("PICKUP" | "HOSPITAL") | null;
+        };
         /** RoadEvent */
         RoadEvent: {
             /** Id */
@@ -707,6 +771,13 @@ export interface components {
              * @enum {string}
              */
             type: "TRAFFIC_DELAY" | "ROAD_CLOSURE";
+            /** Name */
+            name: string;
+            /** Paths */
+            paths: [
+                number,
+                number
+            ][][];
         };
         /** RoadLayer */
         RoadLayer: {
@@ -731,8 +802,8 @@ export interface components {
             timestamp: string;
             /** Layers */
             layers: components["schemas"]["RoadLayer"][];
-            /** Segments */
-            segments: components["schemas"]["RoadSegment"][];
+            /** Streets */
+            streets: string[];
         };
         /** RoadSegment */
         RoadSegment: {
@@ -740,11 +811,11 @@ export interface components {
             id: string;
             /** Name */
             name: string;
-            /** Path */
-            path: [
+            /** Paths */
+            paths: [
                 number,
                 number
-            ][];
+            ][][];
         };
         /** SourceStatus */
         SourceStatus: {
@@ -1104,6 +1175,37 @@ export interface operations {
             };
         };
     };
+    remove_incident_api_incidents__incident_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["State"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     initial_plan_api_plans_generate_post: {
         parameters: {
             query?: never;
@@ -1350,6 +1452,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoadMap"];
+                };
+            };
+        };
+    };
+    road_street_api_map_roads_street_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoadSegment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nearest_road_api_map_roads_nearest_get: {
+        parameters: {
+            query: {
+                lat: number;
+                lon: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoadSegment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

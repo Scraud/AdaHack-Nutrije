@@ -46,6 +46,7 @@ frontend/
     │   └── index.ts          Exports + `clock()` utility function
     └── react-views/
         ├── dispatch-map.tsx  Leaflet map (roads, routes, vehicle icons)
+        ├── route-motion.ts   Route geometry helpers for smooth vehicle motion
         └── vehicle-timeline.tsx  Gantt-style schedule timeline
 ```
 
@@ -68,6 +69,10 @@ frontend/
 | `busy` | `string` | Label of in-flight operation (disables UI) |
 | `error` | `string` | Last error message |
 | `notification` | `string` | Last success message |
+| `roadTarget` | `RoadSegment \| null` | Road selected for a new delay/closure (by street name or map click) |
+| `picking` | `boolean` | Map click selects a road (`pickAt` → `/api/map/roads/nearest`) |
+
+Road event helpers: `findStreet(name)` (`/api/map/roads/street`), `pickAt(lat, lon)` and `resolveIncident(id)` (`POST /api/incidents/{id}/resolve`).
 
 ### Polling
 
@@ -107,20 +112,20 @@ A React component that creates a Leaflet map instance and maintains it via refs 
 |---|---|---|
 | `road-base` | 300 | Road polylines from `/api/map/roads`, styled by rank |
 | `vehicle-paths` | 390 | Vehicle route lines (solid = to pickup, dashed = to hospital) |
-| `road-events` | 410 | Active road closures / delays (red overlays on named segments) |
+| `road-events` | 410 | Active road closures / delays and the selected road preview |
 | Leaflet default | 400 | Site markers (facility pins, event location pins), vehicle icons |
 
 ### Rendering logic
 
 1. **Road basemap** — rendered once from the `RoadMap` received via props. Each rank gets a different stroke width and opacity.
 
-2. **Vehicle routes** — re-rendered when `tracking.vehicles` changes. For each vehicle, two polylines: `to_pickup` (solid) and `to_hospital` (dashed). Opacity is reduced for `STOPPED` vehicles.
+2. **Vehicle routes** — re-rendered when `tracking.vehicles` changes. For each vehicle, two polylines: `to_pickup` (solid) and `to_hospital` (dashed). Opacity is reduced for `STOPPED` vehicles. The already-driven part of the line is removed continuously.
 
-3. **Vehicle markers** — emoji pins (`🚑`) positioned at `vehicle.location`. Colour is assigned per vehicle id from a fixed palette. Tooltip shows vehicle id and status.
+3. **Vehicle markers** — emoji pins (`🚑`) with ETA, animated smoothly along the route between tracking frames (`requestAnimationFrame` + `route-motion.ts`). Colour is assigned per vehicle id from a fixed palette. Tooltip shows vehicle id and status.
 
-4. **Site markers** — facility pins (`🏥`) and incident location pins.
+4. **Site markers** — facility pins (`🏥`) and pickup pins. A pickup pin is hidden once the patient has been picked up.
 
-5. **Road event overlays** — red polylines on named road segments that have active closures or delays.
+5. **Road event overlays** — polylines from `RoadEvent.paths` for active closures or delays, plus a preview of the road selected in the incident panel. With `picking` enabled, a map click calls `onPick(lat, lon)`.
 
 6. **Selected task highlight** — when a task is selected in the task list, the map pans/zooms to its pickup location and highlights the assigned vehicle's route.
 

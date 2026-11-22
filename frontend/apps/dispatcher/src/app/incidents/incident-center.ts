@@ -17,6 +17,15 @@ export class IncidentCenter {
   readonly labels = incidentLabels;
   readonly clock = clock;
   readonly lastEvents = computed(() => [...this.state().incidents].reverse().slice(0, 5));
+  readonly activeRoadEvents = computed(() => {
+    const now = this.state().now;
+    const names = new Map((this.store.tracking()?.incidents ?? []).map(event => [event.id, event.name]));
+    return this.state().incidents.filter(event =>
+      (event.type === 'TRAFFIC_DELAY' || event.type === 'ROAD_CLOSURE') && event.road_id
+      && event.ended_at == null && event.occurred_at <= now
+      && (event.duration == null || now < event.occurred_at + event.duration))
+      .map(event => ({ ...event, roadName: names.get(event.id) ?? this.roadName(event.road_id!) }));
+  });
   priority: NewTask['priority'] = 'P1';
   pickup = '11:35';
   deadline = '12:30';
@@ -24,7 +33,12 @@ export class IncidentCenter {
   facility = 'F3';
   passengers = 1;
   advanceTo = '11:20';
+  streetName = '';
   error = '';
+
+  findStreet() {
+    if (this.streetName.trim()) void this.store.findStreet(this.streetName);
+  }
 
   openTask() {
     const current = this.state().now;
@@ -67,12 +81,13 @@ export class IncidentCenter {
   }
 
   traffic(type: 'TRAFFIC_DELAY' | 'ROAD_CLOSURE') {
-    const road_id = this.store.roadId();
+    const road_id = this.store.roadTarget()?.id;
     if (road_id) void this.store.incident({ type, road_id, duration: 5400, multiplier: 2.3 });
   }
 
   roadName(id: string) {
-    return this.store.roads()?.segments.find(segment => segment.id === id)?.name ?? id;
+    return id.startsWith('street:') ? id.slice('street:'.length)
+      : this.store.roadTarget()?.id === id ? this.store.roadTarget()!.name : 'Izbrana cesta';
   }
 
   reset() {

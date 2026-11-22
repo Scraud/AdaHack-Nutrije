@@ -99,6 +99,7 @@ deadhead: int             # Travel seconds from anchor to pickup
 status: PLANNED | IN_PROGRESS | COMPLETED
 is_locked: bool           # Frozen = cannot be reassigned
 distance_meters: int|None # Total route distance (if OSRM was used)
+reroute: Reroute|None     # Automatic detour: {at, start, origin, leg: PICKUP|HOSPITAL|None}
 planned_arrival: int      # Computed property = planned_dropoff
 ```
 
@@ -114,8 +115,9 @@ duration: int|None        # How long it lasts (seconds), None = permanent
 vehicle_id: str|None      # For VEHICLE_BREAKDOWN / VEHICLE_UNAVAILABLE
 facility_id: str|None     # For FACILITY_CAPACITY_CHANGE
 task_id: str|None         # For NEW_TASK (links to created task)
-location: Point|None      # For WEATHER_DELAY
-road_id: str|None         # For TRAFFIC_DELAY / ROAD_CLOSURE
+location: Point|None      # For WEATHER_DELAY (or a clicked point for road events)
+road_id: str|None         # For TRAFFIC_DELAY / ROAD_CLOSURE: street:<name> or way:<way>:<edge>
+ended_at: int|None        # Set when a road event is resolved manually
 radius_km: float          # For weather delays (default 1.5 km)
 multiplier: float         # Travel time multiplier for TRAFFIC_DELAY (default 1.6×)
 quota: int|None           # New quota for FACILITY_CAPACITY_CHANGE
@@ -128,8 +130,8 @@ Incident types:
 |---|---|
 | `VEHICLE_BREAKDOWN` | Sets `vehicle.broken = True` |
 | `VEHICLE_UNAVAILABLE` | Adds a `(start, end)` window to `vehicle.unavailable` |
-| `TRAFFIC_DELAY` | Multiplies travel times on a named road segment |
-| `ROAD_CLOSURE` | Removes a named road segment from routing |
+| `TRAFFIC_DELAY` | Multiplies travel times on any selected road segment; triggers automatic detours |
+| `ROAD_CLOSURE` | Removes any selected road segment from routing; triggers automatic detours |
 | `WEATHER_DELAY` | Multiplies travel times for nodes within radius (legacy) |
 | `NEW_TASK` | Creates a new Task record |
 | `FACILITY_CAPACITY_CHANGE` | Updates `facility.quota` |

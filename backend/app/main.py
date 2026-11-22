@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.api.schemas import (
     Advance, Baseline, CreateIncident, PlanSummary, PlanView, RecommendationView, Recommendations,
-    Rejection, Replan, RoadMap, SourceStatus, State,
+    Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State,
 )
 from app.db import Database
 from app.models import Plan, Scenario
@@ -21,7 +21,7 @@ from app.providers.osrm import RoadMatrix, RoadRoutingUnavailable
 from app.providers.roads import road_network
 from app.services.decisions import decide
 from app.services.planning import PlanningService, recommendation_history
-from app.services.simulation import add_incident, advance
+from app.services.simulation import add_incident, advance, resolve_incident
 from app.services.state import problem, reset, scenario, view_plan, view_state
 from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 
@@ -105,6 +105,14 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
             add_incident(db, scope, request, road_matrix)
             return view_state(db, scope, road_matrix)
 
+    @app.post("/api/incidents/{incident_id}/resolve")
+    def remove_incident(incident_id: int) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            resolve_incident(db, scope, incident_id, road_matrix)
+            return view_state(db, scope, road_matrix)
+
     @app.post("/api/plans/generate")
     def initial_plan() -> State:
         tracking.pause()
@@ -159,6 +167,22 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
     def road_map():
         return Response(road_network().basemap(), media_type="application/json",
                         headers={"Cache-Control": "public, max-age=3600"})
+
+    @app.get("/api/map/roads/street", response_model=RoadSegment)
+    def road_street(name: str):
+        roads = road_network()
+        segment = roads.segment(f"street:{name}")
+        if segment is None:
+            raise problem(404, "ROAD_NOT_FOUND", "Ulica ne obstaja v cestnem omrežju.")
+        return roads.segment_json(segment)
+
+    @app.get("/api/map/roads/nearest", response_model=RoadSegment)
+    def nearest_road(lat: float, lon: float):
+        roads = road_network()
+        segment = roads.nearest(lat, lon)
+        if segment is None:
+            raise problem(404, "ROAD_NOT_FOUND", "Na tej lokaciji ni odseka cestnega omrežja.")
+        return roads.segment_json(segment)
 
     @app.get("/api/tracking")
     def vehicle_tracking() -> TrackingFrame:

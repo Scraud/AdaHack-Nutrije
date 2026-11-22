@@ -1,6 +1,7 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import type {
-  Condition, Incident, Plan, PlanSummary, Playback, Recommendation, Recommendations, RoadMap, State, TrackingFrame,
+  Condition, Incident, Plan, PlanSummary, Playback, Recommendation, Recommendations, RoadMap, RoadSegment, State,
+  TrackingFrame,
 } from '../../../../../packages/contracts';
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -32,7 +33,8 @@ export class DispatchStore {
   readonly error = signal('');
   readonly openRecommendations = computed(() => this.recommendations().filter(item => item.status === 'PROPOSED'));
   readonly roads = signal<RoadMap | null>(null);
-  readonly roadId = signal('');
+  readonly roadTarget = signal<RoadSegment | null>(null);
+  readonly pickingRoad = signal(false);
   readonly tracking = signal<TrackingFrame | null>(null);
   readonly gpsOnline = computed(() => this.tracking()?.vehicles.some(vehicle => !vehicle.stale) ?? false);
   readonly trackingOffline = signal(false);
@@ -80,9 +82,30 @@ export class DispatchStore {
     try {
       const roads = await request<RoadMap>('map/roads');
       this.roads.set(roads);
-      this.roadId.set(roads.segments[0]?.id ?? '');
     } catch {
       this.roads.set(null);
+    }
+  }
+
+  async findStreet(name: string) {
+    try {
+      const target = await request<RoadSegment>(`map/roads/street?name=${encodeURIComponent(name.trim())}`);
+      this.roadTarget.set(target);
+      this.pickingRoad.set(false);
+      this.error.set('');
+    } catch (error) {
+      this.error.set(error instanceof Error ? error.message : 'Ulice ni bila najdena.');
+    }
+  }
+
+  async pickRoad(location: [number, number]) {
+    try {
+      const target = await request<RoadSegment>(`map/roads/nearest?lat=${location[0]}&lon=${location[1]}`);
+      this.roadTarget.set(target);
+      this.pickingRoad.set(false);
+      this.error.set('');
+    } catch (error) {
+      this.error.set(error instanceof Error ? error.message : 'Ceste na izbrani lokaciji ni bilo mogoče najti.');
     }
   }
 
@@ -148,6 +171,16 @@ export class DispatchStore {
 
   incident(body: Incident) {
     return this.changeState('incidents', 'Zapisovanje motnje', body, 'Motnja je zabeležena.');
+  }
+
+  resolveIncident(id: number) {
+    return this.run('Odstranjevanje motnje', async () => {
+      this.state.set(await request<State>(`incidents/${id}/resolve`, 'POST'));
+      this.clearPreview();
+      await this.refreshLists();
+      await this.refreshTracking(true);
+      this.notification.set('Motnja je odstranjena.');
+    });
   }
 
   generate() {

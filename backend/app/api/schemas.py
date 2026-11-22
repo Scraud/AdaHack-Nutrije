@@ -125,11 +125,11 @@ class RoadLayer(BaseModel):
 class RoadSegment(BaseModel):
     id: str
     name: str
-    path: list[tuple[float, float]]
+    paths: list[list[tuple[float, float]]]
 
 
 class RoadMap(BaseModel):
     bounds: tuple[float, float, float, float]
     timestamp: str
     layers: list[RoadLayer]
-    segments: list[RoadSegment]
+    streets: list[str]

@@ -37,13 +37,19 @@ This search is cached per `(origin, effects)` pair (`@lru_cache(maxsize=36)`).
 
 **Basemap:** `basemap()` serialises all road polylines by rank (rank 0 = motorways, rank 3 = residential) as a JSON blob for the frontend map layer. Cached forever.
 
-**Named segments:** 5 specific road segments (Šmartinska, Dunajska, Celovška, Zaloška, Tržaška) are pre-extracted by name and exposed as `segments`. The frontend lets the dispatcher select one of these to trigger a road event.
+**Road segments:** any road in the network can be targeted by a road event; there is no fixed list of preset roads. `segment(road_id)` resolves (and caches) two id formats:
+- `street:<name>` — every way with that street name (typed or picked from the `streets` list).
+- `way:<way>:<edge>` — the part of one way between the nearest intersections (nodes with more than two neighbours) around the given edge.
+
+`nearest(lat, lon)` maps a clicked map point to the nearest named edge and returns its `way:` segment (unnamed roads are labelled "Neimenovana cesta"). `streets()` returns all street names. `segment_json()` serialises a segment as `{id, name, paths}`; `basemap()` exposes `streets` instead of the former `segments`.
+
+**Point-to-point route:** `route(origin, target, effects)` snaps both points to the graph, runs `_search` and returns `(seconds, path)` with the exact origin/target coordinates prepended/appended, or `None` when no path exists. It is used for automatic detours from a vehicle's current position.
 
 ### Effects of Incidents
 
-`effects(incidents)` converts active `ROAD_CLOSURE` and `TRAFFIC_DELAY` incidents into the `Effects` tuple that the graph search uses. Only incidents whose `road_id` matches a named segment are applied.
+`effects(incidents)` converts active `ROAD_CLOSURE` and `TRAFFIC_DELAY` incidents into the `Effects` tuple that the graph search uses. Only incidents whose `road_id` resolves to a segment are applied (stale ids from old data are ignored).
 
-`active_conditions(now, incidents)` filters the incident list to those currently in effect.
+`active_conditions(now, incidents)` filters the incident list to those currently in effect (manually resolved incidents with `ended_at <= now` are excluded).
 
 ---
 
@@ -100,5 +106,5 @@ Download `slovenia.osm.pbf` from [Geofabrik](https://download.geofabrik.de/europ
 | No OSRM configured | Built-in Dijkstra on OSM graph | Same Dijkstra back-pointer walk |
 | OSRM configured | OSRM `/table` endpoint | OSRM `/route` endpoint |
 | Old plan (HAVERSINE) | Haversine with road factor | Haversine linear interpolation |
-| Road closure active | Dijkstra skips closed edges | Same (closure reflected in paths) |
+| Road closure active | Dijkstra skips closed edges | Same (closure reflected in paths); active vehicles get an automatic detour |
 | Traffic delay active | Dijkstra multiplies edge cost | Path unchanged, just slower |

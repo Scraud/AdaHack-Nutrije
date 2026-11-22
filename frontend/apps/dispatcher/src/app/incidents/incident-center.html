@@ -10,19 +10,27 @@
       <span><strong>Simuliraj okvaro V3</strong><small>Izloči vozilo iz novih dodelitev</small></span>
       <span class="arrow" aria-hidden="true">›</span>
     </button>
-    <label class="incident-road">Odsek ceste
-      <select [ngModel]="store.roadId()" (ngModelChange)="store.roadId.set($event)" [disabled]="!store.roads()">
-        @for (segment of store.roads()?.segments ?? []; track segment.id) {
-          <option [value]="segment.id">{{ segment.name }}</option>
-        }
-      </select>
+    <label class="incident-road">Ulica ali cesta
+      <input name="street" list="road-streets" [(ngModel)]="streetName" placeholder="Npr. Dunajska cesta"
+        [disabled]="!store.roads()" (keydown.enter)="$event.preventDefault(); findStreet()">
+      <datalist id="road-streets">
+        @for (street of store.roads()?.streets ?? []; track street) { <option [value]="street"></option> }
+      </datalist>
     </label>
-    <button class="incident-action" [disabled]="!!store.busy() || !store.roadId()" (click)="traffic('TRAFFIC_DELAY')">
+    <button class="button secondary road-select-button" [disabled]="!!store.busy() || !streetName.trim()"
+      (click)="findStreet()">Poišči ulico</button>
+    <button class="button secondary road-select-button" [disabled]="!!store.busy() || !store.roads()"
+      [attr.aria-pressed]="store.pickingRoad()" (click)="store.pickingRoad.set(!store.pickingRoad())">
+      {{ store.pickingRoad() ? 'Prekliči izbiro na zemljevidu' : 'Izberi cesto na zemljevidu' }}
+    </button>
+    @if (store.pickingRoad()) { <p class="small road-hint">Kliknite na cesto na zemljevidu, da jo izberete.</p> }
+    @if (store.roadTarget(); as target) { <p class="small road-target">Izbrano: <strong>{{ target.name }}</strong></p> }
+    <button class="incident-action" [disabled]="!!store.busy() || !store.roadTarget()" (click)="traffic('TRAFFIC_DELAY')">
       <span class="action-icon yellow" aria-hidden="true">≈</span>
       <span><strong>Simuliraj zastoj</strong><small>Upočasni izbrani cestni odsek</small></span>
       <span class="arrow" aria-hidden="true">›</span>
     </button>
-    <button class="incident-action" [disabled]="!!store.busy() || !store.roadId()" (click)="traffic('ROAD_CLOSURE')">
+    <button class="incident-action" [disabled]="!!store.busy() || !store.roadTarget()" (click)="traffic('ROAD_CLOSURE')">
       <span class="action-icon yellow" aria-hidden="true">×</span>
       <span><strong>Simuliraj zaporo</strong><small>Zapri izbrani cestni odsek</small></span>
       <span class="arrow" aria-hidden="true">›</span>
@@ -59,6 +67,16 @@
       <button class="button secondary" [disabled]="!!store.busy()" (click)="moveClock()">Premakni</button></div>
   </div>
   @if (error) { <p class="alert" role="alert">{{ error }}</p> }
+  @if (store.error()) { <p class="alert" role="alert">{{ store.error() }}</p> }
+  @if (activeRoadEvents().length) {
+    <div class="event-list active-road-events">
+      <h3>Aktivni zastoji in zapore</h3>
+      @for (event of activeRoadEvents(); track event.id) {
+        <div><span>{{ labels[event.type] }} · {{ event.roadName }}</span>
+          <button class="text-button" [disabled]="!!store.busy()" (click)="store.resolveIncident(event.id)">Odstrani</button></div>
+      }
+    </div>
+  }
   @if (lastEvents().length) {
     <div class="event-list">
       <h3>Zadnji dogodki</h3>

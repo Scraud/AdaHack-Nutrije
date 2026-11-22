@@ -3,7 +3,7 @@ import { afterNextRender, Component, ElementRef, Injector, OnDestroy, OnInit, Vi
 import { FormsModule } from '@angular/forms';
 import type { IncidentType, Recommendation, RuntimeConfig } from '@rescueflow/contracts';
 import type { DispatchViewProps } from '@rescueflow/react-views/src';
-import { arrivalAsap, colorFor,equipmentLabel,formatTime,incidentStatus,statusLabel,taskAwaitingConfirmation } from '@rescueflow/contracts/plan-utils';
+import { arrivalAsap, colorFor,equipmentLabel,formatTime,incidentStatus,statusLabel,taskAwaitingConfirmation,timelineBounds } from '@rescueflow/contracts/plan-utils';
 import { createGateway } from './core/dispatch-api';
 import { DispatchStore } from './core/dispatch-store';
 import { IconComponent } from './shared/icon.component';
@@ -29,6 +29,7 @@ export class AppComponent implements OnInit,OnDestroy {
  readonly pageTitle=computed(()=>({home:'Operativni pregled',tasks:'Prevozne naloge',vehicles:'Vozila in razpoložljivost',incidents:'Dogodki in odločitve',analysis:'Analiza in napovedi'}[this.page()]));
  readonly date=computed(()=>new Intl.DateTimeFormat('sl-SI',{day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Ljubljana'}).format(new Date(this.store.state()?.simulated_time??'2026-11-21')));
  readonly viewProps=computed<DispatchViewProps|null>(()=>{const state=this.store.state();return state?{state,tracking:this.store.displayedTracking(),roads:this.store.roads(),pickingRoad:this.store.pickingRoad(),roadPreview:this.store.roadTarget(),onPickRoad:location=>void this.store.pickRoad(location),plan:this.store.displayedPlan(),basePlan:this.store.activePlan(),diff:this.store.diff(),selectedVehicleId:this.store.selectedVehicleId(),selectedTaskId:this.store.selectedTaskId(),isPreview:!!this.store.previewPlan(),onSelectVehicle:id=>this.store.selectVehicle(id),onSelectTask:id=>this.inspectTask(id)}:null;});
+ readonly timelineRange=computed(()=>{const state=this.store.state();if(!state)return '';const {start,end}=timelineBounds(state);return formatTime(new Date(start).toISOString())+'–'+formatTime(new Date(end).toISOString());});
  readonly selectedTask=computed(()=>this.store.state()?.tasks.find(t=>t.id===this.taskId()));readonly selectedAssignment=computed(()=>this.store.displayedPlan()?.assignments.find(a=>a.task_id===this.taskId()));readonly affectedVehicles=computed(()=>[...this.store.diff().vehicle_ids].join(', ')||'—');
  private readonly hashChange=()=>this.readHash();
  private readonly injector=inject(Injector);
@@ -52,7 +53,7 @@ export class AppComponent implements OnInit,OnDestroy {
  async accept(){const rec=this.confirmation();if(!rec)return;await this.store.accept(rec);if(!this.store.error())this.closeConfirmation();}
  openSimulation(){this.simulation?.nativeElement.showModal();}
  openEvent(type:IncidentType='NEW_TASK',vehicle?:string){this.simulation?.nativeElement.close();this.eventForm?.open(type,vehicle);}
- async advanceClock(){const s=this.store.state();if(!s)return;const [h,m]=this.clock.split(':').map(Number),[sh,sm]=formatTime(s.horizon_start).split(':').map(Number);const target=new Date(Date.parse(s.horizon_start)+((h-sh)*60+m-sm)*60_000).toISOString();if(Date.parse(target)<=Date.parse(s.simulated_time)){this.store.error.set('Simulirani čas se lahko premakne samo naprej.');return;}await this.store.advanceTime(target);}
+ async advanceClock(){const s=this.store.state();if(!s)return;const [h,m]=this.clock.split(':').map(Number),[sh,sm]=formatTime(s.horizon_start).split(':').map(Number);if(!/^\d{2}:\d{2}$/.test(this.clock)||h<0||h>23||m<0||m>59){this.store.error.set('Izberite veljavno uro med 00:00 in 23:59.');return;}const target=new Date(Date.parse(s.horizon_start)+((h-sh)*60+m-sm)*60_000).toISOString();await this.store.advanceTime(target);}
  async reset(){this.details?.nativeElement.close();this.closeIncidentReview();this.closeConfirmation();await this.store.reset();}
  taskPending(id:string){const state=this.store.state();return !!state&&taskAwaitingConfirmation(state,id,this.store.displayedPlan());}
  resolvedCount(){return this.store.state()?.incidents.filter(i=>i.status==='RESOLVED').length??0;}

@@ -106,8 +106,8 @@ export function DispatchMap({ state, roads, frame, onSelect, pickingRoad, roadPr
 
   useEffect(() => {
     if (!element.current) return;
-    const map = L.map(element.current, { scrollWheelZoom: false, minZoom: 11, maxZoom: 18 })
-      .setView([46.060, 14.515], 12);
+    const map = L.map(element.current, { scrollWheelZoom: true, minZoom: 11, maxZoom: 18 })
+      .setView([46.060, 14.515], 13);
     map.attributionControl.setPrefix(false);
     map.attributionControl.addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>');
     for (const [name, index] of [['road-base', 300], ['vehicle-paths', 390], ['road-events', 410],

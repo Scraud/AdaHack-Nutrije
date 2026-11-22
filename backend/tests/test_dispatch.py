@@ -25,6 +25,26 @@ def post(client, path, body=None):
     return response.json()
 
 
+def test_demo_clock_outside_operating_shift(demo):
+    post(demo, "plans/generate")
+    midnight = post(demo, "demo/clock", {"to": -8 * 3600})
+    assert midnight["now"] == -8 * 3600
+    assert all(row["status"] == "PLANNED" for row in midnight["active_plan"]["assignments"])
+    early = post(demo, "demo/clock", {"to": -1800})
+    assert early["now"] == -1800
+    start = post(demo, "demo/clock", {"to": 0})
+    assert start["now"] == 0
+    late = post(demo, "demo/clock", {"to": 16 * 3600 - 60})
+    assert late["now"] == 16 * 3600 - 60
+    assert all(row["status"] == "COMPLETED" for row in late["active_plan"]["assignments"])
+    assert demo.post("/api/demo/clock", json={"to": -1800}).status_code == 400
+
+
+@pytest.mark.parametrize("instant", [-8 * 3600 - 1, 16 * 3600])
+def test_demo_clock_rejects_another_calendar_day(demo, instant):
+    assert demo.post("/api/demo/clock", json={"to": instant}).status_code == 422
+
+
 def disruption(client):
     initial = post(client, "plans/generate")
     assert initial["active_plan"]["metrics"]["assigned"] == 20

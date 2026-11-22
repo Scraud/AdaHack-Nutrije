@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { DemoDispatchGateway } from '../apps/dispatcher/src/app/core/dispatch-api';
 import { DispatchStore } from '../apps/dispatcher/src/app/core/dispatch-store';
 import type { TrackingFrame } from '../packages/contracts';
-import { calculatePlanMetrics, candidateProblem, comparePlans, passengerOnBoard, timelineStatus, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
+import { calculatePlanMetrics, candidateProblem, comparePlans, passengerOnBoard, timelineStatus, timelineBounds, vehicleEta, taskAwaitingConfirmation, vehicleServiceStats } from '../packages/contracts/plan-utils';
 
 async function scenario() {
   const gateway=new DemoDispatchGateway();
@@ -12,6 +12,16 @@ async function scenario() {
   await store.init(gateway);await store.simulateIncident();
   return {gateway,store};
 }
+
+test('timeline expands to include the selected clock outside the operating shift',async()=>{
+  const state=await new DemoDispatchGateway().getState();
+  const start=Date.parse(state.horizon_start),end=Date.parse(state.horizon_end);
+  assert.deepEqual(timelineBounds(state),{start,end});
+  state.simulated_time=new Date(start-90*60_000).toISOString();
+  assert.deepEqual(timelineBounds(state),{start:start-2*3600_000,end});
+  state.simulated_time=new Date(end+90*60_000).toISOString();
+  assert.deepEqual(timelineBounds(state),{start,end:end+2*3600_000});
+});
 
 test('initial UI fixture has five vehicles, twenty tasks and four facilities',async()=>{
   const state=await new DemoDispatchGateway().getState();

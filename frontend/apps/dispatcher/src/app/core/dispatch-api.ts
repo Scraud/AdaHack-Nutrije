@@ -58,7 +58,18 @@ export class HttpDispatchGateway implements DispatchGateway {
   setPlayback(playing:boolean,speed:Playback['speed']){return this.request<Playback>('/tracking/playback',{playing,speed});}
   resolveIncident(id:string){return this.mutate(`/incidents/${encodeURIComponent(id)}/resolve`,{});}
   getSources(refresh=false){return this.request<SourceStatus[]>(`/conditions${refresh?'/refresh':''}`,refresh?{}:undefined);}
-  async advanceTime(to:string){const state=await this.request<BackendState>('/state');return this.mutate('/demo/advance-time',{to:Math.round((Date.parse(to)-Date.parse(state.start_at))/1000)});}
+  async advanceTime(to:string){
+    const state=await this.request<BackendState>('/state');
+    const seconds=Math.round((Date.parse(to)-Date.parse(state.start_at))/1000);
+    if(!Number.isFinite(seconds)||seconds< -8*3600||seconds>=16*3600)throw new Error('Izberite veljavno uro med 00:00 in 23:59.');
+    if(seconds===state.now)return this.getState();
+    if(seconds<state.now){
+      await this.request('/demo/reset',{});
+      await this.request('/plans/generate',{});
+      if(seconds===0)return this.getState();
+    }
+    return this.mutate('/demo/clock',{to:seconds});
+  }
   async createIncident(input: IncidentInput) {
     if(input.incident_type==='TRAFFIC_DELAY'||input.incident_type==='ROAD_CLOSURE')input={...ROAD_EVENT_DEFAULTS,...input};
     const body:components['schemas']['CreateIncident']={type:input.incident_type,description:input.description??'',priority:input.priority,

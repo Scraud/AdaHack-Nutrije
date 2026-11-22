@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from app.api.schemas import (
-    Advance, Baseline, CreateIncident, PickupAddress, PlanSummary, PlanView, RecommendationView, Recommendations,
+    Advance, DemoClock, Baseline, CreateIncident, PickupAddress, PlanSummary, PlanView, RecommendationView, Recommendations,
     Rejection, Replan, RoadMap, RoadSegment, SourceStatus, State,
 )
 from app.db import Database
@@ -21,7 +21,7 @@ from app.providers.osrm import RoadMatrix, RoadRoutingUnavailable
 from app.providers.roads import road_network
 from app.services.decisions import decide
 from app.services.planning import PlanningService, recommendation_history
-from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident
+from app.services.simulation import add_incident, advance, restore_vehicle, resolve_incident, set_demo_clock
 from app.services.state import problem, reset, scenario, view_plan, view_state
 from app.services.tracking import GPSFix, Playback, Tracking, TrackingFrame
 
@@ -111,6 +111,14 @@ def create_app(db_path: Path | None = None, budget: SolveBudget = SolveBudget())
         with database.session(write=True) as db:
             scope = scenario(db)
             resolve_incident(db, scope, incident_id, road_matrix)
+            return view_state(db, scope, road_matrix)
+
+    @app.post("/api/demo/clock")
+    def demo_clock(request: DemoClock) -> State:
+        tracking.pause()
+        with database.session(write=True) as db:
+            scope = scenario(db)
+            set_demo_clock(db, scope, request.to, road_matrix)
             return view_state(db, scope, road_matrix)
 
     @app.post("/api/plans/generate")

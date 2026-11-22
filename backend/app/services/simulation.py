@@ -239,6 +239,17 @@ def reroute(db: Session, scope: Scenario, road_matrix: MatrixProvider | None):
         audit(db, scope, "AUTO_DETOUR", simulated_time=scope.now)
 
 
+def set_demo_clock(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvider | None = None):
+    if until == scope.now:
+        return
+    if until < 0 and scope.now <= 0:
+        scope.now = until
+        scope.revision += 1
+        audit(db, scope, "SET_DEMO_CLOCK", simulated_time=until)
+        return
+    advance(db, scope, until, road_matrix)
+
+
 def advance(db: Session, scope: Scenario, until: int, road_matrix: MatrixProvider | None = None, *,
             record_audit: bool = True):
     if until <= scope.now:

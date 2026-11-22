@@ -2,6 +2,11 @@ import type { Assignment, DispatchPlan, DispatchState, PlanDiff, TransportTask }
 
 export const VEHICLE_COLORS: Record<string, string> = { V1: '#1e5ec1', V2: '#00846e', V3: '#7d42bc', V4: '#a76a05', V5: '#ac397d' };
 export const colorFor = (id: string) => VEHICLE_COLORS[id] ?? '#64818a';
+export function timelineBounds(state:DispatchState){
+  const hour=3_600_000,now=Date.parse(state.simulated_time);
+  return {start:Math.min(Date.parse(state.horizon_start),Math.floor(now/hour)*hour),
+    end:Math.max(Date.parse(state.horizon_end),Math.ceil(now/hour)*hour)};
+}
 export const formatTime = (value: string | null) => value===null?'—':new Intl.DateTimeFormat('sl-SI', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Ljubljana' }).format(new Date(value));
 export const equipmentLabel = (value: string) => ({ STRETCHER: 'Nosila', WHEELCHAIR: 'Voziček', OXYGEN: 'Kisik' }[value] ?? value);
 export const statusLabel = (value: string) => ({ AVAILABLE: 'Na voljo', EN_ROUTE: 'Na poti', TRANSPORTING: 'V prevozu', SERVICE:'Predaja / čiščenje', UNAVAILABLE: 'Nedosegljivo', BROKEN: 'Okvara' }[value] ?? value);

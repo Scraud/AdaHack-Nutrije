@@ -44,6 +44,23 @@ def example_road_matrix(nodes):
     return replace(estimate, source="OSRM", distances=distances)
 
 
+@pytest.mark.parametrize("passengers,expected", [(2, 2), (3, 0)])
+def test_group_capacity_and_sequential_transport_without_ride_pooling(passengers, expected):
+    vehicles, facilities, tasks = demo_data()
+    vehicle = vehicles[0].model_copy(update={"capacity": 2, "equipment": ["OXYGEN", "STRETCHER", "WHEELCHAIR"],
+                                           "task_types": ["PLANNED_TRANSPORT"]})
+    jobs = [task.model_copy(update={"passenger_count": passengers, "equipment": [], "type": "PLANNED_TRANSPORT",
+                                    "earliest_pickup": 0, "latest_pickup": None,
+                                    "preferred_arrival": 20000, "latest_arrival": 30000}) for task in tasks[:2]]
+    snapshot = build_snapshot(0, [vehicle], jobs, facilities, [], [])
+    plan = CpSatPlanner().alternatives(snapshot)[0].plan
+    assert plan is not None and len(plan.assignments) == expected
+    assert not validate_plan(snapshot, plan.assignments)
+    rows = sorted(plan.assignments, key=lambda row: row.planned_departure)
+    for first, second in zip(rows, rows[1:]):
+        assert second.planned_departure >= first.planned_end
+
+
 @pytest.mark.parametrize("provider", [None, example_road_matrix])
 def test_delay_and_closure_use_current_geographic_conditions(provider):
     vehicles, facilities, tasks = demo_data()

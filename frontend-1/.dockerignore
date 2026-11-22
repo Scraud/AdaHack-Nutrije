@@ -1,7 +1,0 @@
-node_modules
-.npm-cache
-.npm-lock-work
-.angular
-dist
-playwright-report
-test-results

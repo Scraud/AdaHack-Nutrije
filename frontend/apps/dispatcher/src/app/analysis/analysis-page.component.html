@@ -1,7 +1,7 @@
-<div class="analytics-notice">
- <span><app-icon name="sparkles" [size]="18"/><b>Vzorčna analitika</b></span>
- <p>Podatki in napovedi so ilustrativni. Dnevni graf in časovna heatmapa pokrivata vseh 24 ur.</p>
- <select aria-label="Obdobje analitike" (change)="period.set($any($event.target).value)"><option value="week">Ta teden</option><option value="month">Ta mesec</option><option value="year">To leto</option></select>
+<div class="analytics-period-controls" role="group" aria-label="Obdobje statistike">
+ <button type="button" class="button" [class.primary]="period()==='week'" [class.secondary]="period()!=='week'" [attr.aria-pressed]="period()==='week'" (click)="period.set('week')">Tedensko</button>
+ <button type="button" class="button" [class.primary]="period()==='month'" [class.secondary]="period()!=='month'" [attr.aria-pressed]="period()==='month'" (click)="period.set('month')">Mesečno</button>
+ <button type="button" class="button" [class.primary]="period()==='year'" [class.secondary]="period()!=='year'" [attr.aria-pressed]="period()==='year'" (click)="period.set('year')">Letno</button>
 </div>
 <div class="analytics-kpis">
  @for(kpi of kpis();track kpi.label){<article class="panel analytics-kpi"><span>{{kpi.label}}<app-icon [name]="kpi.icon" [size]="18"/></span><b>{{kpi.value}}<small>{{kpi.unit}}</small></b><p>{{kpi.note}}</p></article>}

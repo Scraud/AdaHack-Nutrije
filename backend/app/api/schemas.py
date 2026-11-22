@@ -38,6 +38,11 @@ class Advance(BaseModel):
     to: int = Field(gt=0, le=HORIZON)
 
 
+class DemoClock(BaseModel):
+    # The seeded operating shift begins at 08:00; the demo clock covers the calendar day.
+    to: int = Field(ge=-8 * 3600, le=16 * 3600 - 1)
+
+
 class Replan(BaseModel):
     base_plan_id: str
     expected_state_revision: int = Field(ge=0)

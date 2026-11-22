@@ -101,6 +101,18 @@ export class DispatchStore {
     catch (e) { this.error.set(this.message(e)); }
     finally { this.loading.set(false); }
   }
+  async refreshDemo(){
+    const repaired:string[]=[];
+    const success=await this.run(async()=>{
+      let state=await this.gateway.getState();
+      if(this.tracking()?.mode!=='GPS')for(const vehicle of state.vehicles.filter(v=>v.status==='BROKEN')){
+        state=await this.gateway.restoreVehicle(vehicle.id);repaired.push(vehicle.id);
+      }
+      return state;
+    });
+    if(success){this.clearPreview();await this.loadPreviewFrames();if(repaired.length)this.toast(`Demo osvežen: odpravljena okvara ${repaired.join(', ')}.`);}
+    return success;
+  }
   private message(e: unknown) { return e instanceof Error ? e.message : 'Dejanja ni bilo mogoče dokončati.'; }
   private async run(action: () => Promise<DispatchState>) {
     if (this.busy()) return false;
@@ -134,7 +146,12 @@ export class DispatchStore {
   }
   async generateInitialPlan() { return this.run(()=>this.gateway.generateInitialPlan()); }
   async restoreVehicle(id:string){this.clearPreview();if(await this.run(()=>this.gateway.restoreVehicle(id))){this.generationInfo.set('');this.toast(`${id}: okvara je odpravljena. Vozilo je znova na voljo za razporejanje.`);return true;}return false;}
-  async advanceTime(to:string){this.clearPreview();return this.run(()=>this.gateway.advanceTime(to));}
+  async advanceTime(to:string){
+    const rewind=Date.parse(to)<Date.parse(this.state()?.simulated_time??to);this.clearPreview();
+    const success=await this.run(()=>this.gateway.advanceTime(to));
+    if(success&&rewind){this.closeIncident();this.selectedTaskId.set(null);this.lastCreatedIncidentId.set(null);this.selectedVehicleId.set(null);this.roadTarget.set(null);this.alertsOverride.set(null);this.generationInfo.set('');this.toast('Demo je znova pripravljen do izbrane ure. Dodani dogodki in odločitve so ponastavljeni.');}
+    return success;
+  }
   async prepareDemo(){
     if(!this.activePlan()&&!await this.generateInitialPlan())return;
     const s=this.state()!;const at=new Date(Date.parse(s.horizon_start)+200*60_000).toISOString();

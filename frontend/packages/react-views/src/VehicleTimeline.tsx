@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import type { DispatchViewProps } from './types';
-import { colorFor, equipmentLabel, formatTime, passengerOnBoard, timelineStatus } from '../../contracts/plan-utils';
+import { colorFor, equipmentLabel, formatTime, passengerOnBoard, timelineStatus, timelineBounds } from '../../contracts/plan-utils';
 
 export function VehicleTimeline(props: DispatchViewProps) {
   const [tooltip,setTooltip]=useState<{id:string;x:number;y:number}|null>(null);
-  const start=Date.parse(props.state.horizon_start), end=Date.parse(props.state.horizon_end);
+  const {start,end}=timelineBounds(props.state);
   const position=(value:string)=>Math.max(0,Math.min(100,(Date.parse(value)-start)/(end-start)*100));
   const hours=Array.from({length:Math.round((end-start)/3_600_000)+1},(_,i)=>new Date(start+i*3_600_000).toISOString());
   const now=position(props.state.simulated_time);
